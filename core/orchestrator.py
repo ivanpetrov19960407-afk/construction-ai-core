@@ -10,9 +10,31 @@ Supervisor-паттерн на LangGraph. Управляет pipeline'ами:
 import json
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 
+from langgraph.graph import END, START, StateGraph
+
+from agents.analyst import AnalystAgent
+from agents.author import AuthorAgent
+from agents.calculator import CalculatorAgent
+from agents.critic import CriticAgent
+from agents.formatter import FormatterAgent
+from agents.legal_expert import LegalExpertAgent
+from agents.researcher import ResearcherAgent
+from agents.verifier import VerifierAgent
 from core.llm_router import LLMRouter
+
+
+class PipelineState(TypedDict):
+    """Состояние выполнения workflow в LangGraph."""
+
+    message: str
+    session_id: str
+    role: str
+    history: list[dict]
+    audit_log: list[dict]
+    critic_iterations: int
+    final_output: str | None
 
 
 class Orchestrator:
@@ -50,14 +72,97 @@ class Orchestrator:
         )
 
         intent = response.text.strip().lower()
-        allowed_intents = {
-            "generate_tk",
-            "generate_letter",
-            "analyze_tender",
-            "generate_ks",
-            "chat",
+        if intent == "chat":
+            return intent
+        return intent if self.get_workflow(intent) else "chat"
+
+    def _get_agent(self, name: str):
+        """Вернуть инстанс агента по его id из config."""
+        factory = {
+            "researcher": ResearcherAgent,
+            "analyst": AnalystAgent,
+            "author": AuthorAgent,
+            "critic": CriticAgent,
+            "verifier": VerifierAgent,
+            "legal_expert": LegalExpertAgent,
+            "formatter": FormatterAgent,
+            "calculator": CalculatorAgent,
         }
-        return intent if intent in allowed_intents else "chat"
+        agent_class = factory.get(name)
+        if not agent_class:
+            raise ValueError(f"Unknown agent: {name}")
+        return agent_class(self.llm_router)
+
+    def _agent_display_name(self, name: str) -> str:
+        """Человекочитаемое имя агента для history."""
+        labels = {
+            "researcher": "Researcher",
+            "analyst": "Analyst",
+            "author": "Author",
+            "critic": "Critic",
+            "verifier": "Verifier",
+            "legal_expert": "LegalExpert",
+            "formatter": "Formatter",
+            "calculator": "Calculator",
+        }
+        return labels.get(name, name)
+
+    def _build_graph(self, pipeline: list[str]) -> StateGraph:
+        """Построить LangGraph StateGraph для указанного pipeline."""
+        graph = StateGraph(PipelineState)
+
+        for node_name in pipeline:
+            agent = self._get_agent(node_name)
+
+            async def _runner(state: PipelineState, _agent=agent, _node_name=node_name):
+                updated_state = await _agent.run(state)
+                history = updated_state.get("history", [])
+                if history and isinstance(history[-1], dict):
+                    history[-1]["agent_name"] = self._agent_display_name(_node_name)
+                    updated_state["final_output"] = str(history[-1].get("output", ""))
+                return updated_state
+
+            graph.add_node(node_name, _runner)
+
+        if not pipeline:
+            return graph
+
+        graph.add_edge(START, pipeline[0])
+
+        for idx, node_name in enumerate(pipeline):
+            is_last = idx == len(pipeline) - 1
+            if is_last:
+                graph.add_edge(node_name, END)
+                continue
+
+            next_node = pipeline[idx + 1]
+            if node_name != "critic":
+                graph.add_edge(node_name, next_node)
+                continue
+
+            author_node = "author" if "author" in pipeline else next_node
+
+            def _critic_decision(state: PipelineState) -> str:
+                history = state.get("history", [])
+                last_output = ""
+                if history and isinstance(history[-1], dict):
+                    last_output = str(history[-1].get("output", ""))
+
+                iterations = int(state.get("critic_iterations", 0))
+                if "APPROVED" in last_output.upper():
+                    return "approved"
+                if iterations >= 5:
+                    return "approved"
+                state["critic_iterations"] = iterations + 1
+                return "revise"
+
+            graph.add_conditional_edges(
+                "critic",
+                _critic_decision,
+                {"approved": next_node, "revise": author_node},
+            )
+
+        return graph
 
     async def _run_pipeline(
         self,
@@ -66,34 +171,34 @@ class Orchestrator:
         session_id: str,
         role: str,
     ) -> dict[str, Any]:
-        """Stub для запуска pipeline по intent."""
-        _ = (message, role)
-        pipeline_map = {
-            "generate_tk": ["researcher", "author", "critic", "verifier", "formatter"],
-            "generate_letter": [
-                "researcher",
-                "author",
-                "legal_expert",
-                "critic",
-                "verifier",
-                "formatter",
-            ],
-            "analyze_tender": ["researcher", "analyst", "legal_expert", "verifier"],
-            "generate_ks": [
-                "researcher",
-                "calculator",
-                "author",
-                "critic",
-                "verifier",
-                "formatter",
-            ],
-        }
-        agents_used = pipeline_map.get(intent, [])
-        return {
-            "reply": f"Pipeline {intent} запущен (stub)",
+        """Запустить workflow по intent через LangGraph."""
+        pipeline = self.get_workflow(intent)
+        if not pipeline:
+            return {
+                "reply": None,
+                "session_id": session_id,
+                "agents_used": [],
+                "confidence": None,
+            }
+
+        graph = self._build_graph(pipeline).compile()
+        initial_state: PipelineState = {
+            "message": message,
             "session_id": session_id,
-            "agents_used": agents_used,
+            "role": role,
+            "history": [],
+            "audit_log": [],
+            "critic_iterations": 0,
+            "final_output": None,
+        }
+
+        final_state = await graph.ainvoke(initial_state)
+        return {
+            "reply": final_state.get("final_output"),
+            "session_id": session_id,
+            "agents_used": pipeline,
             "confidence": None,
+            "state": final_state,
         }
 
     async def process(
