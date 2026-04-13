@@ -1,0 +1,106 @@
+{
+  "version": "1.0",
+  "orchestrator": {
+    "max_concurrent_agents": 10,
+    "confidence_threshold": 0.95,
+    "max_iterations": 5,
+    "audit_trail": true
+  },
+  "agents": [
+    {
+      "id": "researcher",
+      "name": "Researcher",
+      "icon": "🔍",
+      "description": "Поиск информации по нормативам (СП, СНиП, ГОСТ), строительным учебникам и технической литературе. Анализ РД и ПСД. Работа с базой знаний (RAG).",
+      "triggers": ["any_query"],
+      "output": "Структурированные факты + ссылки на нормативы",
+      "enabled": true
+    },
+    {
+      "id": "analyst",
+      "name": "Analyst",
+      "icon": "📊",
+      "description": "Выявление противоречий. Конфликт-анализ. Оценка рисков и несоответствий в документации.",
+      "triggers": ["document_analysis", "tender_analysis"],
+      "output": "Отчёт о рисках и противоречиях",
+      "enabled": true
+    },
+    {
+      "id": "author",
+      "name": "Author",
+      "icon": "✍️",
+      "description": "Генерация текстов документов: ТК, ППР, письма, отчёты. Деловой стиль, формальные требования.",
+      "triggers": ["generate_tk", "generate_ppr", "generate_letter"],
+      "output": "Черновик документа → передаётся Critic",
+      "enabled": true
+    },
+    {
+      "id": "critic",
+      "name": "Critic",
+      "icon": "🔎",
+      "description": "Рецензирование черновика. Проверка полноты, соответствия нормативам, логики изложения.",
+      "triggers": ["after_author"],
+      "output": "Список замечаний → возврат Author (до 5 итераций)",
+      "enabled": true
+    },
+    {
+      "id": "verifier",
+      "name": "Verifier",
+      "icon": "✅",
+      "description": "Финальная KPI-проверка. confidence ≥ 0.95, conflict_rate ≤ 0.05. SHA256-хэш версии документа.",
+      "triggers": ["final_stage"],
+      "output": "Approved / Reject → audit log",
+      "kpi": {
+        "min_confidence": 0.95,
+        "max_conflict_rate": 0.05,
+        "hash_algorithm": "sha256"
+      },
+      "enabled": true
+    },
+    {
+      "id": "legal_expert",
+      "name": "Legal Expert",
+      "icon": "⚖️",
+      "description": "Проверка ссылок на НПА: ФЗ, ГК РФ, ТК РФ, договорные условия. Формулировки претензий.",
+      "triggers": ["letters", "tender_analysis"],
+      "output": "Правки + ссылки на НПА",
+      "enabled": true
+    },
+    {
+      "id": "formatter",
+      "name": "Formatter",
+      "icon": "📐",
+      "description": "Финальное оформление DOCX по ГОСТ-шаблону. Заголовки, таблицы, нумерация по ГОСТ Р 21.1101.",
+      "triggers": ["before_docx_export"],
+      "output": "Готовый DOCX/PDF по ГОСТ-шаблону",
+      "enabled": true
+    },
+    {
+      "id": "calculator",
+      "name": "Calculator",
+      "icon": "🧮",
+      "description": "Детерминированные расчёты объёмов, трудозатрат, сметных показателей. Для КС-2/КС-3 и ТК.",
+      "triggers": ["ks2_ks3", "labor_calculation"],
+      "output": "Таблица расчётов + исходные данные",
+      "enabled": true
+    }
+  ],
+  "workflows": {
+    "generate_tk": {
+      "description": "Генерация технологической карты",
+      "pipeline": ["researcher", "author", "critic", "verifier", "formatter"]
+    },
+    "generate_letter": {
+      "description": "Генерация делового письма",
+      "pipeline": ["researcher", "author", "legal_expert", "critic", "verifier", "formatter"]
+    },
+    "analyze_tender": {
+      "description": "Анализ тендерной документации",
+      "pipeline": ["researcher", "analyst", "legal_expert", "verifier"]
+    },
+    "generate_ks": {
+      "description": "Генерация КС-2/КС-3",
+      "pipeline": ["researcher", "calculator", "author", "critic", "verifier", "formatter"]
+    }
+  }
+}
