@@ -48,9 +48,7 @@ class FormatterAgent(BaseAgent):
             ["Нормативные документы", "Нормативные акты", "НПА", "normative_docs"],
         )
         normative_docs = [
-            line.strip("•-— ")
-            for line in re.split(r"[\n,;]", normative_raw)
-            if line.strip("•-— ")
+            line.strip("•-— ") for line in re.split(r"[\n,;]", normative_raw) if line.strip("•-— ")
         ]
 
         sha256 = str(state.get("verification", {}).get("sha256", "")).strip()

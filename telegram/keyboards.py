@@ -1,6 +1,11 @@
 """Клавиатуры для Telegram-бота."""
 
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
+from aiogram.types import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    KeyboardButton,
+    ReplyKeyboardMarkup,
+)
 
 ROLE_BUTTONS = [
     ("ПТО", "pto_engineer"),

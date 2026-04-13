@@ -102,9 +102,7 @@ class DocxGenerator:
     def list_templates(self) -> list[str]:
         """Список доступных DOCX-шаблонов (без расширения)."""
         self.templates_dir.mkdir(parents=True, exist_ok=True)
-        templates = {
-            path.stem for path in self.templates_dir.glob("*.docx") if path.is_file()
-        }
+        templates = {path.stem for path in self.templates_dir.glob("*.docx") if path.is_file()}
         templates.add("tk_template")
         templates.add("ks_template")
         return sorted(templates)

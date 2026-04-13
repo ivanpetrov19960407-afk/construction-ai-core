@@ -53,9 +53,7 @@ class Orchestrator:
         self.config = self._load_config()
         self.llm_router = LLMRouter()
         self.session_memory = SessionMemory()
-        self.agents: dict[str, dict] = {
-            agent["id"]: agent for agent in self.config["agents"]
-        }
+        self.agents: dict[str, dict] = {agent["id"]: agent for agent in self.config["agents"]}
 
     def _load_config(self) -> dict:
         """Загрузить конфигурацию оркестратора."""
@@ -178,11 +176,7 @@ class Orchestrator:
     ) -> dict[str, Any]:
         """Запустить workflow по intent через LangGraph."""
         pipeline = self.get_workflow(intent)
-        if (
-            intent == "generate_letter"
-            and not include_legal_expert
-            and isinstance(pipeline, list)
-        ):
+        if intent == "generate_letter" and not include_legal_expert and isinstance(pipeline, list):
             pipeline = [agent for agent in pipeline if agent != "legal_expert"]
         if not pipeline:
             return {

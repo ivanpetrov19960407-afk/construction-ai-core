@@ -75,7 +75,12 @@ class RAGEngine:
             return 0
 
         payload = dict(metadata or {})
-        return self._upsert_chunks(chunks, source_name, page=int(payload.pop("page", 0)), extra=payload)
+        return self._upsert_chunks(
+            chunks,
+            source_name,
+            page=int(payload.pop("page", 0)),
+            extra=payload,
+        )
 
     def _load_embedding_model(self):
         if SentenceTransformer is None:

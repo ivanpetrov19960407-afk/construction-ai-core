@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from config.settings import settings
 from core.database import get_db
@@ -31,7 +31,7 @@ class SessionMemory:
 
     async def add(self, session_id: str, role: str, content: str) -> None:
         """Добавить сообщение в историю сессии."""
-        timestamp = datetime.now(timezone.utc).isoformat()
+        timestamp = datetime.now(UTC).isoformat()
         await self._ensure_session(session_id=session_id, role=role, timestamp=timestamp)
 
         async with get_db(self.db_path) as db:
@@ -112,13 +112,15 @@ class SessionMemory:
         sha256: str | None,
     ) -> None:
         """Сохранить сгенерированный документ в SQLite."""
-        timestamp = datetime.now(timezone.utc).isoformat()
+        timestamp = datetime.now(UTC).isoformat()
         await self._ensure_session(session_id=session_id, role="assistant", timestamp=timestamp)
 
         async with get_db(self.db_path) as db:
             await db.execute(
                 """
-                INSERT INTO documents (session_id, doc_type, filename, docx_bytes, sha256, created_at)
+                INSERT INTO documents (
+                    session_id, doc_type, filename, docx_bytes, sha256, created_at
+                )
                 VALUES (?, ?, ?, ?, ?, ?)
                 """,
                 (session_id, doc_type, filename, docx_bytes, sha256, timestamp),

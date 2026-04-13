@@ -14,7 +14,6 @@ from pydantic import BaseModel, Field, field_validator
 from core.orchestrator import Orchestrator
 from core.pdf_parser import PDFParser
 
-
 router = APIRouter()
 orchestrator = Orchestrator()
 session_memory = orchestrator.session_memory
@@ -23,7 +22,6 @@ pdf_parser = PDFParser()
 ALLOWED_UNITS = ["м³", "м²", "пог.м.", "шт.", "т", "кг"]
 MAX_UPLOAD_SIZE_BYTES = 20 * 1024 * 1024
 ANALYZE_TIMEOUT_SECONDS = 120
-
 
 
 class TKRequest(BaseModel):
@@ -157,19 +155,19 @@ async def generate_tk(payload: TKRequest, request: Request):
 
     state = result.get("state", {}) if isinstance(result, dict) else {}
     docx_bytes = state.get("docx_bytes")
+    verification = state.get("verification", {}) if isinstance(state, dict) else {}
+    sha256 = (verification or {}).get("sha256")
     if isinstance(docx_bytes, bytes):
         await session_memory.save_document(
             session_id=session_id,
             doc_type="tk",
             filename=f"tk_{session_id}.docx",
             docx_bytes=docx_bytes,
-            sha256=(state.get("verification", {}) or {}).get("sha256") if isinstance(state, dict) else None,
+            sha256=sha256,
         )
 
     document = (
-        state.get("final_output")
-        or state.get("docx_payload")
-        or {"content": result.get("reply")}
+        state.get("final_output") or state.get("docx_payload") or {"content": result.get("reply")}
     )
 
     return TKResponse(
@@ -177,7 +175,7 @@ async def generate_tk(payload: TKRequest, request: Request):
         document=document,
         agents_used=result.get("agents_used", []),
         confidence=result.get("confidence"),
-        sha256=(state.get("verification", {}) or {}).get("sha256") if isinstance(state, dict) else None,
+        sha256=sha256,
     )
 
 
@@ -266,10 +264,7 @@ async def generate_ks(payload: KSRequest, request: Request):
         "period_from": payload.period_from,
         "period_to": payload.period_to,
         "calculation_params": {"work_items": [item.model_dump() for item in payload.work_items]},
-        "context": (
-            "Подготовь описательную часть КС-2 для следующих работ: "
-            f"{work_names}."
-        ),
+        "context": (f"Подготовь описательную часть КС-2 для следующих работ: {work_names}."),
     }
 
     try:
@@ -291,13 +286,15 @@ async def generate_ks(payload: KSRequest, request: Request):
 
     docx_bytes = state.get("docx_bytes")
     docx_bytes_key = session_id
+    verification = state.get("verification", {}) if isinstance(state, dict) else {}
+    sha256 = (verification or {}).get("sha256")
     if isinstance(docx_bytes, bytes):
         await session_memory.save_document(
             session_id=docx_bytes_key,
             doc_type="ks",
             filename=f"ks_{docx_bytes_key}.docx",
             docx_bytes=docx_bytes,
-            sha256=(state.get("verification", {}) or {}).get("sha256") if isinstance(state, dict) else None,
+            sha256=sha256,
         )
 
     return KSResponse(
@@ -307,7 +304,7 @@ async def generate_ks(payload: KSRequest, request: Request):
         docx_bytes_key=docx_bytes_key,
         total_cost=total_cost,
         total_hours=total_hours,
-        sha256=(state.get("verification", {}) or {}).get("sha256") if isinstance(state, dict) else None,
+        sha256=sha256,
     )
 
 
@@ -351,9 +348,7 @@ async def analyze_document(
 
     normative_refs = pdf_parser.extract_normative_refs("\n".join(parsed.text_chunks))
     document_intent = (
-        "analyze_tender"
-        if _is_tender_document(parsed.filename, parsed.text_chunks)
-        else "chat"
+        "analyze_tender" if _is_tender_document(parsed.filename, parsed.text_chunks) else "chat"
     )
     session_id = session_id or str(uuid.uuid4())
     message = (
@@ -372,7 +367,7 @@ async def analyze_document(
             ),
             timeout=ANALYZE_TIMEOUT_SECONDS,
         )
-    except asyncio.TimeoutError as exc:
+    except TimeoutError as exc:
         raise HTTPException(status_code=504, detail="Processing timeout (120 seconds)") from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"LLM processing error: {exc}") from exc
@@ -403,9 +398,7 @@ async def download_tk_docx(session_id: str, request: Request):
 
     return FileResponse(
         path=tmp_path,
-        media_type=(
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        ),
+        media_type=("application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
         filename=tk_document.get("filename") if tk_document else f"tk_{session_id}.docx",
     )
 
@@ -427,8 +420,6 @@ async def download_ks_docx(session_id: str, request: Request):
 
     return FileResponse(
         path=tmp_path,
-        media_type=(
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        ),
+        media_type=("application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
         filename=ks_document.get("filename") if ks_document else f"ks_{session_id}.docx",
     )

@@ -2,10 +2,10 @@
 
 from contextlib import asynccontextmanager
 
+from aiogram.types import Update
 from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi.errors import RateLimitExceeded
-from aiogram.types import Update
 
 from api.middleware import (
     APIKeyMiddleware,

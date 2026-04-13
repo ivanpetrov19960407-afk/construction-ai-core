@@ -22,12 +22,14 @@ def test_generate_tk_pipeline_end_to_end() -> None:
 
     import asyncio
 
-    result = asyncio.run(orchestrator._run_pipeline(
-        intent="generate_tk",
-        message="Сделай ТК на монолитные работы",
-        session_id="s-1",
-        role="pto_engineer",
-    ))
+    result = asyncio.run(
+        orchestrator._run_pipeline(
+            intent="generate_tk",
+            message="Сделай ТК на монолитные работы",
+            session_id="s-1",
+            role="pto_engineer",
+        )
+    )
 
     history = result["state"]["history"]
     assert len(history) == 5

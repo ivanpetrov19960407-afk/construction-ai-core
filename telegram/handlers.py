@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import json
-from io import BytesIO
 from collections.abc import Mapping
 from dataclasses import dataclass
+from io import BytesIO
 
 import httpx
 from aiogram import F, Router
@@ -262,13 +262,14 @@ async def _analyze_tender_pdf(filename: str, content: bytes) -> dict:
 
 def _format_analyze_response(data: Mapping) -> str:
     risks = data.get("risks", []) if isinstance(data.get("risks"), list) else []
-    mismatches = (
-        data.get("mismatches", []) if isinstance(data.get("mismatches"), list) else data.get("non_compliances", [])
-    )
+    mismatches = data.get("mismatches", [])
+    if not isinstance(mismatches, list):
+        mismatches = data.get("non_compliances", [])
     mismatches = mismatches if isinstance(mismatches, list) else []
     recommendation = data.get("recommendation", "УТОЧНИТЬ")
     confidence = data.get("confidence", 0)
-    confidence_pct = int(float(confidence) * 100) if isinstance(confidence, (int, float)) and confidence <= 1 else int(confidence)
+    is_fraction = isinstance(confidence, (int, float)) and confidence <= 1
+    confidence_pct = int(float(confidence) * 100) if is_fraction else int(confidence)
 
     risks_block = "\\n".join([f"• {item}" for item in risks]) or "• Нет"
     mismatches_block = "\\n".join([f"• {item}" for item in mismatches]) or "• Нет"
