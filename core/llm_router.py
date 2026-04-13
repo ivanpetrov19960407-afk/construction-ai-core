@@ -5,14 +5,14 @@
 """
 
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 
 import httpx
 
 from config.settings import settings
 
 
-class LLMProvider(str, Enum):
+class LLMProvider(StrEnum):
     """Доступные LLM-провайдеры."""
 
     PERPLEXITY = "perplexity"
