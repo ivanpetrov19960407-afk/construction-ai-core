@@ -1,10 +1,13 @@
 """Generate endpoints — генерация документов."""
 
 import re
+import tempfile
 import uuid
 from enum import Enum
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, field_validator
 
 from core.orchestrator import Orchestrator
@@ -13,6 +16,8 @@ router = APIRouter()
 orchestrator = Orchestrator()
 
 ALLOWED_UNITS = ["м³", "м²", "пог.м.", "шт.", "т", "кг"]
+
+DOCX_CACHE: dict[str, bytes] = {}
 
 
 class TKRequest(BaseModel):
@@ -110,7 +115,15 @@ async def generate_tk(request: TKRequest):
         raise HTTPException(status_code=500, detail=f"LLM processing error: {exc}") from exc
 
     state = result.get("state", {}) if isinstance(result, dict) else {}
-    document = state.get("docx_payload") or {"content": result.get("reply")}
+    docx_bytes = state.get("docx_bytes")
+    if isinstance(docx_bytes, bytes):
+        DOCX_CACHE[session_id] = docx_bytes
+
+    document = (
+        state.get("final_output")
+        or state.get("docx_payload")
+        or {"content": result.get("reply")}
+    )
 
     return TKResponse(
         session_id=result["session_id"],
@@ -189,3 +202,24 @@ async def generate_letter_v2(request: LetterRequest):
 async def generate_ks():
     """Генерация КС-2/КС-3 (Фаза 4)."""
     return {"status": "not_implemented", "message": "КС-2/КС-3 запланирован на Фазу 4"}
+
+
+@router.get("/generate/tk/{session_id}/download")
+async def download_tk_docx(session_id: str):
+    """Скачать ранее сгенерированный DOCX по session_id."""
+    docx_bytes = DOCX_CACHE.get(session_id)
+    if not docx_bytes:
+        raise HTTPException(status_code=404, detail="DOCX not found for this session")
+
+    tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+    tmp_path = Path(tmp_file.name)
+    with tmp_file:
+        tmp_file.write(docx_bytes)
+
+    return FileResponse(
+        path=tmp_path,
+        media_type=(
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        ),
+        filename=f"tk_{session_id}.docx",
+    )

@@ -79,8 +79,28 @@ def test_legal_expert_smoke(llm_router_mock: SimpleNamespace) -> None:
 
 def test_formatter_smoke(llm_router_mock: SimpleNamespace) -> None:
     agent = FormatterAgent(llm_router_mock)
-    state = asyncio.run(agent.run({"message": "Оформи", "history": [], "title": "Тест"}))
-    assert state["docx_payload"]["title"] == "Тест"
+    state = asyncio.run(
+        agent.run(
+            {
+                "message": "Оформи",
+                "history": [
+                    {
+                        "agent_name": "Verifier",
+                        "output": """
+                        Вид работ: Монолитные работы
+                        Область применения: Устройство фундаментной плиты.
+                        Организация и технология производства работ: Поэтапное бетонирование.
+                        Требования к качеству работ: Контроль прочности.
+                        Нормативные документы: СП 70.13330, ГОСТ 7473
+                        """,
+                    }
+                ],
+                "verification": {"sha256": "abc123"},
+            }
+        )
+    )
+    assert isinstance(state["docx_bytes"], bytes)
+    assert state["final_output"]["template"] == "tk_template"
 
 
 def test_calculator_smoke(llm_router_mock: SimpleNamespace) -> None:
