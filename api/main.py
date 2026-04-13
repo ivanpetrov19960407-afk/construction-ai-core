@@ -18,7 +18,7 @@ from api.middleware import (
     rate_limit_exceeded_handler,
     setup_rate_limiter,
 )
-from api.routes import chat, generate, health
+from api.routes import chat, generate, health, rag
 from api.routes.analyze import router as analyze_router
 from config.settings import settings
 from core.database import init_db
@@ -81,6 +81,7 @@ app.include_router(health.router, tags=["health"])
 app.include_router(chat.router, prefix="/api", tags=["chat"])
 app.include_router(generate.router, prefix="/api", tags=["generate"])
 app.include_router(analyze_router, prefix="/api/analyze", tags=["analyze"])
+app.include_router(rag.router, prefix="/api/rag", tags=["rag"])
 setup_rate_limiter(app.routes)
 
 
