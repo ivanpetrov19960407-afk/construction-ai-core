@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from api.main import app
 from api.routes import analyze
+from config.settings import settings
 from core.pdf_parser import ParsedDocument
 
 PDF_BYTES = (
@@ -55,11 +56,17 @@ def test_analyze_tender_contains_44fz_reference():
         }
     )
 
-    response = client.post(
-        "/api/analyze/tender",
-        files={"file": ("tender.pdf", PDF_BYTES, "application/pdf")},
-        data={"role": "tender_specialist"},
-    )
+    old_keys = settings.api_keys
+    settings.api_keys = ["valid-key"]
+    try:
+        response = client.post(
+            "/api/analyze/tender",
+            files={"file": ("tender.pdf", PDF_BYTES, "application/pdf")},
+            data={"role": "tender_specialist"},
+            headers={"X-API-Key": "valid-key"},
+        )
+    finally:
+        settings.api_keys = old_keys
 
     assert response.status_code == 200
     data = response.json()
