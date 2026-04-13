@@ -26,3 +26,11 @@ def cancel_keyboard() -> ReplyKeyboardMarkup:
         resize_keyboard=True,
         one_time_keyboard=True,
     )
+
+
+def main_menu_keyboard() -> ReplyKeyboardMarkup:
+    """Главное меню бота."""
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="📋 Анализ тендера")]],
+        resize_keyboard=True,
+    )

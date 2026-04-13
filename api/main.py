@@ -2,9 +2,10 @@
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi.errors import RateLimitExceeded
+from aiogram.types import Update
 
 from api.middleware import (
     APIKeyMiddleware,
@@ -18,6 +19,9 @@ from api.middleware import (
 from api.routes import chat, generate, health
 from config.settings import settings
 from core.database import init_db
+from telegram.bot import create_bot, create_dispatcher
+
+telegram_router = APIRouter()
 
 
 @asynccontextmanager
@@ -25,8 +29,17 @@ async def lifespan(app: FastAPI):
     """Startup / shutdown events."""
     configure_structlog()
     await init_db(settings.sqlite_db_path)
+    app.state.telegram_bot = None
+    app.state.telegram_dp = None
+    if settings.telegram_webhook_url and settings.bot_token:
+        app.state.telegram_bot = create_bot()
+        app.state.telegram_dp = create_dispatcher()
+        await app.state.telegram_bot.set_webhook(settings.telegram_webhook_url)
     print("🚀 Construction AI Core запускается...")
     yield
+    if app.state.telegram_bot is not None:
+        await app.state.telegram_bot.delete_webhook(drop_pending_updates=False)
+        await app.state.telegram_bot.session.close()
     print("🛑 Construction AI Core останавливается...")
 
 
@@ -59,3 +72,19 @@ app.include_router(health.router, tags=["health"])
 app.include_router(chat.router, prefix="/api", tags=["chat"])
 app.include_router(generate.router, prefix="/api", tags=["generate"])
 setup_rate_limiter(app.routes)
+
+
+@telegram_router.post("/telegram/webhook")
+async def telegram_webhook_handler(request: Request) -> dict[str, bool]:
+    bot = request.app.state.telegram_bot
+    dp = request.app.state.telegram_dp
+    if bot is None or dp is None:
+        raise HTTPException(status_code=503, detail="Telegram webhook is not configured")
+
+    payload = await request.json()
+    update = Update.model_validate(payload, context={"bot": bot})
+    await dp.feed_update(bot, update)
+    return {"ok": True}
+
+
+app.include_router(telegram_router, tags=["telegram"])
