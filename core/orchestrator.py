@@ -10,7 +10,7 @@ Supervisor-паттерн на LangGraph. Управляет pipeline'ами:
 import json
 import uuid
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import Any, TypedDict, cast
 
 from langgraph.graph import END, START, StateGraph
 
@@ -53,9 +53,7 @@ class Orchestrator:
         self.config = self._load_config()
         self.llm_router = LLMRouter()
         self.session_memory = SessionMemory()
-        self.agents: dict[str, dict] = {
-            agent["id"]: agent for agent in self.config["agents"]
-        }
+        self.agents: dict[str, dict] = {agent["id"]: agent for agent in self.config["agents"]}
 
     def _load_config(self) -> dict:
         """Загрузить конфигурацию оркестратора."""
@@ -94,7 +92,7 @@ class Orchestrator:
         agent_class = factory.get(name)
         if not agent_class:
             raise ValueError(f"Unknown agent: {name}")
-        return agent_class(self.llm_router)
+        return cast(Any, agent_class)(self.llm_router)
 
     def _agent_display_name(self, name: str) -> str:
         """Человекочитаемое имя агента для history."""
@@ -178,11 +176,7 @@ class Orchestrator:
     ) -> dict[str, Any]:
         """Запустить workflow по intent через LangGraph."""
         pipeline = self.get_workflow(intent)
-        if (
-            intent == "generate_letter"
-            and not include_legal_expert
-            and isinstance(pipeline, list)
-        ):
+        if intent == "generate_letter" and not include_legal_expert and isinstance(pipeline, list):
             pipeline = [agent for agent in pipeline if agent != "legal_expert"]
         if not pipeline:
             return {
@@ -204,9 +198,9 @@ class Orchestrator:
             "final_output": None,
         }
         if extra_state:
-            initial_state.update(extra_state)
+            initial_state = cast(PipelineState, {**initial_state, **extra_state})
 
-        final_state = await graph.ainvoke(initial_state)
+        final_state = await cast(Any, graph).ainvoke(initial_state)
         return {
             "reply": final_state.get("final_output"),
             "session_id": session_id,

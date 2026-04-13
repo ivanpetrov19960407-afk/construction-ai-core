@@ -25,15 +25,14 @@ class ResearcherAgent(BaseAgent):
     async def run(self, state: dict[str, Any]) -> dict[str, Any]:
         message = str(state.get("message", ""))
         chunks = await self.rag_engine.search(message)
-        chunks_text = "\n".join(
-            f"- [{chunk['source']}, стр. {chunk['page']}] {chunk['text']}" for chunk in chunks
-        ) or "(релевантные нормативы не найдены)"
-
-        rag_prompt = (
-            "Релевантные нормативы:\n"
-            f"{chunks_text}\n\n"
-            f"Запрос пользователя: {message}"
+        chunks_text = (
+            "\n".join(
+                f"- [{chunk['source']}, стр. {chunk['page']}] {chunk['text']}" for chunk in chunks
+            )
+            or "(релевантные нормативы не найдены)"
         )
+
+        rag_prompt = f"Релевантные нормативы:\n{chunks_text}\n\nЗапрос пользователя: {message}"
 
         prompt = rag_prompt
         context = str(state.get("context", ""))

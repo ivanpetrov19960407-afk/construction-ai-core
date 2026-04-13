@@ -46,6 +46,10 @@ class VerifierAgent(BaseAgent):
             raise TypeError("state['audit_log'] must be a list")
         audit_log.append(audit_entry)
         state["audit_log"] = audit_log
-        state["verification"] = {"approved": approved, "sha256": version_hash, "details": response.text}
+        state["verification"] = {
+            "approved": approved,
+            "sha256": version_hash,
+            "details": response.text,
+        }
 
         return self._update_state(state, response.text)

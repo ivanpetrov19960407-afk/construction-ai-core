@@ -21,8 +21,14 @@ def test_all_agents_defined():
         config = json.load(f)
     agent_ids = {a["id"] for a in config["agents"]}
     expected = {
-        "researcher", "analyst", "author", "critic",
-        "verifier", "legal_expert", "formatter", "calculator",
+        "researcher",
+        "analyst",
+        "author",
+        "critic",
+        "verifier",
+        "legal_expert",
+        "formatter",
+        "calculator",
     }
     assert agent_ids == expected
 
@@ -35,4 +41,6 @@ def test_workflows_reference_valid_agents():
     agent_ids = {a["id"] for a in config["agents"]}
     for wf_name, wf in config["workflows"].items():
         for agent_id in wf["pipeline"]:
-            assert agent_id in agent_ids, f"Workflow '{wf_name}' ссылается на несуществующий агент '{agent_id}'"
+            assert agent_id in agent_ids, (
+                f"Workflow '{wf_name}' ссылается на несуществующий агент '{agent_id}'"
+            )

@@ -48,9 +48,7 @@ class FormatterAgent(BaseAgent):
             ["Нормативные документы", "Нормативные акты", "НПА", "normative_docs"],
         )
         normative_docs = [
-            line.strip("•-— ")
-            for line in re.split(r"[\n,;]", normative_raw)
-            if line.strip("•-— ")
+            line.strip("•-— ") for line in re.split(r"[\n,;]", normative_raw) if line.strip("•-— ")
         ]
 
         sha256 = str(state.get("verification", {}).get("sha256", "")).strip()
@@ -103,6 +101,10 @@ class FormatterAgent(BaseAgent):
             return self._update_state(state, "KS DOCX generated")
 
         verifier_output = self._extract_verifier_output(state)
+        response = await self.llm_router.query(
+            prompt=verifier_output or str(state.get("message", "")),
+            system_prompt=self.system_prompt,
+        )
         context = self._parse_context(verifier_output, state)
         docx_bytes = self.docx_generator.generate("tk_template", context)
 
@@ -113,4 +115,4 @@ class FormatterAgent(BaseAgent):
             "docx_size": len(docx_bytes),
         }
 
-        return self._update_state(state, "DOCX generated")
+        return self._update_state(state, response.text)

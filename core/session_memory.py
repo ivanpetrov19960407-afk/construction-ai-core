@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 
 from config.settings import settings
-from core.database import get_db
+from core.database import get_db, init_db
 
 
 class SessionMemory:
@@ -14,8 +15,20 @@ class SessionMemory:
     def __init__(self, max_messages: int = 50, db_path: str | None = None) -> None:
         self.max_messages = max_messages
         self.db_path = db_path or settings.sqlite_db_path
+        self._db_initialized = False
+        self._db_init_lock = asyncio.Lock()
+
+    async def _ensure_db_initialized(self) -> None:
+        if self._db_initialized:
+            return
+        async with self._db_init_lock:
+            if self._db_initialized:
+                return
+            await init_db(self.db_path)
+            self._db_initialized = True
 
     async def _ensure_session(self, session_id: str, role: str, timestamp: str) -> None:
+        await self._ensure_db_initialized()
         async with get_db(self.db_path) as db:
             await db.execute(
                 """
@@ -31,7 +44,7 @@ class SessionMemory:
 
     async def add(self, session_id: str, role: str, content: str) -> None:
         """Добавить сообщение в историю сессии."""
-        timestamp = datetime.now(timezone.utc).isoformat()
+        timestamp = datetime.now(timezone.utc).isoformat()  # noqa: UP017
         await self._ensure_session(session_id=session_id, role=role, timestamp=timestamp)
 
         async with get_db(self.db_path) as db:
@@ -65,6 +78,7 @@ class SessionMemory:
         if last_n <= 0:
             return []
 
+        await self._ensure_db_initialized()
         async with get_db(self.db_path) as db:
             cursor = await db.execute(
                 """
@@ -78,10 +92,12 @@ class SessionMemory:
             )
             rows = await cursor.fetchall()
 
-        return [dict(row) for row in reversed(rows)]
+        rows_list = list(rows)
+        return [dict(row) for row in reversed(rows_list)]
 
     async def clear(self, session_id: str) -> None:
         """Очистить историю и документы конкретной сессии."""
+        await self._ensure_db_initialized()
         async with get_db(self.db_path) as db:
             await db.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
             await db.execute("DELETE FROM documents WHERE session_id = ?", (session_id,))
@@ -90,6 +106,7 @@ class SessionMemory:
 
     async def get_session_documents(self, session_id: str) -> list[dict]:
         """Получить список документов сессии (новые первыми)."""
+        await self._ensure_db_initialized()
         async with get_db(self.db_path) as db:
             cursor = await db.execute(
                 """
@@ -112,13 +129,15 @@ class SessionMemory:
         sha256: str | None,
     ) -> None:
         """Сохранить сгенерированный документ в SQLite."""
-        timestamp = datetime.now(timezone.utc).isoformat()
+        timestamp = datetime.now(timezone.utc).isoformat()  # noqa: UP017
         await self._ensure_session(session_id=session_id, role="assistant", timestamp=timestamp)
 
         async with get_db(self.db_path) as db:
             await db.execute(
                 """
-                INSERT INTO documents (session_id, doc_type, filename, docx_bytes, sha256, created_at)
+                INSERT INTO documents (
+                    session_id, doc_type, filename, docx_bytes, sha256, created_at
+                )
                 VALUES (?, ?, ?, ?, ?, ?)
                 """,
                 (session_id, doc_type, filename, docx_bytes, sha256, timestamp),

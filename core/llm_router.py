@@ -12,7 +12,7 @@ import httpx
 from config.settings import settings
 
 
-class LLMProvider(str, Enum):
+class LLMProvider(str, Enum):  # noqa: UP042
     """Доступные LLM-провайдеры."""
 
     PERPLEXITY = "perplexity"

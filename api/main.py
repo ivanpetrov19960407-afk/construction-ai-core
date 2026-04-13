@@ -1,11 +1,13 @@
 """Construction AI Core — FastAPI application."""
 
 from contextlib import asynccontextmanager
+from typing import cast
 
+from aiogram.types import Update
 from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from slowapi.errors import RateLimitExceeded
-from aiogram.types import Update
 
 from api.middleware import (
     APIKeyMiddleware,
@@ -65,7 +67,13 @@ app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(APIKeyMiddleware)
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
+
+
+def _rate_limit_handler(request: Request, exc: Exception) -> Response:
+    return rate_limit_exceeded_handler(request, cast(RateLimitExceeded, exc))
+
+
+app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)
 
 # ── Routes ─────────────────────────────────────
 app.include_router(health.router, tags=["health"])

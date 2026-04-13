@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import json
-from io import BytesIO
 from collections.abc import Mapping
 from dataclasses import dataclass
+from io import BytesIO
 
 import httpx
 from aiogram import F, Router
@@ -69,6 +69,12 @@ def _get_user_role(user_id: int) -> str:
     return user_roles.get(user_id, "pto_engineer")
 
 
+def _require_user_id(message: Message) -> int:
+    if message.from_user is None:
+        raise ValueError("Message has no from_user")
+    return message.from_user.id
+
+
 @router.message(Command("start"))
 async def start_handler(message: Message) -> None:
     await message.answer(
@@ -88,9 +94,14 @@ async def role_handler(message: Message) -> None:
 
 @router.callback_query(F.data.startswith("role:"))
 async def role_callback_handler(callback: CallbackQuery) -> None:
-    role = callback.data.split(":", maxsplit=1)[1]
+    data = callback.data or ""
+    if ":" not in data:
+        await callback.answer("Некорректный callback")
+        return
+    role = data.split(":", maxsplit=1)[1]
     user_roles[callback.from_user.id] = role
-    await callback.message.answer(f"Роль переключена: {ROLE_NAMES.get(role, role)}")
+    if callback.message is not None:
+        await callback.message.answer(f"Роль переключена: {ROLE_NAMES.get(role, role)}")
     await callback.answer("Роль сохранена")
 
 
@@ -127,13 +138,14 @@ async def tk_unit_handler(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
     await state.clear()
 
+    user_id = _require_user_id(message)
     payload = {
         "work_type": data["work_type"],
         "object_name": data["object_name"],
         "volume": float(data["volume"]),
         "unit": data["unit"],
-        "session_id": str(message.from_user.id),
-        "role": _get_user_role(message.from_user.id),
+        "session_id": str(user_id),
+        "role": _get_user_role(user_id),
     }
     response = await api_client.post("/api/generate/tk", payload)
     await _send_generated_document(message, response, "tk")
@@ -176,13 +188,14 @@ async def letter_body_points_handler(message: Message, state: FSMContext) -> Non
     data = await state.get_data()
     await state.clear()
 
+    user_id = _require_user_id(message)
     payload = {
         "letter_type": data["letter_type"],
         "addressee": data["addressee"],
         "subject": data["subject"],
         "body_points": data["body_points"],
-        "session_id": str(message.from_user.id),
-        "role": _get_user_role(message.from_user.id),
+        "session_id": str(user_id),
+        "role": _get_user_role(user_id),
     }
     response = await api_client.post("/api/generate/letter", payload)
     await _send_generated_document(message, response, "letter")
@@ -212,7 +225,11 @@ async def analyze_document_handler(message: Message, state: FSMContext) -> None:
         return
 
     file_bytes = BytesIO()
-    await message.bot.download(document, destination=file_bytes)
+    bot = message.bot
+    if bot is None:
+        await message.answer("Bot не инициализирован.")
+        return
+    await bot.download(document, destination=file_bytes)
     file_bytes.seek(0)
 
     result = await _analyze_tender_pdf(file_name or "tender.pdf", file_bytes.getvalue())
@@ -228,10 +245,11 @@ async def cancel_handler(message: Message, state: FSMContext) -> None:
 
 @router.message()
 async def text_message_handler(message: Message) -> None:
+    user_id = _require_user_id(message)
     payload = {
         "message": message.text,
-        "session_id": str(message.from_user.id),
-        "role": _get_user_role(message.from_user.id),
+        "session_id": str(user_id),
+        "role": _get_user_role(user_id),
     }
     response = await api_client.post("/api/chat", payload)
     await message.answer(response.get("reply", "Нет ответа от API"))
@@ -244,8 +262,9 @@ async def _send_generated_document(message: Message, response: Mapping, doc_pref
     else:
         text_payload = str(document)
 
+    user_id = _require_user_id(message)
     file_data = text_payload.encode("utf-8")
-    input_file = BufferedInputFile(file_data, filename=f"{doc_prefix}_{message.from_user.id}.txt")
+    input_file = BufferedInputFile(file_data, filename=f"{doc_prefix}_{user_id}.txt")
     await message.answer_document(input_file, caption="Документ сформирован.")
     await message.answer("Готово ✅", reply_markup=ReplyKeyboardRemove())
 
@@ -262,13 +281,14 @@ async def _analyze_tender_pdf(filename: str, content: bytes) -> dict:
 
 def _format_analyze_response(data: Mapping) -> str:
     risks = data.get("risks", []) if isinstance(data.get("risks"), list) else []
-    mismatches = (
-        data.get("mismatches", []) if isinstance(data.get("mismatches"), list) else data.get("non_compliances", [])
-    )
+    mismatches = data.get("mismatches", [])
+    if not isinstance(mismatches, list):
+        mismatches = data.get("non_compliances", [])
     mismatches = mismatches if isinstance(mismatches, list) else []
     recommendation = data.get("recommendation", "УТОЧНИТЬ")
     confidence = data.get("confidence", 0)
-    confidence_pct = int(float(confidence) * 100) if isinstance(confidence, (int, float)) and confidence <= 1 else int(confidence)
+    is_fraction = isinstance(confidence, (int, float)) and confidence <= 1
+    confidence_pct = int(float(confidence) * 100) if is_fraction else int(confidence)
 
     risks_block = "\\n".join([f"• {item}" for item in risks]) or "• Нет"
     mismatches_block = "\\n".join([f"• {item}" for item in mismatches]) or "• Нет"

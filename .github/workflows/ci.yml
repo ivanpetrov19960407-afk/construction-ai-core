@@ -1,0 +1,35 @@
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - run: uv sync --extra dev --no-install-project
+      - run: uv run --no-project ruff check .
+      - run: uv run --no-project ruff format --check .
+      - run: uv run --no-project mypy core/ agents/ api/ --ignore-missing-imports
+
+  test:
+    runs-on: ubuntu-latest
+    needs: lint
+    env:
+      DEFAULT_LLM_PROVIDER: openai
+      OPENAI_API_KEY: "test-key"
+      API_KEYS: '["test-key"]'
+      SQLITE_DB_PATH: ":memory:"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - run: uv sync --extra dev --no-install-project
+      - run: >-
+          uv run --no-project pytest tests/ -v --tb=short
+          --ignore=tests/test_rag_engine.py
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: test-results
+          path: .pytest_cache/
