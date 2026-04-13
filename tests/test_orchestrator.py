@@ -34,6 +34,15 @@ def test_run_pipeline_generate_tk_uses_bridge_when_available():
     orchestrator.tk_bridge.generate = AsyncMock(
         return_value={"docx_path": "/tmp/tk.docx", "pdf_path": "/tmp/tk.pdf"}
     )
+
+    mock_calculator = AsyncMock()
+    mock_calculator.run = AsyncMock(
+        return_value={"history": [], "ks2_data": {}, "ks3_data": {}}
+    )
+    orchestrator._get_agent = lambda name: mock_calculator
+
+    orchestrator.session_memory.get = AsyncMock(return_value=[])
+
     orchestrator._build_graph = lambda pipeline: SimpleNamespace(
         compile=lambda: SimpleNamespace(
             ainvoke=AsyncMock(return_value={"history": [{"output": "готово"}], "confidence": 0.9})
@@ -58,6 +67,9 @@ def test_run_pipeline_generate_tk_fallback_without_bridge():
     """При недоступности bridge пайплайн продолжает работать в AI-only режиме."""
     orchestrator = Orchestrator()
     orchestrator.tk_bridge.is_available = lambda: False
+
+    orchestrator.session_memory.get = AsyncMock(return_value=[])
+
     orchestrator._build_graph = lambda pipeline: SimpleNamespace(
         compile=lambda: SimpleNamespace(
             ainvoke=AsyncMock(return_value={"history": [{"output": "ai-only"}], "confidence": 0.8})
