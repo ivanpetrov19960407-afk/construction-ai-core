@@ -228,7 +228,9 @@ class Orchestrator:
                 }
                 calculator_agent = self._get_agent("calculator")
                 calculator_state = await cast(Any, calculator_agent).run(calculator_state)
-                tk_input = self._build_tk_generator_input(message, role, extra_state, calculator_state)
+                tk_input = self._build_tk_generator_input(
+                    message, role, extra_state, calculator_state
+                )
                 tk_bridge_result = await self.tk_bridge.generate(tk_input)
 
                 bridge_context = (
@@ -243,7 +245,9 @@ class Orchestrator:
                     "ks2_data": calculator_state.get("ks2_data", {}),
                     "ks3_data": calculator_state.get("ks3_data", {}),
                 }
-                merged_state["context"] = f"{merged_state.get('context', '')}{bridge_context}".strip()
+                merged_state["context"] = (
+                    f"{merged_state.get('context', '')}{bridge_context}".strip()
+                )
                 extra_state = merged_state
             except Exception:
                 tk_bridge_result = None
