@@ -30,6 +30,13 @@ ROLE_NAMES = {
 }
 
 
+def _get_api_key() -> str:
+    """Возвращает первый API-ключ из настроек."""
+    if settings.api_keys:
+        return settings.api_keys[0]
+    return ""
+
+
 @dataclass
 class TelegramCoreClient:
     """Клиент для запросов к Construction AI Core API."""
@@ -37,8 +44,13 @@ class TelegramCoreClient:
     base_url: str
 
     async def post(self, path: str, payload: dict) -> dict:
+        headers = {"X-API-Key": _get_api_key()}
         async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.post(f"{self.base_url}{path}", json=payload)
+            response = await client.post(
+                f"{self.base_url}{path}",
+                json=payload,
+                headers=headers,
+            )
             response.raise_for_status()
             return response.json()
 
@@ -270,10 +282,12 @@ async def _send_generated_document(message: Message, response: Mapping, doc_pref
 
 
 async def _analyze_tender_pdf(filename: str, content: bytes) -> dict:
+    headers = {"X-API-Key": _get_api_key()}
     async with httpx.AsyncClient(timeout=120.0) as client:
         response = await client.post(
             f"{settings.core_api_url.rstrip('/')}/api/analyze/tender",
             files={"file": (filename, content, "application/pdf")},
+            headers=headers,
         )
         response.raise_for_status()
         return response.json()
@@ -295,17 +309,17 @@ def _format_analyze_response(data: Mapping) -> str:
     is_fraction = isinstance(confidence, (int, float)) and confidence <= 1
     confidence_pct = int(float(confidence) * 100) if is_fraction else int(confidence)
 
-    risks_block = "\\n".join([f"• {item}" for item in risks]) or "• Нет"
-    mismatches_block = "\\n".join([f"• {item}" for item in mismatches]) or "• Нет"
-    legal_issues_block = "\\n".join([f"• {item}" for item in legal_issues]) or "• Нет"
+    risks_block = "\n".join([f"• {item}" for item in risks]) or "• Нет"
+    mismatches_block = "\n".join([f"• {item}" for item in mismatches]) or "• Нет"
+    legal_issues_block = "\n".join([f"• {item}" for item in legal_issues]) or "• Нет"
 
     return (
-        f"🔴 Риски ({len(risks)}):\\n"
-        f"{risks_block}\\n\\n"
-        f"🟡 Несоответствия ({len(mismatches)}):\\n"
-        f"{mismatches_block}\\n\\n"
-        f"⚖️ Юр. замечания ({len(legal_issues)}):\\n"
-        f"{legal_issues_block}\\n\\n"
-        f"✅ Рекомендация: {recommendation}\\n"
+        f"🔴 Риски ({len(risks)}):\n"
+        f"{risks_block}\n\n"
+        f"🟡 Несоответствия ({len(mismatches)}):\n"
+        f"{mismatches_block}\n\n"
+        f"⚖️ Юр. замечания ({len(legal_issues)}):\n"
+        f"{legal_issues_block}\n\n"
+        f"✅ Рекомендация: {recommendation}\n"
         f"Уверенность: {confidence_pct}%"
     )
