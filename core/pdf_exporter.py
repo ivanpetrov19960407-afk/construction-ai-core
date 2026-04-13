@@ -60,7 +60,7 @@ class PDFExporter:
     def _convert_with_weasyprint(self, docx_path: Path, pdf_path: Path) -> bool:
         try:
             from weasyprint import HTML
-        except ImportError:
+        except Exception:
             return False
 
         html_content = self._docx_to_html(docx_path)
