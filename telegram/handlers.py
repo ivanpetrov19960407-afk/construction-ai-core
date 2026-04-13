@@ -288,7 +288,8 @@ def _format_analyze_response(data: Mapping) -> str:
         if not isinstance(mismatches, list):
             mismatches = contradictions.get("non_compliances", [])
     mismatches = mismatches if isinstance(mismatches, list) else []
-    legal_issues = data.get("legal_issues", []) if isinstance(data.get("legal_issues"), list) else []
+    legal_issues_raw = data.get("legal_issues", [])
+    legal_issues = legal_issues_raw if isinstance(legal_issues_raw, list) else []
     recommendation = data.get("recommendation", "УТОЧНИТЬ")
     confidence = data.get("confidence", 0)
     is_fraction = isinstance(confidence, (int, float)) and confidence <= 1
