@@ -173,9 +173,16 @@ class Orchestrator:
         message: str,
         session_id: str,
         role: str,
+        include_legal_expert: bool = True,
     ) -> dict[str, Any]:
         """Запустить workflow по intent через LangGraph."""
         pipeline = self.get_workflow(intent)
+        if (
+            intent == "generate_letter"
+            and not include_legal_expert
+            and isinstance(pipeline, list)
+        ):
+            pipeline = [agent for agent in pipeline if agent != "legal_expert"]
         if not pipeline:
             return {
                 "reply": None,
@@ -211,6 +218,7 @@ class Orchestrator:
         session_id: str | None = None,
         role: str = "pto_engineer",
         intent: str | None = None,
+        include_legal_expert: bool = True,
     ) -> dict[str, Any]:
         """Обработать запрос пользователя.
 
@@ -234,7 +242,13 @@ class Orchestrator:
         intent = intent or await self._detect_intent(message)
 
         if intent != "chat":
-            result = await self._run_pipeline(intent, message, session_id, role)
+            result = await self._run_pipeline(
+                intent,
+                message,
+                session_id,
+                role,
+                include_legal_expert=include_legal_expert,
+            )
             if result.get("reply"):
                 self.session_memory.add(
                     session_id, role="assistant", content=str(result["reply"])
