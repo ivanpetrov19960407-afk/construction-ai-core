@@ -86,7 +86,7 @@ class FormatterAgent(BaseAgent):
         if isinstance(template_context, dict):
             docx_bytes = self.docx_generator.generate(template_name, template_context)
             state["docx_bytes"] = docx_bytes
-            final_output: dict[str, Any] = {
+            final_output = {
                 "template": template_name,
                 "context": template_context,
                 "export_format": export_format,
@@ -114,7 +114,7 @@ class FormatterAgent(BaseAgent):
             }
             docx_bytes = self.docx_generator.generate("ks_template", context)
             state["docx_bytes"] = docx_bytes
-            final_output: dict[str, Any] = {
+            final_output = {
                 "template": "ks_template",
                 "ks2": ks2_data,
                 "ks3": ks3_data,
@@ -137,7 +137,7 @@ class FormatterAgent(BaseAgent):
         docx_bytes = self.docx_generator.generate("tk_template", context)
 
         state["docx_bytes"] = docx_bytes
-        final_output: dict[str, Any] = {
+        final_output = {
             "template": "tk_template",
             "context": context,
             "export_format": export_format,
