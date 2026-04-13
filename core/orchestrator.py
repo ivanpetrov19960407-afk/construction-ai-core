@@ -121,7 +121,8 @@ class Orchestrator:
                 history = updated_state.get("history", [])
                 if history and isinstance(history[-1], dict):
                     history[-1]["agent_name"] = self._agent_display_name(_node_name)
-                    updated_state["final_output"] = str(history[-1].get("output", ""))
+                    if not isinstance(updated_state.get("final_output"), dict):
+                        updated_state["final_output"] = str(history[-1].get("output", ""))
                 return updated_state
 
             graph.add_node(node_name, _runner)

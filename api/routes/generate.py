@@ -6,18 +6,21 @@ import tempfile
 import uuid
 from enum import Enum
 from pathlib import Path
+from typing import Literal
 
-from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, field_validator
 
 from core.orchestrator import Orchestrator
+from core.pdf_exporter import PDFExporter
 from core.pdf_parser import PDFParser
 
 router = APIRouter()
 orchestrator = Orchestrator()
 session_memory = orchestrator.session_memory
 pdf_parser = PDFParser()
+pdf_exporter = PDFExporter()
 
 ALLOWED_UNITS = ["м³", "м²", "пог.м.", "шт.", "т", "кг"]
 MAX_UPLOAD_SIZE_BYTES = 20 * 1024 * 1024
@@ -128,6 +131,20 @@ class LetterResponse(BaseModel):
     confidence: float | None
 
 
+class PPRRequest(BaseModel):
+    """Запрос на генерацию ППР."""
+
+    work_type: str
+    object_name: str
+    developer: str = "ИИ-помощник Construction AI"
+    start_date: str
+    duration_days: int = Field(gt=0)
+    workers_count: int = Field(gt=0)
+    role: str = "pto_engineer"
+    session_id: str | None = None
+    export_format: Literal["docx", "pdf"] = "docx"
+
+
 @router.post("/generate/tk", response_model=TKResponse)
 async def generate_tk(payload: TKRequest, request: Request):
     """Генерация технологической карты (ТК) через orchestrator."""
@@ -234,6 +251,17 @@ async def generate_letter_v2(payload: LetterRequest, request: Request):
     history = state.get("history", []) if isinstance(state, dict) else []
     document = state.get("docx_payload") or {"content": result.get("reply")}
     legal_references = _extract_legal_references(history)
+    verification = state.get("verification", {}) if isinstance(state, dict) else {}
+    sha256 = (verification or {}).get("sha256")
+    docx_bytes = state.get("docx_bytes")
+    if isinstance(docx_bytes, bytes):
+        await session_memory.save_document(
+            session_id=session_id,
+            doc_type="letter",
+            filename=f"letter_{session_id}.docx",
+            docx_bytes=docx_bytes,
+            sha256=sha256,
+        )
 
     return LetterResponse(
         session_id=result["session_id"],
@@ -242,6 +270,95 @@ async def generate_letter_v2(payload: LetterRequest, request: Request):
         legal_references=legal_references,
         confidence=result.get("confidence"),
     )
+
+
+@router.post("/generate/ppr")
+async def generate_ppr(payload: PPRRequest, request: Request):
+    """Генерация ППР в DOCX/PDF."""
+    _ = request
+    session_id = payload.session_id or str(uuid.uuid4())
+    message = (
+        "Сформируй проект производства работ (ППР) на русском языке. "
+        f"Вид работ: {payload.work_type}. "
+        f"Объект: {payload.object_name}. "
+        f"Дата начала: {payload.start_date}. "
+        f"Длительность: {payload.duration_days} дней. "
+        f"Численность: {payload.workers_count} чел."
+    )
+    context = {
+        "work_type": payload.work_type,
+        "object_name": payload.object_name,
+        "general_data": (
+            f"Объект {payload.object_name}. Начало работ: {payload.start_date}. "
+            "Продолжительность: "
+            f"{payload.duration_days} дней. "
+            f"Состав звена: {payload.workers_count} чел."
+        ),
+        "ppr_sections": [
+            {"name": "Общие данные", "description": "Сведения об объекте и исходных данных"},
+            {"name": "Календарный план", "description": "Очередность и сроки выполнения работ"},
+            {"name": "Охрана труда", "description": "Меры безопасности и контроль рисков"},
+        ],
+        "site_plan_description": "Размещение временных зданий, складов и подъездных путей.",
+        "schedule_table": [
+            {
+                "stage": "Подготовительный этап",
+                "start_date": payload.start_date,
+                "duration_days": 5,
+            },
+            {
+                "stage": "Основные работы",
+                "start_date": payload.start_date,
+                "duration_days": payload.duration_days,
+            },
+        ],
+        "safety_measures": [
+            "Проведение вводного и целевого инструктажа.",
+            "Применение СИЗ и ограждений опасных зон.",
+            "Ежесменный контроль состояния техники.",
+        ],
+        "normative_docs": "СП 48.13330, СП 70.13330, ТК РФ ст. 214",
+        "developer": payload.developer,
+        "start_date": payload.start_date,
+    }
+    try:
+        result = await orchestrator.process(
+            message=message,
+            session_id=session_id,
+            role=payload.role,
+            intent="generate_tk",
+            extra_state={
+                "template_name": "ppr_template",
+                "template_context": context,
+                "export_format": payload.export_format,
+            },
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"LLM processing error: {exc}") from exc
+
+    state = result.get("state", {}) if isinstance(result, dict) else {}
+    file_bytes = (
+        state.get("pdf_bytes")
+        if payload.export_format == "pdf"
+        else state.get("docx_bytes")
+    )
+    if not isinstance(file_bytes, bytes):
+        raise HTTPException(status_code=500, detail="Generated file is empty")
+    filename_ext = "pdf" if payload.export_format == "pdf" else "docx"
+    await session_memory.save_document(
+        session_id=session_id,
+        doc_type="ppr",
+        filename=f"ppr_{session_id}.{filename_ext}",
+        docx_bytes=file_bytes,
+        sha256=(state.get("verification", {}) or {}).get("sha256"),
+    )
+
+    return {
+        "session_id": result["session_id"],
+        "document": state.get("final_output", {}),
+        "agents_used": result.get("agents_used", []),
+        "confidence": result.get("confidence"),
+    }
 
 
 @router.post("/generate/ks", response_model=KSResponse)
@@ -382,8 +499,12 @@ async def analyze_document(
 
 
 @router.get("/generate/tk/{session_id}/download")
-async def download_tk_docx(session_id: str, request: Request):
-    """Скачать ранее сгенерированный DOCX по session_id."""
+async def download_tk_docx(
+    session_id: str,
+    request: Request,
+    format: Literal["docx", "pdf"] = Query(default="docx"),
+):
+    """Скачать ранее сгенерированный DOCX/PDF по session_id."""
     _ = request
     documents = await session_memory.get_session_documents(session_id)
     tk_document = next((doc for doc in documents if doc.get("doc_type") == "tk"), None)
@@ -391,21 +512,36 @@ async def download_tk_docx(session_id: str, request: Request):
     if not docx_bytes:
         raise HTTPException(status_code=404, detail="DOCX not found for this session")
 
-    tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+    if format == "pdf":
+        docx_bytes = pdf_exporter.docx_to_pdf(docx_bytes, f"tk_{session_id}.docx")
+    suffix = ".pdf" if format == "pdf" else ".docx"
+    tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
     tmp_path = Path(tmp_file.name)
     with tmp_file:
         tmp_file.write(docx_bytes)
 
     return FileResponse(
         path=tmp_path,
-        media_type=("application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
-        filename=tk_document.get("filename") if tk_document else f"tk_{session_id}.docx",
+        media_type=(
+            "application/pdf"
+            if format == "pdf"
+            else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        ),
+        filename=(
+            f"tk_{session_id}.pdf"
+            if format == "pdf"
+            else (tk_document.get("filename") if tk_document else f"tk_{session_id}.docx")
+        ),
     )
 
 
 @router.get("/generate/ks/{session_id}/download")
-async def download_ks_docx(session_id: str, request: Request):
-    """Скачать ранее сгенерированный DOCX КС-2/КС-3 по session_id."""
+async def download_ks_docx(
+    session_id: str,
+    request: Request,
+    format: Literal["docx", "pdf"] = Query(default="docx"),
+):
+    """Скачать ранее сгенерированный DOCX/PDF КС-2/КС-3 по session_id."""
     _ = request
     documents = await session_memory.get_session_documents(session_id)
     ks_document = next((doc for doc in documents if doc.get("doc_type") == "ks"), None)
@@ -413,13 +549,65 @@ async def download_ks_docx(session_id: str, request: Request):
     if not docx_bytes:
         raise HTTPException(status_code=404, detail="DOCX not found for this session")
 
-    tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+    if format == "pdf":
+        docx_bytes = pdf_exporter.docx_to_pdf(docx_bytes, f"ks_{session_id}.docx")
+    suffix = ".pdf" if format == "pdf" else ".docx"
+    tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
     tmp_path = Path(tmp_file.name)
     with tmp_file:
         tmp_file.write(docx_bytes)
 
     return FileResponse(
         path=tmp_path,
-        media_type=("application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
-        filename=ks_document.get("filename") if ks_document else f"ks_{session_id}.docx",
+        media_type=(
+            "application/pdf"
+            if format == "pdf"
+            else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        ),
+        filename=(
+            f"ks_{session_id}.pdf"
+            if format == "pdf"
+            else (ks_document.get("filename") if ks_document else f"ks_{session_id}.docx")
+        ),
+    )
+
+
+@router.get("/generate/letter/{session_id}/download")
+async def download_letter_docx(
+    session_id: str,
+    request: Request,
+    format: Literal["docx", "pdf"] = Query(default="docx"),
+):
+    """Скачать ранее сгенерированный DOCX/PDF письма по session_id."""
+    _ = request
+    documents = await session_memory.get_session_documents(session_id)
+    letter_document = next((doc for doc in documents if doc.get("doc_type") == "letter"), None)
+    docx_bytes = letter_document.get("docx_bytes") if letter_document else None
+    if not docx_bytes:
+        raise HTTPException(status_code=404, detail="DOCX not found for this session")
+
+    if format == "pdf":
+        docx_bytes = pdf_exporter.docx_to_pdf(docx_bytes, f"letter_{session_id}.docx")
+    suffix = ".pdf" if format == "pdf" else ".docx"
+    tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+    tmp_path = Path(tmp_file.name)
+    with tmp_file:
+        tmp_file.write(docx_bytes)
+
+    return FileResponse(
+        path=tmp_path,
+        media_type=(
+            "application/pdf"
+            if format == "pdf"
+            else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        ),
+        filename=(
+            f"letter_{session_id}.pdf"
+            if format == "pdf"
+            else (
+                letter_document.get("filename")
+                if letter_document
+                else f"letter_{session_id}.docx"
+            )
+        ),
     )

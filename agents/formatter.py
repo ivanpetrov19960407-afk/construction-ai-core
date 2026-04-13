@@ -8,6 +8,7 @@ from typing import Any
 from agents.base import BaseAgent
 from core.docx_generator import DocxGenerator
 from core.llm_router import LLMRouter
+from core.pdf_exporter import PDFExporter
 
 
 class FormatterAgent(BaseAgent):
@@ -18,6 +19,7 @@ class FormatterAgent(BaseAgent):
     def __init__(self, llm_router: LLMRouter) -> None:
         super().__init__(agent_id="07", llm_router=llm_router)
         self.docx_generator = DocxGenerator()
+        self.pdf_exporter = PDFExporter()
 
     def _extract_verifier_output(self, state: dict[str, Any]) -> str:
         history = state.get("history", [])
@@ -77,6 +79,26 @@ class FormatterAgent(BaseAgent):
         }
 
     async def _run(self, state: dict[str, Any]) -> dict[str, Any]:
+        export_format = str(state.get("export_format", "docx")).lower()
+        template_name = str(state.get("template_name", "tk_template"))
+        template_context = state.get("template_context")
+
+        if isinstance(template_context, dict):
+            docx_bytes = self.docx_generator.generate(template_name, template_context)
+            state["docx_bytes"] = docx_bytes
+            final_output: dict[str, Any] = {
+                "template": template_name,
+                "context": template_context,
+                "export_format": export_format,
+                "docx_size": len(docx_bytes),
+            }
+            if export_format == "pdf":
+                pdf_bytes = self.pdf_exporter.docx_to_pdf(docx_bytes, template_name)
+                state["pdf_bytes"] = pdf_bytes
+                final_output["pdf_size"] = len(pdf_bytes)
+            state["final_output"] = final_output
+            return self._update_state(state, f"{template_name} {export_format.upper()} generated")
+
         if "ks2_data" in state and "ks3_data" in state:
             ks2_data = state.get("ks2_data", {})
             ks3_data = state.get("ks3_data", {})
@@ -92,13 +114,19 @@ class FormatterAgent(BaseAgent):
             }
             docx_bytes = self.docx_generator.generate("ks_template", context)
             state["docx_bytes"] = docx_bytes
-            state["docx_payload"] = {
+            final_output: dict[str, Any] = {
                 "template": "ks_template",
                 "ks2": ks2_data,
                 "ks3": ks3_data,
+                "export_format": export_format,
             }
-            state["final_output"] = state["docx_payload"]
-            return self._update_state(state, "KS DOCX generated")
+            state["docx_payload"] = final_output
+            if export_format == "pdf":
+                pdf_bytes = self.pdf_exporter.docx_to_pdf(docx_bytes, "ks_template")
+                state["pdf_bytes"] = pdf_bytes
+                final_output["pdf_size"] = len(pdf_bytes)
+            state["final_output"] = final_output
+            return self._update_state(state, f"KS {export_format.upper()} generated")
 
         verifier_output = self._extract_verifier_output(state)
         response = await self.llm_router.query(
@@ -109,10 +137,16 @@ class FormatterAgent(BaseAgent):
         docx_bytes = self.docx_generator.generate("tk_template", context)
 
         state["docx_bytes"] = docx_bytes
-        state["final_output"] = {
+        final_output: dict[str, Any] = {
             "template": "tk_template",
             "context": context,
+            "export_format": export_format,
             "docx_size": len(docx_bytes),
         }
+        if export_format == "pdf":
+            pdf_bytes = self.pdf_exporter.docx_to_pdf(docx_bytes, "tk_template")
+            state["pdf_bytes"] = pdf_bytes
+            final_output["pdf_size"] = len(pdf_bytes)
+        state["final_output"] = final_output
 
         return self._update_state(state, response.text)
