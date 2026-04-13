@@ -50,3 +50,6 @@ node_modules/
 .coverage
 htmlcov/
 .mypy_cache/
+
+# ── Generated DOCX templates ───────────
+templates/*.docx

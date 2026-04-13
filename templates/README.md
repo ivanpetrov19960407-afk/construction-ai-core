@@ -1,11 +1,17 @@
 # Templates
 
-В репозитории не храним бинарные `.docx` файлы.
+В репозитории **не храним** бинарные `.docx` файлы.
 
-`tk_template.docx` создаётся автоматически в рантайме классом `DocxGenerator`
-при первом вызове `generate("tk_template", context)`.
+Все шаблоны создаются скриптом:
 
-`ks_template.docx` также создаётся автоматически в рантайме (или скриптом `python scripts/generate_ks_template.py`).
+```bash
+python scripts/generate_templates.py
+```
 
-`ppr_template.docx` создаётся автоматически в рантайме классом `DocxGenerator`
-при первом вызове `generate("ppr_template", context)`.
+Скрипт генерирует:
+- `tk_template.docx`
+- `letter_template.docx`
+- `ks_template.docx`
+- `ppr_template.docx`
+
+`DocxGenerator` также автоматически запускает генерацию, если нужного шаблона нет в `templates/`.
