@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 
 from config.settings import settings
-from core.database import get_db
+from core.database import get_db, init_db
 
 
 class SessionMemory:
@@ -14,8 +15,20 @@ class SessionMemory:
     def __init__(self, max_messages: int = 50, db_path: str | None = None) -> None:
         self.max_messages = max_messages
         self.db_path = db_path or settings.sqlite_db_path
+        self._db_initialized = False
+        self._db_init_lock = asyncio.Lock()
+
+    async def _ensure_db_initialized(self) -> None:
+        if self._db_initialized:
+            return
+        async with self._db_init_lock:
+            if self._db_initialized:
+                return
+            await init_db(self.db_path)
+            self._db_initialized = True
 
     async def _ensure_session(self, session_id: str, role: str, timestamp: str) -> None:
+        await self._ensure_db_initialized()
         async with get_db(self.db_path) as db:
             await db.execute(
                 """
@@ -65,6 +78,7 @@ class SessionMemory:
         if last_n <= 0:
             return []
 
+        await self._ensure_db_initialized()
         async with get_db(self.db_path) as db:
             cursor = await db.execute(
                 """
@@ -83,6 +97,7 @@ class SessionMemory:
 
     async def clear(self, session_id: str) -> None:
         """Очистить историю и документы конкретной сессии."""
+        await self._ensure_db_initialized()
         async with get_db(self.db_path) as db:
             await db.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
             await db.execute("DELETE FROM documents WHERE session_id = ?", (session_id,))
@@ -91,6 +106,7 @@ class SessionMemory:
 
     async def get_session_documents(self, session_id: str) -> list[dict]:
         """Получить список документов сессии (новые первыми)."""
+        await self._ensure_db_initialized()
         async with get_db(self.db_path) as db:
             cursor = await db.execute(
                 """
