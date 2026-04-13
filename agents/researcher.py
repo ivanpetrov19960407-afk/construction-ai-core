@@ -22,7 +22,7 @@ class ResearcherAgent(BaseAgent):
         super().__init__(agent_id="01", llm_router=llm_router)
         self.rag_engine = RAGEngine()
 
-    async def run(self, state: dict[str, Any]) -> dict[str, Any]:
+    async def _run(self, state: dict[str, Any]) -> dict[str, Any]:
         message = str(state.get("message", ""))
         role = str(state.get("role", "")) or None
         chunks = await self.rag_engine.search(message, filter_scope=role)

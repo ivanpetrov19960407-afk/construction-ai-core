@@ -1,0 +1,69 @@
+{
+  "title": "Construction AI Core Overview",
+  "timezone": "browser",
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "15s",
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Requests per second (HTTP)",
+      "targets": [
+        {
+          "expr": "sum(rate(http_requests_total[1m]))",
+          "legendFormat": "RPS"
+        }
+      ],
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Pipeline duration p50/p95/p99",
+      "targets": [
+        {"expr": "histogram_quantile(0.50, sum by (le) (rate(construction_ai_pipeline_duration_seconds_bucket[5m])))", "legendFormat": "p50"},
+        {"expr": "histogram_quantile(0.95, sum by (le) (rate(construction_ai_pipeline_duration_seconds_bucket[5m])))", "legendFormat": "p95"},
+        {"expr": "histogram_quantile(0.99, sum by (le) (rate(construction_ai_pipeline_duration_seconds_bucket[5m])))", "legendFormat": "p99"}
+      ],
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+    },
+    {
+      "id": 3,
+      "type": "barchart",
+      "title": "Agent runs by agent_id (stacked bar)",
+      "options": {"stacking": "normal"},
+      "targets": [
+        {
+          "expr": "sum by (agent_id, status) (increase(construction_ai_agent_runs_total[5m]))",
+          "legendFormat": "{{agent_id}} {{status}}"
+        }
+      ],
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "LLM tokens per minute",
+      "targets": [
+        {
+          "expr": "sum by (provider, direction) (rate(construction_ai_llm_tokens_total[1m])) * 60",
+          "legendFormat": "{{provider}} {{direction}}"
+        }
+      ],
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}
+    },
+    {
+      "id": 5,
+      "type": "gauge",
+      "title": "Active sessions gauge",
+      "targets": [
+        {
+          "expr": "construction_ai_active_sessions",
+          "legendFormat": "active sessions"
+        }
+      ],
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16}
+    }
+  ]
+}

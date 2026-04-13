@@ -5,6 +5,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any
 
+from api.metrics import AGENT_RUNS
 from core.llm_router import LLMRouter
 
 
@@ -18,9 +19,19 @@ class BaseAgent(ABC):
         self.agent_id = agent_id
         self.llm_router = llm_router
 
-    @abstractmethod
     async def run(self, state: dict[str, Any]) -> dict[str, Any]:
         """Запустить агента и вернуть обновлённый state."""
+        try:
+            result = await self._run(state)
+            AGENT_RUNS.labels(agent_id=self.agent_id, status="success").inc()
+            return result
+        except Exception:
+            AGENT_RUNS.labels(agent_id=self.agent_id, status="error").inc()
+            raise
+
+    @abstractmethod
+    async def _run(self, state: dict[str, Any]) -> dict[str, Any]:
+        """Внутренняя реализация выполнения конкретного агента."""
 
     def _build_prompt(self, state: dict[str, Any]) -> str:
         """Собрать финальный prompt из message и context."""

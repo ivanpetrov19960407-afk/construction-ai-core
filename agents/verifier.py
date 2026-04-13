@@ -30,7 +30,7 @@ class VerifierAgent(BaseAgent):
             return "НЕ УЧАСТВОВАТЬ"
         return "УТОЧНИТЬ"
 
-    async def run(self, state: dict[str, Any]) -> dict[str, Any]:
+    async def _run(self, state: dict[str, Any]) -> dict[str, Any]:
         confidence = float(state.get("confidence", 0.0))
         conflict_rate = float(state.get("conflict_rate", 1.0))
 

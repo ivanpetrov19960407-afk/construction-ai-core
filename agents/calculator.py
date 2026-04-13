@@ -27,7 +27,7 @@ class CalculatorAgent(BaseAgent):
             return max((end - start).days + 1, 1)
         return 1
 
-    async def run(self, state: dict[str, Any]) -> dict[str, Any]:
+    async def _run(self, state: dict[str, Any]) -> dict[str, Any]:
         calc_params = state.get("calculation_params", {})
         if not isinstance(calc_params, dict):
             raise TypeError("state['calculation_params'] must be a dict")
