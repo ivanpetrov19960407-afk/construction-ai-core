@@ -79,6 +79,29 @@ class FormatterAgent(BaseAgent):
         }
 
     async def run(self, state: dict[str, Any]) -> dict[str, Any]:
+        if "ks2_data" in state and "ks3_data" in state:
+            ks2_data = state.get("ks2_data", {})
+            ks3_data = state.get("ks3_data", {})
+            context = {
+                "object_name": state.get("object_name", "Не указан"),
+                "contract_number": state.get("contract_number", "Не указан"),
+                "period_from": state.get("period_from", ""),
+                "period_to": state.get("period_to", ""),
+                "work_items": ks2_data.get("work_items", []),
+                "total_cost": ks2_data.get("total_cost", 0.0),
+                "total_hours": ks2_data.get("total_hours", 0.0),
+                "workers_needed": ks3_data.get("workers_needed", 0),
+            }
+            docx_bytes = self.docx_generator.generate("ks_template", context)
+            state["docx_bytes"] = docx_bytes
+            state["docx_payload"] = {
+                "template": "ks_template",
+                "ks2": ks2_data,
+                "ks3": ks3_data,
+            }
+            state["final_output"] = state["docx_payload"]
+            return self._update_state(state, "KS DOCX generated")
+
         verifier_output = self._extract_verifier_output(state)
         context = self._parse_context(verifier_output, state)
         docx_bytes = self.docx_generator.generate("tk_template", context)

@@ -63,6 +63,40 @@ class TKResponse(BaseModel):
     sha256: str | None
 
 
+class WorkItem(BaseModel):
+    """Позиция работ для КС-2/КС-3."""
+
+    name: str
+    unit: str
+    volume: float
+    norm_hours: float
+    price_per_unit: float
+
+
+class KSRequest(BaseModel):
+    """Запрос на генерацию КС-2/КС-3."""
+
+    object_name: str
+    contract_number: str
+    period_from: str
+    period_to: str
+    work_items: list[WorkItem] = Field(min_length=1, max_length=50)
+    role: str = "pto_engineer"
+    session_id: str | None = None
+
+
+class KSResponse(BaseModel):
+    """Ответ на генерацию КС-2/КС-3."""
+
+    session_id: str
+    ks2: dict
+    ks3: dict
+    docx_bytes_key: str
+    total_cost: float
+    total_hours: float
+    sha256: str | None
+
+
 class LetterType(str, Enum):
     """Тип делового письма."""
 
@@ -135,7 +169,7 @@ async def generate_tk(request: TKRequest):
         document=document,
         agents_used=result.get("agents_used", []),
         confidence=result.get("confidence"),
-        sha256=result.get("sha256"),
+        sha256=(state.get("verification", {}) or {}).get("sha256") if isinstance(state, dict) else None,
     )
 
 
@@ -203,10 +237,62 @@ async def generate_letter_v2(request: LetterRequest):
     )
 
 
-@router.post("/generate/ks")
-async def generate_ks():
-    """Генерация КС-2/КС-3 (Фаза 4)."""
-    return {"status": "not_implemented", "message": "КС-2/КС-3 запланирован на Фазу 4"}
+@router.post("/generate/ks", response_model=KSResponse)
+async def generate_ks(request: KSRequest):
+    """Генерация КС-2/КС-3 через orchestrator pipeline."""
+    session_id = request.session_id or str(uuid.uuid4())
+    work_names = ", ".join(item.name for item in request.work_items)
+    message = (
+        "Сформируй КС-2/КС-3 на русском языке. "
+        f"Объект: {request.object_name}. "
+        f"Договор: {request.contract_number}. "
+        f"Период: {request.period_from} — {request.period_to}. "
+        f"Наименования работ: {work_names}."
+    )
+
+    extra_state = {
+        "object_name": request.object_name,
+        "contract_number": request.contract_number,
+        "period_from": request.period_from,
+        "period_to": request.period_to,
+        "calculation_params": {"work_items": [item.model_dump() for item in request.work_items]},
+        "context": (
+            "Подготовь описательную часть КС-2 для следующих работ: "
+            f"{work_names}."
+        ),
+    }
+
+    try:
+        result = await orchestrator.process(
+            message=message,
+            session_id=session_id,
+            role=request.role,
+            intent="generate_ks",
+            extra_state=extra_state,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"LLM processing error: {exc}") from exc
+
+    state = result.get("state", {}) if isinstance(result, dict) else {}
+    ks2 = state.get("ks2_data", {})
+    ks3 = state.get("ks3_data", {})
+    total_cost = float(ks2.get("total_cost", 0.0))
+    total_hours = float(ks2.get("total_hours", 0.0))
+
+    docx_bytes = state.get("docx_bytes")
+    docx_bytes_key = session_id
+    if isinstance(docx_bytes, bytes):
+        DOCX_CACHE[docx_bytes_key] = docx_bytes
+
+    return KSResponse(
+        session_id=result["session_id"],
+        ks2=ks2,
+        ks3=ks3,
+        docx_bytes_key=docx_bytes_key,
+        total_cost=total_cost,
+        total_hours=total_hours,
+        sha256=(state.get("verification", {}) or {}).get("sha256") if isinstance(state, dict) else None,
+    )
 
 
 def _is_tender_document(filename: str, text_chunks: list[str]) -> bool:
@@ -300,4 +386,25 @@ async def download_tk_docx(session_id: str):
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         ),
         filename=f"tk_{session_id}.docx",
+    )
+
+
+@router.get("/generate/ks/{session_id}/download")
+async def download_ks_docx(session_id: str):
+    """Скачать ранее сгенерированный DOCX КС-2/КС-3 по session_id."""
+    docx_bytes = DOCX_CACHE.get(session_id)
+    if not docx_bytes:
+        raise HTTPException(status_code=404, detail="DOCX not found for this session")
+
+    tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+    tmp_path = Path(tmp_file.name)
+    with tmp_file:
+        tmp_file.write(docx_bytes)
+
+    return FileResponse(
+        path=tmp_path,
+        media_type=(
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        ),
+        filename=f"ks_{session_id}.docx",
     )

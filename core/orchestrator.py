@@ -174,6 +174,7 @@ class Orchestrator:
         session_id: str,
         role: str,
         include_legal_expert: bool = True,
+        extra_state: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Запустить workflow по intent через LangGraph."""
         pipeline = self.get_workflow(intent)
@@ -202,6 +203,8 @@ class Orchestrator:
             "critic_iterations": 0,
             "final_output": None,
         }
+        if extra_state:
+            initial_state.update(extra_state)
 
         final_state = await graph.ainvoke(initial_state)
         return {
@@ -219,6 +222,7 @@ class Orchestrator:
         role: str = "pto_engineer",
         intent: str | None = None,
         include_legal_expert: bool = True,
+        extra_state: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Обработать запрос пользователя.
 
@@ -248,6 +252,7 @@ class Orchestrator:
                 session_id,
                 role,
                 include_legal_expert=include_legal_expert,
+                extra_state=extra_state,
             )
             if result.get("reply"):
                 self.session_memory.add(
