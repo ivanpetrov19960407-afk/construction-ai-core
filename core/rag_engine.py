@@ -46,15 +46,16 @@ class RAGEngine:
         result = cast(Any, self.collection).query(
             query_embeddings=[query_embedding],
             n_results=n_results,
-            include=["documents", "metadatas"],
+            include=["documents", "metadatas", "distances"],
             where=where,
         )
 
         documents = cast(list[list[str]], result.get("documents") or [[]])
         metadatas = cast(list[list[dict[str, Any]]], result.get("metadatas") or [[]])
+        distances = cast(list[list[float]], result.get("distances") or [[]])
 
         rows: list[dict] = []
-        for text, meta in zip(documents[0], metadatas[0], strict=False):
+        for text, meta, distance in zip(documents[0], metadatas[0], distances[0], strict=False):
             metadata = meta or {}
             rows.append(
                 {
@@ -63,6 +64,7 @@ class RAGEngine:
                     "page": int(metadata.get("page", 0)),
                     "tags": list(metadata.get("tags", [])),
                     "scope": list(metadata.get("scope", [])),
+                    "score": max(0.0, 1.0 - float(distance)),
                 }
             )
         return rows
