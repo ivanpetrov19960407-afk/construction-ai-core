@@ -26,8 +26,10 @@ class Settings(BaseSettings):
     sqlite_db_path: str = "./data/construction_ai.db"
 
     # ── ChromaDB ───────────────────────────────
-    # ENV: CHROMA_PERSIST_DIR
     chroma_persist_dir: str = "./data/chroma"
+
+    # ── RAG ────────────────────────────────────
+    rag_embeddings_backend: str = "sentence_transformers"
 
     # ── Redis (серверный деплой) ────────────────
     redis_url: str | None = None
@@ -41,7 +43,11 @@ class Settings(BaseSettings):
     # ── tk-generator ───────────────────────────
     tk_generator_path: str = "../tk-generator"
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    model_config = {
+        "env_file": ".env",
+        "env_file_encoding": "utf-8",
+        "extra": "ignore",
+    }
 
 
 settings = Settings()
