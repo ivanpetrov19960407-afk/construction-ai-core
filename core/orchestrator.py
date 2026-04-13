@@ -204,8 +204,12 @@ class Orchestrator:
 
         with PIPELINE_DURATION.labels(intent=intent).time():
             final_state = await cast(Any, graph).ainvoke(initial_state)
+        history = final_state.get("history", [])
+        last_output = ""
+        if history and isinstance(history[-1], dict):
+            last_output = str(history[-1].get("output", ""))
         return {
-            "reply": final_state.get("final_output"),
+            "reply": last_output,
             "session_id": session_id,
             "agents_used": pipeline,
             "confidence": final_state.get("confidence"),

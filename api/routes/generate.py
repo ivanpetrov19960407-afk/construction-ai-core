@@ -337,17 +337,14 @@ async def generate_ppr(payload: PPRRequest, request: Request):
         raise HTTPException(status_code=500, detail=f"LLM processing error: {exc}") from exc
 
     state = result.get("state", {}) if isinstance(result, dict) else {}
-    file_bytes = (
-        state.get("pdf_bytes") if payload.export_format == "pdf" else state.get("docx_bytes")
-    )
-    if not isinstance(file_bytes, bytes):
-        raise HTTPException(status_code=500, detail="Generated file is empty")
-    filename_ext = "pdf" if payload.export_format == "pdf" else "docx"
+    docx_bytes = state.get("docx_bytes")
+    if not isinstance(docx_bytes, bytes):
+        raise HTTPException(status_code=500, detail="Generated DOCX is empty")
     await session_memory.save_document(
         session_id=session_id,
         doc_type="ppr",
-        filename=f"ppr_{session_id}.{filename_ext}",
-        docx_bytes=file_bytes,
+        filename=f"ppr_{session_id}.docx",
+        docx_bytes=docx_bytes,
         sha256=(state.get("verification", {}) or {}).get("sha256"),
     )
 
@@ -605,5 +602,42 @@ async def download_letter_docx(
             else (
                 letter_document.get("filename") if letter_document else f"letter_{session_id}.docx"
             )
+        ),
+    )
+
+
+@router.get("/generate/ppr/{session_id}/download")
+async def download_ppr_docx(
+    session_id: str,
+    request: Request,
+    format: Literal["docx", "pdf"] = Query(default="docx"),
+):
+    """Скачать ранее сгенерированный DOCX/PDF ППР по session_id."""
+    _ = request
+    documents = await session_memory.get_session_documents(session_id)
+    ppr_document = next((doc for doc in documents if doc.get("doc_type") == "ppr"), None)
+    docx_bytes = ppr_document.get("docx_bytes") if ppr_document else None
+    if not docx_bytes:
+        raise HTTPException(status_code=404, detail="DOCX not found for this session")
+
+    if format == "pdf":
+        docx_bytes = pdf_exporter.docx_to_pdf(docx_bytes, f"ppr_{session_id}.docx")
+    suffix = ".pdf" if format == "pdf" else ".docx"
+    tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+    tmp_path = Path(tmp_file.name)
+    with tmp_file:
+        tmp_file.write(docx_bytes)
+
+    return FileResponse(
+        path=tmp_path,
+        media_type=(
+            "application/pdf"
+            if format == "pdf"
+            else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        ),
+        filename=(
+            f"ppr_{session_id}.pdf"
+            if format == "pdf"
+            else (ppr_document.get("filename") if ppr_document else f"ppr_{session_id}.docx")
         ),
     )
