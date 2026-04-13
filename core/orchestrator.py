@@ -25,6 +25,7 @@ from agents.verifier import VerifierAgent
 from api.metrics import PIPELINE_DURATION
 from core.llm_router import LLMRouter
 from core.session_memory import SessionMemory
+from core.tk_bridge import TKGeneratorBridge
 
 
 class PipelineState(TypedDict):
@@ -54,6 +55,7 @@ class Orchestrator:
         self.config = self._load_config()
         self.llm_router = LLMRouter()
         self.session_memory = SessionMemory()
+        self.tk_bridge = TKGeneratorBridge()
         self.agents: dict[str, dict] = {agent["id"]: agent for agent in self.config["agents"]}
 
     def _load_config(self) -> dict:
@@ -167,6 +169,24 @@ class Orchestrator:
 
         return graph
 
+    def _build_tk_generator_input(
+        self,
+        message: str,
+        role: str,
+        extra_state: dict[str, Any] | None,
+        calculator_state: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Собрать payload для внешнего tk-generator."""
+        extra_state = extra_state or {}
+        payload = dict(extra_state.get("tk_generator_input", {}))
+        payload.setdefault("message", message)
+        payload.setdefault("role", role)
+        payload["calculations"] = {
+            "ks2_data": calculator_state.get("ks2_data", {}),
+            "ks3_data": calculator_state.get("ks3_data", {}),
+        }
+        return payload
+
     async def _run_pipeline(
         self,
         intent: str,
@@ -188,6 +208,50 @@ class Orchestrator:
                 "confidence": None,
             }
 
+        tk_bridge_result: dict[str, Any] | None = None
+        tk_bridge_enabled = intent == "generate_tk" and self.tk_bridge.is_available()
+        if tk_bridge_enabled:
+            try:
+                calculator_state: dict[str, Any] = {
+                    "history": [],
+                    "calculation_params": {
+                        "work_items": [
+                            {
+                                "name": (extra_state or {}).get("work_type", "Работы по ТК"),
+                                "unit": (extra_state or {}).get("unit", "шт."),
+                                "volume": float((extra_state or {}).get("volume", 1.0)),
+                                "norm_hours": 1.0,
+                                "price_per_unit": 0.0,
+                            }
+                        ]
+                    },
+                }
+                calculator_agent = self._get_agent("calculator")
+                calculator_state = await cast(Any, calculator_agent).run(calculator_state)
+                tk_input = self._build_tk_generator_input(
+                    message, role, extra_state, calculator_state
+                )
+                tk_bridge_result = await self.tk_bridge.generate(tk_input)
+
+                bridge_context = (
+                    "\n\nДетерминированная часть подготовлена tk-generator. "
+                    f"Файлы: DOCX={tk_bridge_result.get('docx_path', '')}, "
+                    f"PDF={tk_bridge_result.get('pdf_path', '')}. "
+                    "Используй эти данные как основу и дополни описательную часть документа."
+                )
+                merged_state = dict(extra_state or {})
+                merged_state["tk_bridge_result"] = tk_bridge_result
+                merged_state["calculation_result"] = {
+                    "ks2_data": calculator_state.get("ks2_data", {}),
+                    "ks3_data": calculator_state.get("ks3_data", {}),
+                }
+                merged_state["context"] = (
+                    f"{merged_state.get('context', '')}{bridge_context}".strip()
+                )
+                extra_state = merged_state
+            except Exception:
+                tk_bridge_result = None
+
         graph = self._build_graph(pipeline).compile()
         initial_state: PipelineState = {
             "message": message,
@@ -208,13 +272,16 @@ class Orchestrator:
         last_output = ""
         if history and isinstance(history[-1], dict):
             last_output = str(history[-1].get("output", ""))
-        return {
+        result_payload = {
             "reply": last_output,
             "session_id": session_id,
             "agents_used": pipeline,
             "confidence": final_state.get("confidence"),
             "state": final_state,
         }
+        if tk_bridge_result:
+            result_payload["tk_bridge_result"] = tk_bridge_result
+        return result_payload
 
     async def process(
         self,
