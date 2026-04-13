@@ -14,8 +14,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Зависимости Python — напрямую без hatchling build
+# Сначала ставим CPU-only PyTorch (без CUDA — экономит ~2.5 ГБ)
 COPY pyproject.toml README.md ./
 RUN pip install --no-cache-dir \
+    torch --index-url https://download.pytorch.org/whl/cpu \
+ && pip install --no-cache-dir \
     "fastapi>=0.115.0" \
     "uvicorn[standard]>=0.30.0" \
     "langgraph>=0.2.0" \
