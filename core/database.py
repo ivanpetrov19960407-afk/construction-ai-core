@@ -8,18 +8,28 @@ from pathlib import Path
 
 import aiosqlite
 
+_SHARED_MEMORY_URI = "file:construction_ai_core_memdb?mode=memory&cache=shared"
+_memory_keepalive: aiosqlite.Connection | None = None
+
 
 def _is_sqlite_uri(db_path: str) -> bool:
     return db_path.startswith("file:")
 
 
+def _normalize_db_path(db_path: str) -> tuple[str, bool]:
+    if db_path == ":memory:":
+        return _SHARED_MEMORY_URI, True
+    return db_path, _is_sqlite_uri(db_path)
+
+
 @asynccontextmanager
 async def get_db(db_path: str) -> AsyncIterator[aiosqlite.Connection]:
     """Вернуть контекстный менеджер подключения к SQLite."""
-    if not _is_sqlite_uri(db_path):
-        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+    resolved_path, use_uri = _normalize_db_path(db_path)
+    if not use_uri:
+        Path(resolved_path).parent.mkdir(parents=True, exist_ok=True)
 
-    connection = await aiosqlite.connect(db_path, uri=_is_sqlite_uri(db_path))
+    connection = await aiosqlite.connect(resolved_path, uri=use_uri)
     connection.row_factory = aiosqlite.Row
     await connection.execute("PRAGMA foreign_keys = ON;")
     try:
@@ -30,6 +40,13 @@ async def get_db(db_path: str) -> AsyncIterator[aiosqlite.Connection]:
 
 async def init_db(db_path: str) -> None:
     """Инициализировать таблицы хранилища сессий."""
+    global _memory_keepalive
+    resolved_path, use_uri = _normalize_db_path(db_path)
+    if db_path == ":memory:" and _memory_keepalive is None:
+        _memory_keepalive = await aiosqlite.connect(resolved_path, uri=use_uri)
+        _memory_keepalive.row_factory = aiosqlite.Row
+        await _memory_keepalive.execute("PRAGMA foreign_keys = ON;")
+
     async with get_db(db_path) as db:
         await db.execute(
             """
