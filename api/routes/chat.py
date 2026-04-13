@@ -1,11 +1,14 @@
 """Chat endpoint — основной интерфейс общения с ИИ."""
 
+import uuid
+
 from fastapi import APIRouter
 from pydantic import BaseModel
 
 from core.orchestrator import Orchestrator
 
 router = APIRouter()
+orchestrator = Orchestrator()
 
 
 class ChatRequest(BaseModel):
@@ -28,10 +31,10 @@ class ChatResponse(BaseModel):
 @router.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
     """Обработать сообщение пользователя через оркестратор."""
-    orchestrator = Orchestrator()
+    session_id = request.session_id or str(uuid.uuid4())
     result = await orchestrator.process(
         message=request.message,
-        session_id=request.session_id,
+        session_id=session_id,
         role=request.role,
     )
     return result

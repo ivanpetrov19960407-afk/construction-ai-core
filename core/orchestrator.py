@@ -23,6 +23,7 @@ from agents.legal_expert import LegalExpertAgent
 from agents.researcher import ResearcherAgent
 from agents.verifier import VerifierAgent
 from core.llm_router import LLMRouter
+from core.session_memory import SessionMemory
 
 
 class PipelineState(TypedDict):
@@ -35,6 +36,7 @@ class PipelineState(TypedDict):
     audit_log: list[dict]
     critic_iterations: int
     final_output: str | None
+    conversation_history: list[dict[str, str]]
 
 
 class Orchestrator:
@@ -50,6 +52,7 @@ class Orchestrator:
         )
         self.config = self._load_config()
         self.llm_router = LLMRouter()
+        self.session_memory = SessionMemory()
         self.agents: dict[str, dict] = {
             agent["id"]: agent for agent in self.config["agents"]
         }
@@ -186,6 +189,7 @@ class Orchestrator:
             "message": message,
             "session_id": session_id,
             "role": role,
+            "conversation_history": self.session_memory.get(session_id, last_n=10),
             "history": [],
             "audit_log": [],
             "critic_iterations": 0,
@@ -223,11 +227,17 @@ class Orchestrator:
             Словарь с ответом и метаданными.
         """
         session_id = session_id or str(uuid.uuid4())
+        self.session_memory.add(session_id, role="user", content=message)
 
         intent = await self._detect_intent(message)
 
         if intent != "chat":
-            return await self._run_pipeline(intent, message, session_id, role)
+            result = await self._run_pipeline(intent, message, session_id, role)
+            if result.get("reply"):
+                self.session_memory.add(
+                    session_id, role="assistant", content=str(result["reply"])
+                )
+            return result
 
         # TODO: Фаза 1 — базовый чат через LLM Router
         # Пока без полноценного pipeline, просто прямой запрос к LLM
@@ -238,6 +248,7 @@ class Orchestrator:
                 prompt=message,
                 system_prompt=system_prompt,
             )
+            self.session_memory.add(session_id, role="assistant", content=response.text)
             return {
                 "reply": response.text,
                 "session_id": session_id,
@@ -245,6 +256,11 @@ class Orchestrator:
                 "confidence": None,
             }
         except Exception as e:
+            self.session_memory.add(
+                session_id,
+                role="assistant",
+                content=f"Ошибка обработки: {e}",
+            )
             return {
                 "reply": f"Ошибка обработки: {e}",
                 "session_id": session_id,
