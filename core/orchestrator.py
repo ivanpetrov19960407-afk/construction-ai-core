@@ -37,6 +37,65 @@ class Orchestrator:
         with open(self.config_path) as f:
             return json.load(f)
 
+    async def _detect_intent(self, message: str) -> str:
+        """Определить intent пользовательского запроса через LLMRouter."""
+        system_prompt = (
+            "Определи intent запроса. "
+            "Верни ровно одно слово из списка: "
+            "generate_tk, generate_letter, analyze_tender, generate_ks, chat."
+        )
+        response = await self.llm_router.query(
+            prompt=message,
+            system_prompt=system_prompt,
+        )
+
+        intent = response.text.strip().lower()
+        allowed_intents = {
+            "generate_tk",
+            "generate_letter",
+            "analyze_tender",
+            "generate_ks",
+            "chat",
+        }
+        return intent if intent in allowed_intents else "chat"
+
+    async def _run_pipeline(
+        self,
+        intent: str,
+        message: str,
+        session_id: str,
+        role: str,
+    ) -> dict[str, Any]:
+        """Stub для запуска pipeline по intent."""
+        _ = (message, role)
+        pipeline_map = {
+            "generate_tk": ["researcher", "author", "critic", "verifier", "formatter"],
+            "generate_letter": [
+                "researcher",
+                "author",
+                "legal_expert",
+                "critic",
+                "verifier",
+                "formatter",
+            ],
+            "analyze_tender": ["researcher", "analyst", "legal_expert", "verifier"],
+            "generate_ks": [
+                "researcher",
+                "calculator",
+                "author",
+                "critic",
+                "verifier",
+                "formatter",
+            ],
+        }
+        agents_used = pipeline_map.get(intent, [])
+        return {
+            "reply": f"Pipeline {intent} запущен (stub)",
+            "session_id": session_id,
+            "agents_used": agents_used,
+            "confidence": None,
+        }
+
     async def process(
         self,
         message: str,
@@ -59,6 +118,11 @@ class Orchestrator:
             Словарь с ответом и метаданными.
         """
         session_id = session_id or str(uuid.uuid4())
+
+        intent = await self._detect_intent(message)
+
+        if intent != "chat":
+            return await self._run_pipeline(intent, message, session_id, role)
 
         # TODO: Фаза 1 — базовый чат через LLM Router
         # Пока без полноценного pipeline, просто прямой запрос к LLM
