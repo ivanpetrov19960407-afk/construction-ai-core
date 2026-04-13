@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./data/construction_ai.db"
 
     # ── ChromaDB ───────────────────────────────
+    # ENV: CHROMA_PERSIST_DIR
     chroma_persist_dir: str = "./data/chroma"
 
     # ── Redis (серверный деплой) ────────────────

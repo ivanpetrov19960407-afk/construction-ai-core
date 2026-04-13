@@ -6,6 +6,7 @@ from typing import Any
 
 from agents.base import BaseAgent
 from core.llm_router import LLMRouter
+from core.rag_engine import RAGEngine
 
 
 class ResearcherAgent(BaseAgent):
@@ -19,9 +20,26 @@ class ResearcherAgent(BaseAgent):
 
     def __init__(self, llm_router: LLMRouter) -> None:
         super().__init__(agent_id="01", llm_router=llm_router)
+        self.rag_engine = RAGEngine()
 
     async def run(self, state: dict[str, Any]) -> dict[str, Any]:
-        prompt = self._build_prompt(state)
+        message = str(state.get("message", ""))
+        chunks = await self.rag_engine.search(message)
+        chunks_text = "\n".join(
+            f"- [{chunk['source']}, стр. {chunk['page']}] {chunk['text']}" for chunk in chunks
+        ) or "(релевантные нормативы не найдены)"
+
+        rag_prompt = (
+            "Релевантные нормативы:\n"
+            f"{chunks_text}\n\n"
+            f"Запрос пользователя: {message}"
+        )
+
+        prompt = rag_prompt
+        context = str(state.get("context", ""))
+        if context:
+            prompt = f"Контекст:\n{context}\n\n{rag_prompt}"
+
         response = await self.llm_router.query(prompt=prompt, system_prompt=self.system_prompt)
         state["research_facts"] = response.text
         return self._update_state(state, response.text)
