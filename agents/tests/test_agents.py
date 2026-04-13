@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from types import SimpleNamespace
+from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import pytest
@@ -22,26 +23,26 @@ def llm_router_mock() -> SimpleNamespace:
 
 
 def test_researcher_smoke(llm_router_mock: SimpleNamespace) -> None:
-    agent = ResearcherAgent(llm_router_mock)
+    agent = ResearcherAgent(cast(Any, llm_router_mock))
     state = asyncio.run(agent.run({"message": "Найди СП", "context": "ПТО", "history": []}))
     assert state["history"][-1]["agent"] == "01"
 
 
 def test_analyst_smoke(llm_router_mock: SimpleNamespace) -> None:
-    agent = AnalystAgent(llm_router_mock)
+    agent = AnalystAgent(cast(Any, llm_router_mock))
     state = asyncio.run(agent.run({"message": "Проверь риски", "history": []}))
     assert state["history"][-1]["agent"] == "02"
 
 
 def test_author_smoke(llm_router_mock: SimpleNamespace) -> None:
-    agent = AuthorAgent(llm_router_mock)
+    agent = AuthorAgent(cast(Any, llm_router_mock))
     state = asyncio.run(agent.run({"message": "Сделай письмо", "history": []}))
     assert state["history"][-1]["agent"] == "03"
 
 
 def test_critic_smoke(llm_router_mock: SimpleNamespace) -> None:
     llm_router_mock.query = AsyncMock(return_value=SimpleNamespace(text="APPROVED"))
-    agent = CriticAgent(llm_router_mock)
+    agent = CriticAgent(cast(Any, llm_router_mock))
     state = asyncio.run(
         agent.run(
             {
@@ -54,7 +55,7 @@ def test_critic_smoke(llm_router_mock: SimpleNamespace) -> None:
 
 
 def test_verifier_smoke(llm_router_mock: SimpleNamespace) -> None:
-    agent = VerifierAgent(llm_router_mock)
+    agent = VerifierAgent(cast(Any, llm_router_mock))
     state = asyncio.run(
         agent.run(
             {
@@ -72,13 +73,13 @@ def test_verifier_smoke(llm_router_mock: SimpleNamespace) -> None:
 
 
 def test_legal_expert_smoke(llm_router_mock: SimpleNamespace) -> None:
-    agent = LegalExpertAgent(llm_router_mock)
+    agent = LegalExpertAgent(cast(Any, llm_router_mock))
     state = asyncio.run(agent.run({"message": "Добавь НПА", "history": []}))
     assert state["history"][-1]["agent"] == "06"
 
 
 def test_formatter_smoke(llm_router_mock: SimpleNamespace) -> None:
-    agent = FormatterAgent(llm_router_mock)
+    agent = FormatterAgent(cast(Any, llm_router_mock))
     state = asyncio.run(
         agent.run(
             {
@@ -104,7 +105,7 @@ def test_formatter_smoke(llm_router_mock: SimpleNamespace) -> None:
 
 
 def test_calculator_smoke(llm_router_mock: SimpleNamespace) -> None:
-    agent = CalculatorAgent(llm_router_mock)
+    agent = CalculatorAgent(cast(Any, llm_router_mock))
     state = asyncio.run(
         agent.run(
             {

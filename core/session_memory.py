@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 from config.settings import settings
 from core.database import get_db
@@ -31,7 +31,7 @@ class SessionMemory:
 
     async def add(self, session_id: str, role: str, content: str) -> None:
         """Добавить сообщение в историю сессии."""
-        timestamp = datetime.now(UTC).isoformat()
+        timestamp = datetime.now(timezone.utc).isoformat()  # noqa: UP017
         await self._ensure_session(session_id=session_id, role=role, timestamp=timestamp)
 
         async with get_db(self.db_path) as db:
@@ -78,7 +78,8 @@ class SessionMemory:
             )
             rows = await cursor.fetchall()
 
-        return [dict(row) for row in reversed(rows)]
+        rows_list = list(rows)
+        return [dict(row) for row in reversed(rows_list)]
 
     async def clear(self, session_id: str) -> None:
         """Очистить историю и документы конкретной сессии."""
@@ -112,7 +113,7 @@ class SessionMemory:
         sha256: str | None,
     ) -> None:
         """Сохранить сгенерированный документ в SQLite."""
-        timestamp = datetime.now(UTC).isoformat()
+        timestamp = datetime.now(timezone.utc).isoformat()  # noqa: UP017
         await self._ensure_session(session_id=session_id, role="assistant", timestamp=timestamp)
 
         async with get_db(self.db_path) as db:

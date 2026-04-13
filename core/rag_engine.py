@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import chromadb
 import pdfplumber
@@ -15,7 +15,7 @@ from config.settings import settings
 try:
     from sentence_transformers import SentenceTransformer
 except Exception:  # pragma: no cover - fallback when dependency is unavailable
-    SentenceTransformer = None
+    SentenceTransformer = None  # type: ignore[misc,assignment]
 
 
 class RAGEngine:
@@ -31,14 +31,14 @@ class RAGEngine:
     async def search(self, query: str, n_results: int = 5) -> list[dict]:
         """Найти релевантные чанки в ChromaDB."""
         query_embedding = self._embed_texts([query])[0]
-        result = self.collection.query(
+        result = cast(Any, self.collection).query(
             query_embeddings=[query_embedding],
             n_results=n_results,
             include=["documents", "metadatas"],
         )
 
-        documents = result.get("documents", [[]])
-        metadatas = result.get("metadatas", [[]])
+        documents = cast(list[list[str]], result.get("documents") or [[]])
+        metadatas = cast(list[list[dict[str, Any]]], result.get("metadatas") or [[]])
 
         rows: list[dict] = []
         for text, meta in zip(documents[0], metadatas[0], strict=False):
@@ -82,7 +82,7 @@ class RAGEngine:
             extra=payload,
         )
 
-    def _load_embedding_model(self):
+    def _load_embedding_model(self) -> Any | None:
         if SentenceTransformer is None:
             return None
         try:
@@ -92,8 +92,8 @@ class RAGEngine:
 
     def _embed_texts(self, texts: list[str]) -> list[list[float]]:
         if self.embedding_model is not None:
-            vectors = self.embedding_model.encode(texts, normalize_embeddings=True)
-            return vectors.tolist()
+            model_vectors = self.embedding_model.encode(texts, normalize_embeddings=True)
+            return cast(list[list[float]], model_vectors.tolist())
 
         vectors: list[list[float]] = []
         dimension = 384
@@ -137,5 +137,10 @@ class RAGEngine:
         metadatas = [{"source": source_name, "page": page, **extra_meta} for _ in chunks]
         embeddings = self._embed_texts(chunks)
 
-        self.collection.add(ids=ids, documents=chunks, metadatas=metadatas, embeddings=embeddings)
+        self.collection.add(
+            ids=ids,
+            documents=chunks,
+            metadatas=cast(Any, metadatas),
+            embeddings=cast(Any, embeddings),
+        )
         return len(chunks)

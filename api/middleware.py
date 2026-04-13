@@ -7,10 +7,12 @@ import logging
 import time
 import traceback
 from collections.abc import Awaitable, Callable
+from typing import Any, cast
 
 import structlog
 from fastapi import Request
 from fastapi.responses import JSONResponse, Response
+from fastapi.routing import APIRoute
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
@@ -104,7 +106,7 @@ def configure_structlog() -> None:
         format="%(message)s",
     )
     if settings.debug:
-        processors: list[object] = [
+        processors: list[Any] = [
             structlog.stdlib.filter_by_level,
             structlog.stdlib.add_logger_name,
             structlog.stdlib.add_log_level,
@@ -134,17 +136,19 @@ def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> JSO
 def setup_rate_limiter(app_routes: list[BaseRoute]) -> None:
     """Attach per-route limits according to project rules."""
     for route in app_routes:
+        if not isinstance(route, APIRoute):
+            continue
         path = getattr(route, "path", "")
         endpoint = getattr(route, "endpoint", None)
         if endpoint is None:
             continue
 
         if path == "/api/chat":
-            route.endpoint = limiter.limit("60/minute")(endpoint)
+            route.endpoint = cast(Any, limiter.limit("60/minute")(endpoint))
         elif path.startswith("/api/generate/"):
-            route.endpoint = limiter.limit("10/minute")(endpoint)
+            route.endpoint = cast(Any, limiter.limit("10/minute")(endpoint))
         elif path.startswith("/api/analyze/"):
-            route.endpoint = limiter.limit("5/minute")(endpoint)
+            route.endpoint = cast(Any, limiter.limit("5/minute")(endpoint))
 
 
 __all__ = [

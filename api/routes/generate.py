@@ -4,7 +4,7 @@ import asyncio
 import re
 import tempfile
 import uuid
-from enum import StrEnum
+from enum import Enum
 from pathlib import Path
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
@@ -96,7 +96,7 @@ class KSResponse(BaseModel):
     sha256: str | None
 
 
-class LetterType(StrEnum):
+class LetterType(str, Enum):  # noqa: UP042
     """Тип делового письма."""
 
     REQUEST = "запрос"

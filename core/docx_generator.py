@@ -42,7 +42,7 @@ class DocxGenerator:
 
         footer = doc.sections[0].footer
         footer.paragraphs[0].text = "ГОСТ Р 21.1101 · SHA256: {{sha256}}"
-        doc.save(template_path)
+        doc.save(str(template_path))
 
     def _create_default_ks_template(self, template_path: Path) -> None:
         """Создать минимальный ks_template.docx, если бинарный шаблон отсутствует."""
@@ -72,7 +72,7 @@ class DocxGenerator:
         row[5].text = "{{item.subtotal_cost}}{%tr endfor %}"
 
         doc.add_paragraph("Итого: {{total_cost}} руб., {{total_hours}} чел.-ч")
-        doc.save(template_path)
+        doc.save(str(template_path))
 
     def _ensure_template(self, template_name: str) -> Path:
         template_path = self.templates_dir / f"{template_name}.docx"
