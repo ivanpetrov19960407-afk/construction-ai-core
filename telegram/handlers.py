@@ -281,10 +281,15 @@ async def _analyze_tender_pdf(filename: str, content: bytes) -> dict:
 
 def _format_analyze_response(data: Mapping) -> str:
     risks = data.get("risks", []) if isinstance(data.get("risks"), list) else []
-    mismatches = data.get("mismatches", [])
-    if not isinstance(mismatches, list):
-        mismatches = data.get("non_compliances", [])
+    contradictions = data.get("contradictions", {})
+    mismatches: list = []
+    if isinstance(contradictions, Mapping):
+        mismatches = contradictions.get("mismatches", [])
+        if not isinstance(mismatches, list):
+            mismatches = contradictions.get("non_compliances", [])
     mismatches = mismatches if isinstance(mismatches, list) else []
+    legal_issues_raw = data.get("legal_issues", [])
+    legal_issues = legal_issues_raw if isinstance(legal_issues_raw, list) else []
     recommendation = data.get("recommendation", "УТОЧНИТЬ")
     confidence = data.get("confidence", 0)
     is_fraction = isinstance(confidence, (int, float)) and confidence <= 1
@@ -292,12 +297,15 @@ def _format_analyze_response(data: Mapping) -> str:
 
     risks_block = "\\n".join([f"• {item}" for item in risks]) or "• Нет"
     mismatches_block = "\\n".join([f"• {item}" for item in mismatches]) or "• Нет"
+    legal_issues_block = "\\n".join([f"• {item}" for item in legal_issues]) or "• Нет"
 
     return (
         f"🔴 Риски ({len(risks)}):\\n"
         f"{risks_block}\\n\\n"
         f"🟡 Несоответствия ({len(mismatches)}):\\n"
         f"{mismatches_block}\\n\\n"
+        f"⚖️ Юр. замечания ({len(legal_issues)}):\\n"
+        f"{legal_issues_block}\\n\\n"
         f"✅ Рекомендация: {recommendation}\\n"
         f"Уверенность: {confidence_pct}%"
     )
