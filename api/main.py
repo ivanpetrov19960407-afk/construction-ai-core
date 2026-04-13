@@ -7,12 +7,13 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from api.routes import chat, generate, health
 from config.settings import settings
+from core.database import init_db
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup / shutdown events."""
-    # TODO: инициализация ChromaDB, загрузка orchestrator.json
+    await init_db(settings.sqlite_db_path)
     print("🚀 Construction AI Core запускается...")
     yield
     print("🛑 Construction AI Core останавливается...")

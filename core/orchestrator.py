@@ -197,7 +197,7 @@ class Orchestrator:
             "message": message,
             "session_id": session_id,
             "role": role,
-            "conversation_history": self.session_memory.get(session_id, last_n=10),
+            "conversation_history": await self.session_memory.get(session_id, last_n=10),
             "history": [],
             "audit_log": [],
             "critic_iterations": 0,
@@ -241,7 +241,7 @@ class Orchestrator:
             Словарь с ответом и метаданными.
         """
         session_id = session_id or str(uuid.uuid4())
-        self.session_memory.add(session_id, role="user", content=message)
+        await self.session_memory.add(session_id, role="user", content=message)
 
         intent = intent or await self._detect_intent(message)
 
@@ -255,7 +255,7 @@ class Orchestrator:
                 extra_state=extra_state,
             )
             if result.get("reply"):
-                self.session_memory.add(
+                await self.session_memory.add(
                     session_id, role="assistant", content=str(result["reply"])
                 )
             return result
@@ -269,7 +269,7 @@ class Orchestrator:
                 prompt=message,
                 system_prompt=system_prompt,
             )
-            self.session_memory.add(session_id, role="assistant", content=response.text)
+            await self.session_memory.add(session_id, role="assistant", content=response.text)
             return {
                 "reply": response.text,
                 "session_id": session_id,
@@ -277,7 +277,7 @@ class Orchestrator:
                 "confidence": None,
             }
         except Exception as e:
-            self.session_memory.add(
+            await self.session_memory.add(
                 session_id,
                 role="assistant",
                 content=f"Ошибка обработки: {e}",
