@@ -8,7 +8,6 @@ from api.main import app
 from api.routes import analyze
 from core.pdf_parser import ParsedDocument
 
-
 PDF_BYTES = (
     b"%PDF-1.4\n"
     b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n"

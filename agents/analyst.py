@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 import re
+from typing import Any
 
 from agents.base import BaseAgent
 from core.llm_router import LLMRouter
@@ -19,7 +18,10 @@ class AnalystAgent(BaseAgent):
         "РИСКИ: ..., НЕСООТВЕТСТВИЯ: ..., РЕКОМЕНДАЦИЯ: ..."
     )
 
-    _RISKS_RE = re.compile(r"РИСКИ\s*:\s*(.*?)(?=\n\s*НЕСООТВЕТСТВИЯ\s*:|$)", re.IGNORECASE | re.DOTALL)
+    _RISKS_RE = re.compile(
+        r"РИСКИ\s*:\s*(.*?)(?=\n\s*НЕСООТВЕТСТВИЯ\s*:|$)",
+        re.IGNORECASE | re.DOTALL,
+    )
     _CONTRADICTIONS_RE = re.compile(
         r"НЕСООТВЕТСТВИЯ\s*:\s*(.*?)(?=\n\s*РЕКОМЕНДАЦИЯ\s*:|$)",
         re.IGNORECASE | re.DOTALL,

@@ -29,7 +29,7 @@ class TenderAnalysisRequest(BaseModel):
         cls,
         session_id: Annotated[str | None, Form()] = None,
         role: Annotated[str, Form()] = "tender_specialist",
-    ) -> "TenderAnalysisRequest":
+    ) -> TenderAnalysisRequest:
         return cls(session_id=session_id, role=role)
 
 

@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 from typing import Any
 
-
 from agents.base import BaseAgent
 from core.llm_router import LLMRouter
 
