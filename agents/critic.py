@@ -1,65 +1,40 @@
 """Агент Critic — рецензирование черновиков."""
 
+from __future__ import annotations
+
 from typing import Any
 
-from agents.base import AgentResult, BaseAgent
+from agents.base import BaseAgent
 from core.llm_router import LLMRouter
 
 
 class CriticAgent(BaseAgent):
-    """🔎 Critic — рецензирование и проверка черновиков.
+    """🔎 Critic — проверяет черновик и возвращает замечания или APPROVED."""
 
-    Активируется после Author. Проверяет:
-    - Полноту содержания
-    - Соответствие нормативам
-    - Логику изложения
-    - Корректность ссылок
-
-    Возвращает список замечаний → Author (до 5 итераций).
-    """
-
-    agent_id = "critic"
-    name = "Critic"
     system_prompt = (
-        "Ты — агент-рецензент строительной ИИ-платформы. "
-        "Проверяешь черновики документов на полноту, соответствие нормативам, "
-        "логику изложения и корректность ссылок. "
-        "Формируй список замечаний с указанием критичности. "
-        "Если документ готов — ответь 'APPROVED'. "
-        "Если есть замечания — перечисли их для доработки Author."
+        "Ты — Critic агент. Проверь черновик: полнота, логика, стиль, ссылки на нормы. "
+        "Если всё корректно, верни только 'APPROVED'. Иначе верни список замечаний по пунктам."
     )
 
-    def __init__(self, llm_router: LLMRouter):
-        super().__init__(llm_router)
+    def __init__(self, llm_router: LLMRouter) -> None:
+        super().__init__(agent_id="04", llm_router=llm_router)
 
-    async def execute(
-        self,
-        task: str,
-        context: dict[str, Any] | None = None,
-        previous_results: list[AgentResult] | None = None,
-    ) -> AgentResult:
-        """Провести рецензирование черновика."""
-        prompt = f"Проведи рецензию следующего документа:\n\n{task}"
-        ctx = self._build_context_prompt(previous_results)
-        if ctx:
-            prompt += ctx
+    async def run(self, state: dict[str, Any]) -> dict[str, Any]:
+        history = state.get("history", [])
+        if not isinstance(history, list):
+            raise TypeError("state['history'] must be a list")
 
-        response = await self.llm.query(
-            prompt=prompt,
-            system_prompt=self.system_prompt,
-        )
+        author_output = ""
+        for item in reversed(history):
+            if isinstance(item, dict) and item.get("agent") == "03":
+                author_output = str(item.get("output", ""))
+                break
 
-        # Определяем наличие замечаний
-        is_approved = "APPROVED" in response.text.upper()
-        issues = [] if is_approved else [response.text]
+        if not author_output:
+            raise ValueError("Author output not found in state['history']")
 
-        return AgentResult(
-            agent_id=self.agent_id,
-            output=response.text,
-            metadata={
-                "approved": is_approved,
-                "provider": response.provider.value,
-                "model": response.model,
-            },
-            issues=issues,
-        )
+        prompt = f"Черновик автора для проверки:\n\n{author_output}"
+        response = await self.llm_router.query(prompt=prompt, system_prompt=self.system_prompt)
+        review = response.text.strip()
+        state["critic_verdict"] = review
+        return self._update_state(state, "APPROVED" if review.upper() == "APPROVED" else review)

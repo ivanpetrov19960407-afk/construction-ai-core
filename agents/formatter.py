@@ -1,59 +1,32 @@
 """Агент Formatter — ГОСТ-форматирование DOCX."""
 
+from __future__ import annotations
+
 from typing import Any
 
-from agents.base import AgentResult, BaseAgent
+from agents.base import BaseAgent
 from core.llm_router import LLMRouter
 
 
 class FormatterAgent(BaseAgent):
-    """📐 Formatter — оформление по ГОСТ Р 21.1101.
+    """📐 Formatter — готовит структурированный dict для будущего DOCX."""
 
-    Финальное оформление DOCX:
-    - Заголовки и нумерация по ГОСТ
-    - Таблицы по стандарту
-    - Jinja2-шаблоны через docxtpl
-    """
-
-    agent_id = "formatter"
-    name = "Formatter"
     system_prompt = (
-        "Ты — агент-форматировщик строительной ИИ-платформы. "
-        "Отвечаешь за финальное оформление документов по ГОСТ Р 21.1101. "
-        "Преобразуй текст в структурированный формат для DOCX-шаблона: "
-        "заголовки, таблицы, нумерация, подписи. "
-        "Выход — JSON с данными для Jinja2-шаблона docxtpl."
+        "Ты — Formatter агент. Сформируй структуру документа для DOCX: "
+        "title, headings, sections (с подзаголовками и абзацами), tables (если есть)."
     )
 
-    def __init__(self, llm_router: LLMRouter):
-        super().__init__(llm_router)
+    def __init__(self, llm_router: LLMRouter) -> None:
+        super().__init__(agent_id="07", llm_router=llm_router)
 
-    async def execute(
-        self,
-        task: str,
-        context: dict[str, Any] | None = None,
-        previous_results: list[AgentResult] | None = None,
-    ) -> AgentResult:
-        """Подготовить данные для DOCX-шаблона."""
-        prompt = (
-            "Подготовь структурированные данные для DOCX-шаблона "
-            f"(формат JSON для docxtpl):\n\n{task}"
-        )
-        ctx = self._build_context_prompt(previous_results)
-        if ctx:
-            prompt += ctx
-
-        response = await self.llm.query(
-            prompt=prompt,
-            system_prompt=self.system_prompt,
-        )
-
-        return AgentResult(
-            agent_id=self.agent_id,
-            output=response.text,
-            metadata={
-                "format": "docx_template_data",
-                "provider": response.provider.value,
-                "model": response.model,
-            },
-        )
+    async def run(self, state: dict[str, Any]) -> dict[str, Any]:
+        prompt = self._build_prompt(state)
+        response = await self.llm_router.query(prompt=prompt, system_prompt=self.system_prompt)
+        docx_payload = {
+            "title": state.get("title", "Документ"),
+            "headings": state.get("headings", []),
+            "sections": state.get("sections", []),
+            "llm_layout": response.text,
+        }
+        state["docx_payload"] = docx_payload
+        return self._update_state(state, response.text)
