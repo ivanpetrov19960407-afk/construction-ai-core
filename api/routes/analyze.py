@@ -6,7 +6,7 @@ import asyncio
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 
 from core.orchestrator import Orchestrator
@@ -54,10 +54,12 @@ def _extract_list_items(text: str) -> list[str]:
 
 @router.post("/tender", response_model=TenderAnalysisResponse)
 async def analyze_tender(
+    request: Request,
     file: UploadFile = File(...),
     payload: TenderAnalysisRequest = Depends(TenderAnalysisRequest.as_form),
 ):
     """Анализ тендерного PDF через pipeline Researcher→Analyst→LegalExpert→Verifier."""
+    _ = request
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Supported format: PDF only")
 
