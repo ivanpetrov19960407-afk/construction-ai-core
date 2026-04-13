@@ -10,7 +10,9 @@ from core.orchestrator import Orchestrator
 def test_detect_intent_generate_tk():
     """Фраза про ТК должна маршрутизироваться в generate_tk."""
     orchestrator = Orchestrator()
-    orchestrator.llm_router.query = AsyncMock(return_value=SimpleNamespace(text="generate_tk"))
+    orchestrator.llm_router.query = AsyncMock(
+        return_value=SimpleNamespace(text="generate_tk")
+    )
 
     intent = asyncio.run(orchestrator._detect_intent("сделай ТК на бетонирование"))
 
@@ -20,7 +22,9 @@ def test_detect_intent_generate_tk():
 def test_detect_intent_generate_letter():
     """Фраза про письмо подрядчику должна маршрутизироваться в generate_letter."""
     orchestrator = Orchestrator()
-    orchestrator.llm_router.query = AsyncMock(return_value=SimpleNamespace(text="generate_letter"))
+    orchestrator.llm_router.query = AsyncMock(
+        return_value=SimpleNamespace(text="generate_letter")
+    )
 
     intent = asyncio.run(orchestrator._detect_intent("напиши письмо подрядчику"))
 
@@ -45,7 +49,9 @@ def test_run_pipeline_generate_tk_uses_bridge_when_available():
 
     orchestrator._build_graph = lambda pipeline: SimpleNamespace(
         compile=lambda: SimpleNamespace(
-            ainvoke=AsyncMock(return_value={"history": [{"output": "готово"}], "confidence": 0.9})
+            ainvoke=AsyncMock(
+                return_value={"history": [{"output": "готово"}], "confidence": 0.9}
+            )
         )
     )
 
@@ -72,7 +78,9 @@ def test_run_pipeline_generate_tk_fallback_without_bridge():
 
     orchestrator._build_graph = lambda pipeline: SimpleNamespace(
         compile=lambda: SimpleNamespace(
-            ainvoke=AsyncMock(return_value={"history": [{"output": "ai-only"}], "confidence": 0.8})
+            ainvoke=AsyncMock(
+                return_value={"history": [{"output": "ai-only"}], "confidence": 0.8}
+            )
         )
     )
 
