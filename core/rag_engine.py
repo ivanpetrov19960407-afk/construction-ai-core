@@ -19,7 +19,6 @@ except Exception:  # pragma: no cover - fallback when dependency is unavailable
     SentenceTransformer = None  # type: ignore[misc,assignment]
 
 
-
 class RAGEngine:
     """RAG-движок для индексации и поиска фрагментов нормативной документации."""
 

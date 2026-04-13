@@ -64,8 +64,7 @@ def _load_catalog(rag: RAGEngine, base_path: Path | None) -> tuple[int, int]:
             (
                 f
                 for f in pdf_files
-                if code.lower() in f.stem.lower()
-                or title.lower() in f.stem.lower()
+                if code.lower() in f.stem.lower() or title.lower() in f.stem.lower()
             ),
             None,
         )
