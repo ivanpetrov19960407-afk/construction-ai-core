@@ -2,7 +2,7 @@
 
 import uuid
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
 from core.orchestrator import Orchestrator
@@ -29,12 +29,13 @@ class ChatResponse(BaseModel):
 
 
 @router.post("/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest):
+async def chat(payload: ChatRequest, request: Request):
     """Обработать сообщение пользователя через оркестратор."""
-    session_id = request.session_id or str(uuid.uuid4())
+    _ = request
+    session_id = payload.session_id or str(uuid.uuid4())
     result = await orchestrator.process(
-        message=request.message,
+        message=payload.message,
         session_id=session_id,
-        role=request.role,
+        role=payload.role,
     )
     return result

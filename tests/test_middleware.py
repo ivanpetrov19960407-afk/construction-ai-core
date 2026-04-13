@@ -1,0 +1,72 @@
+"""Tests for API key middleware behavior."""
+
+import pytest
+from httpx import ASGITransport, AsyncClient
+
+from api.main import app
+from config.settings import settings
+
+
+@pytest.mark.asyncio
+async def test_request_without_api_key_returns_401():
+    """Protected endpoint should reject requests without X-API-Key."""
+    old_keys = settings.api_keys
+    settings.api_keys = ["valid-key"]
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post("/api/chat", json={"message": "ping"})
+    finally:
+        settings.api_keys = old_keys
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Invalid API key"}
+
+
+@pytest.mark.asyncio
+async def test_request_with_valid_api_key_returns_200(monkeypatch: pytest.MonkeyPatch):
+    """Protected endpoint should pass with a valid API key."""
+    old_keys = settings.api_keys
+    settings.api_keys = ["valid-key"]
+
+    async def _fake_process(message: str, session_id: str, role: str):
+        return {
+            "reply": f"echo: {message}",
+            "session_id": session_id,
+            "agents_used": ["mock"],
+            "confidence": 1.0,
+        }
+
+    monkeypatch.setattr("api.routes.chat.orchestrator.process", _fake_process)
+
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/chat",
+                json={"message": "ping"},
+                headers={"X-API-Key": "valid-key"},
+            )
+    finally:
+        settings.api_keys = old_keys
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["reply"] == "echo: ping"
+    assert data["agents_used"] == ["mock"]
+
+
+@pytest.mark.asyncio
+async def test_health_is_accessible_without_api_key():
+    """Health endpoint should be excluded from API key check."""
+    old_keys = settings.api_keys
+    settings.api_keys = ["valid-key"]
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get("/health")
+    finally:
+        settings.api_keys = old_keys
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
