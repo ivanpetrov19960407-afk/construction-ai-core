@@ -31,7 +31,7 @@ class AnalystAgent(BaseAgent):
     def __init__(self, llm_router: LLMRouter) -> None:
         super().__init__(agent_id="02", llm_router=llm_router)
 
-    async def run(self, state: dict[str, Any]) -> dict[str, Any]:
+    async def _run(self, state: dict[str, Any]) -> dict[str, Any]:
         prompt = self._build_prompt(state)
         response = await self.llm_router.query(prompt=prompt, system_prompt=self.system_prompt)
 

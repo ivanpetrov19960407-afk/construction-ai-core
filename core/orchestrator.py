@@ -22,6 +22,7 @@ from agents.formatter import FormatterAgent
 from agents.legal_expert import LegalExpertAgent
 from agents.researcher import ResearcherAgent
 from agents.verifier import VerifierAgent
+from api.metrics import PIPELINE_DURATION
 from core.llm_router import LLMRouter
 from core.session_memory import SessionMemory
 
@@ -200,7 +201,8 @@ class Orchestrator:
         if extra_state:
             initial_state = cast(PipelineState, {**initial_state, **extra_state})
 
-        final_state = await cast(Any, graph).ainvoke(initial_state)
+        with PIPELINE_DURATION.labels(intent=intent).time():
+            final_state = await cast(Any, graph).ainvoke(initial_state)
         return {
             "reply": final_state.get("final_output"),
             "session_id": session_id,

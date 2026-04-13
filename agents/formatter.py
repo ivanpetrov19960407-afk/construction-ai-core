@@ -76,7 +76,7 @@ class FormatterAgent(BaseAgent):
             "sha256": sha256 or "n/a",
         }
 
-    async def run(self, state: dict[str, Any]) -> dict[str, Any]:
+    async def _run(self, state: dict[str, Any]) -> dict[str, Any]:
         if "ks2_data" in state and "ks3_data" in state:
             ks2_data = state.get("ks2_data", {})
             ks3_data = state.get("ks3_data", {})

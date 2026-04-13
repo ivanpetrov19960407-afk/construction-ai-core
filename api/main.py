@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from slowapi.errors import RateLimitExceeded
 
+from api.metrics import AGENT_RUNS, PIPELINE_DURATION, Instrumentator
 from api.middleware import (
     APIKeyMiddleware,
     RequestLoggingMiddleware,
@@ -24,6 +25,7 @@ from config.settings import settings
 from core.database import init_db
 from telegram.bot import create_bot, create_dispatcher
 
+_ = (AGENT_RUNS, PIPELINE_DURATION)
 telegram_router = APIRouter()
 
 
@@ -55,6 +57,8 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+Instrumentator().instrument(app).expose(app, endpoint="/metrics")
 
 # CORS — для Tauri и Web UI
 app.add_middleware(

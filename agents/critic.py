@@ -19,7 +19,7 @@ class CriticAgent(BaseAgent):
     def __init__(self, llm_router: LLMRouter) -> None:
         super().__init__(agent_id="04", llm_router=llm_router)
 
-    async def run(self, state: dict[str, Any]) -> dict[str, Any]:
+    async def _run(self, state: dict[str, Any]) -> dict[str, Any]:
         history = state.get("history", [])
         if not isinstance(history, list):
             raise TypeError("state['history'] must be a list")

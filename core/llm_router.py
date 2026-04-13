@@ -9,6 +9,7 @@ from enum import Enum
 
 import httpx
 
+from api.metrics import LLM_TOKENS_USED
 from config.settings import settings
 
 
@@ -118,6 +119,12 @@ class LLMRouter:
         else:
             response_data = await self._query_openai_compatible(
                 config["base_url"], api_key, model, messages, temperature, max_tokens
+            )
+
+        usage = response_data.get("usage") or {}
+        if isinstance(usage, dict) and "prompt_tokens" in usage:
+            LLM_TOKENS_USED.labels(provider=provider.value, direction="input").inc(
+                usage["prompt_tokens"]
             )
 
         return LLMResponse(
