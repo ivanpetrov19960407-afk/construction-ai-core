@@ -205,7 +205,7 @@ class Orchestrator:
             "reply": final_state.get("final_output"),
             "session_id": session_id,
             "agents_used": pipeline,
-            "confidence": None,
+            "confidence": final_state.get("confidence"),
             "state": final_state,
         }
 

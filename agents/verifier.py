@@ -22,6 +22,14 @@ class VerifierAgent(BaseAgent):
     def __init__(self, llm_router: LLMRouter) -> None:
         super().__init__(agent_id="05", llm_router=llm_router)
 
+    @staticmethod
+    def _resolve_recommendation(confidence: float, risks: list[str]) -> str:
+        if confidence >= 0.85 and len(risks) <= 2:
+            return "УЧАСТВОВАТЬ"
+        if confidence < 0.7 or len(risks) > 5:
+            return "НЕ УЧАСТВОВАТЬ"
+        return "УТОЧНИТЬ"
+
     async def run(self, state: dict[str, Any]) -> dict[str, Any]:
         confidence = float(state.get("confidence", 0.0))
         conflict_rate = float(state.get("conflict_rate", 1.0))
@@ -33,6 +41,10 @@ class VerifierAgent(BaseAgent):
         version_hash = hashlib.sha256(final_text.encode("utf-8")).hexdigest()
 
         approved = confidence >= self.MIN_CONFIDENCE and conflict_rate <= self.MAX_CONFLICT_RATE
+        risks = state.get("risks", [])
+        if not isinstance(risks, list):
+            risks = []
+        recommendation = self._resolve_recommendation(confidence, [str(item) for item in risks])
         audit_entry = {
             "agent": self.agent_id,
             "confidence": confidence,
@@ -50,6 +62,8 @@ class VerifierAgent(BaseAgent):
             "approved": approved,
             "sha256": version_hash,
             "details": response.text,
+            "recommendation": recommendation,
         }
+        state["recommendation"] = recommendation
 
         return self._update_state(state, response.text)

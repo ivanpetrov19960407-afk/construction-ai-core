@@ -25,7 +25,7 @@ class PDFParser:
     CHUNK_SIZE = 512
     CHUNK_OVERLAP = 64
     NORMATIVE_PATTERN = re.compile(
-        r"(СП\s*\d+\.\d+|СНиП\s*\d+-\d+-\d+|ГОСТ\s*Р?\s*\d+(?:\.\d+)?|ФЗ-\d+|ГК\s*РФ\s*ст\.\s*\d+)",
+        r"(СП\s*\d+\.\d+|СНиП\s*\d+-\d+-\d+|ГОСТ\s*Р?\s*\d+(?:\.\d+)?|ФЗ-\d+|\d+\s*-\s*ФЗ|ГК\s*РФ\s*ст\.\s*\d+)",
         flags=re.IGNORECASE,
     )
 
@@ -62,6 +62,9 @@ class PDFParser:
             value = " ".join(match.group(0).split())
             if value.upper().startswith("ГОСТ"):
                 value = value.replace("ГОСТ ", "ГОСТ ")
+            if re.match(r"^\d+\s*-\s*ФЗ$", value, flags=re.IGNORECASE):
+                digits = re.sub(r"\D", "", value)
+                value = f"{digits}-ФЗ"
             if value and value not in refs:
                 refs.append(value)
         return refs
