@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from io import BytesIO
 from pathlib import Path
 
-from docx import Document
 from docxtpl import DocxTemplate
 
 
@@ -13,126 +14,28 @@ class DocxGenerator:
     """Генератор DOCX на базе docxtpl."""
 
     def __init__(self, templates_dir: str | Path | None = None) -> None:
-        base_dir = Path(__file__).resolve().parent.parent
-        self.templates_dir = Path(templates_dir) if templates_dir else base_dir / "templates"
+        self.base_dir = Path(__file__).resolve().parent.parent
+        self.templates_dir = Path(templates_dir) if templates_dir else self.base_dir / "templates"
+        self.generate_script = self.base_dir / "scripts" / "generate_templates.py"
 
-    def _create_default_tk_template(self, template_path: Path) -> None:
-        """Создать минимальный tk_template.docx, если бинарный шаблон отсутствует."""
-        template_path.parent.mkdir(parents=True, exist_ok=True)
+    def _run_template_generator(self) -> None:
+        if not self.generate_script.exists():
+            raise FileNotFoundError(f"Template generator script not found: {self.generate_script}")
 
-        doc = Document()
-        doc.add_heading("ТЕХНОЛОГИЧЕСКАЯ КАРТА на {{work_type}}", level=1)
-
-        doc.add_heading("1. Область применения", level=2)
-        doc.add_paragraph("{{scope}}")
-
-        doc.add_heading("2. Организация и технология производства работ", level=2)
-        doc.add_paragraph("{{technology}}")
-
-        doc.add_heading("3. Требования к качеству работ", level=2)
-        doc.add_paragraph("{{quality_requirements}}")
-
-        doc.add_heading("4. Нормативные документы", level=2)
-        doc.add_paragraph(
-            "{% for doc_name in normative_docs %}"
-            "• {{doc_name}}"
-            "{% if not loop.last %}\n{% endif %}"
-            "{% endfor %}"
+        subprocess.run(
+            [sys.executable, str(self.generate_script), str(self.templates_dir)],
+            cwd=str(self.base_dir),
+            check=True,
         )
-
-        footer = doc.sections[0].footer
-        footer.paragraphs[0].text = "ГОСТ Р 21.1101 · SHA256: {{sha256}}"
-        doc.save(str(template_path))
-
-    def _create_default_ks_template(self, template_path: Path) -> None:
-        """Создать минимальный ks_template.docx, если бинарный шаблон отсутствует."""
-        template_path.parent.mkdir(parents=True, exist_ok=True)
-
-        doc = Document()
-        doc.add_heading("АКТ о приёмке выполненных работ (КС-2)", level=1)
-        doc.add_paragraph("Объект: {{object_name}}")
-        doc.add_paragraph("Договор: {{contract_number}}")
-        doc.add_paragraph("Период: {{period_from}} — {{period_to}}")
-
-        table = doc.add_table(rows=2, cols=6)
-        header = table.rows[0].cells
-        header[0].text = "№"
-        header[1].text = "Наименование работ"
-        header[2].text = "Ед.изм."
-        header[3].text = "Объём"
-        header[4].text = "Цена/ед."
-        header[5].text = "Стоимость"
-
-        row = table.rows[1].cells
-        row[0].text = "{%tr for item in work_items %}{{item.index}}"
-        row[1].text = "{{item.name}}"
-        row[2].text = "{{item.unit}}"
-        row[3].text = "{{item.volume}}"
-        row[4].text = "{{item.price_per_unit}}"
-        row[5].text = "{{item.subtotal_cost}}{%tr endfor %}"
-
-        doc.add_paragraph("Итого: {{total_cost}} руб., {{total_hours}} чел.-ч")
-        doc.save(str(template_path))
-
-    def _create_default_ppr_template(self, template_path: Path) -> None:
-        """Создать минимальный ppr_template.docx, если бинарный шаблон отсутствует."""
-        template_path.parent.mkdir(parents=True, exist_ok=True)
-
-        doc = Document()
-        doc.add_heading("ПРОЕКТ ПРОИЗВОДСТВА РАБОТ на {{work_type}}", level=1)
-        doc.add_paragraph("Объект: {{object_name}}")
-
-        doc.add_heading("1. Общие данные", level=2)
-        doc.add_paragraph("{{general_data}}")
-
-        doc.add_heading("2. Состав ППР", level=2)
-        sections_table = doc.add_table(rows=2, cols=2)
-        sections_table.rows[0].cells[0].text = "Раздел"
-        sections_table.rows[0].cells[1].text = "Описание"
-        sections_table.rows[1].cells[0].text = "{%tr for row in ppr_sections %}{{row.name}}"
-        sections_table.rows[1].cells[1].text = "{{row.description}}{%tr endfor %}"
-
-        doc.add_heading("3. Стройгенплан", level=2)
-        doc.add_paragraph("{{site_plan_description}}")
-
-        doc.add_heading("4. Календарный план работ", level=2)
-        schedule_table = doc.add_table(rows=2, cols=3)
-        schedule_table.rows[0].cells[0].text = "Этап"
-        schedule_table.rows[0].cells[1].text = "Дата начала"
-        schedule_table.rows[0].cells[2].text = "Длительность, дни"
-        schedule_table.rows[1].cells[0].text = "{%tr for item in schedule_table %}{{item.stage}}"
-        schedule_table.rows[1].cells[1].text = "{{item.start_date}}"
-        schedule_table.rows[1].cells[2].text = "{{item.duration_days}}{%tr endfor %}"
-
-        doc.add_heading("5. Мероприятия по охране труда", level=2)
-        doc.add_paragraph(
-            "{% for measure in safety_measures %}"
-            "• {{measure}}"
-            "{% if not loop.last %}\n{% endif %}"
-            "{% endfor %}"
-        )
-
-        doc.add_heading("6. Нормативные документы", level=2)
-        doc.add_paragraph("{{normative_docs}}")
-
-        doc.add_paragraph("Разработал: {{developer}}")
-        doc.add_paragraph("Дата: {{start_date}}")
-
-        doc.save(str(template_path))
 
     def _ensure_template(self, template_name: str) -> Path:
         template_path = self.templates_dir / f"{template_name}.docx"
         if template_path.exists():
             return template_path
 
-        if template_name == "tk_template":
-            self._create_default_tk_template(template_path)
-            return template_path
-        if template_name == "ks_template":
-            self._create_default_ks_template(template_path)
-            return template_path
-        if template_name == "ppr_template":
-            self._create_default_ppr_template(template_path)
+        self._run_template_generator()
+
+        if template_path.exists():
             return template_path
 
         raise FileNotFoundError(f"Template not found: {template_path}")
@@ -148,11 +51,16 @@ class DocxGenerator:
         tpl.save(buffer)
         return buffer.getvalue()
 
+    def _collect_templates(self) -> list[str]:
+        return sorted(path.stem for path in self.templates_dir.glob("*.docx") if path.is_file())
+
     def list_templates(self) -> list[str]:
-        """Список доступных DOCX-шаблонов (без расширения)."""
+        """Реальный список доступных DOCX-шаблонов (без расширения)."""
         self.templates_dir.mkdir(parents=True, exist_ok=True)
-        templates = {path.stem for path in self.templates_dir.glob("*.docx") if path.is_file()}
-        templates.add("tk_template")
-        templates.add("ks_template")
-        templates.add("ppr_template")
-        return sorted(templates)
+        templates = self._collect_templates()
+
+        if not templates:
+            self._run_template_generator()
+            templates = self._collect_templates()
+
+        return templates
