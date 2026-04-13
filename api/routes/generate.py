@@ -338,9 +338,7 @@ async def generate_ppr(payload: PPRRequest, request: Request):
 
     state = result.get("state", {}) if isinstance(result, dict) else {}
     file_bytes = (
-        state.get("pdf_bytes")
-        if payload.export_format == "pdf"
-        else state.get("docx_bytes")
+        state.get("pdf_bytes") if payload.export_format == "pdf" else state.get("docx_bytes")
     )
     if not isinstance(file_bytes, bytes):
         raise HTTPException(status_code=500, detail="Generated file is empty")
@@ -605,9 +603,7 @@ async def download_letter_docx(
             f"letter_{session_id}.pdf"
             if format == "pdf"
             else (
-                letter_document.get("filename")
-                if letter_document
-                else f"letter_{session_id}.docx"
+                letter_document.get("filename") if letter_document else f"letter_{session_id}.docx"
             )
         ),
     )

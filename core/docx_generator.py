@@ -74,7 +74,6 @@ class DocxGenerator:
         doc.add_paragraph("Итого: {{total_cost}} руб., {{total_hours}} чел.-ч")
         doc.save(str(template_path))
 
-
     def _create_default_ppr_template(self, template_path: Path) -> None:
         """Создать минимальный ppr_template.docx, если бинарный шаблон отсутствует."""
         template_path.parent.mkdir(parents=True, exist_ok=True)
