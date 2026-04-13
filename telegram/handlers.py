@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from io import BytesIO
 from collections.abc import Mapping
 from dataclasses import dataclass
 
@@ -14,7 +15,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import BufferedInputFile, CallbackQuery, Message, ReplyKeyboardRemove
 
 from config.settings import settings
-from telegram.keyboards import cancel_keyboard, role_keyboard
+from telegram.keyboards import cancel_keyboard, main_menu_keyboard, role_keyboard
 
 router = Router()
 
@@ -43,6 +44,7 @@ class TelegramCoreClient:
 
 
 api_client = TelegramCoreClient(base_url=settings.core_api_url.rstrip("/"))
+MAX_PDF_SIZE_BYTES = 20_971_520
 
 
 class TKForm(StatesGroup):
@@ -59,12 +61,20 @@ class LetterForm(StatesGroup):
     body_points = State()
 
 
+class AnalyzeForm(StatesGroup):
+    document = State()
+
+
 def _get_user_role(user_id: int) -> str:
     return user_roles.get(user_id, "pto_engineer")
 
 
 @router.message(Command("start"))
 async def start_handler(message: Message) -> None:
+    await message.answer(
+        "Привет! Я Construction AI Bot.",
+        reply_markup=main_menu_keyboard(),
+    )
     await message.answer(
         "Привет! Я Construction AI Bot. Выберите роль для работы:",
         reply_markup=role_keyboard(),
@@ -178,6 +188,38 @@ async def letter_body_points_handler(message: Message, state: FSMContext) -> Non
     await _send_generated_document(message, response, "letter")
 
 
+@router.message(Command("analyze"))
+@router.message(F.text == "📋 Анализ тендера")
+async def analyze_start_handler(message: Message, state: FSMContext) -> None:
+    await state.set_state(AnalyzeForm.document)
+    await message.answer("Отправь PDF-документ для анализа", reply_markup=cancel_keyboard())
+
+
+@router.message(AnalyzeForm.document, F.document)
+async def analyze_document_handler(message: Message, state: FSMContext) -> None:
+    document = message.document
+    if document is None:
+        await message.answer("Отправь документ в формате PDF.")
+        return
+
+    if document.file_size and document.file_size > MAX_PDF_SIZE_BYTES:
+        await message.answer("Файл слишком большой (макс. 20 МБ)")
+        return
+
+    file_name = document.file_name or ""
+    if document.mime_type != "application/pdf" and not file_name.lower().endswith(".pdf"):
+        await message.answer("Поддерживаются только PDF-документы.")
+        return
+
+    file_bytes = BytesIO()
+    await message.bot.download(document, destination=file_bytes)
+    file_bytes.seek(0)
+
+    result = await _analyze_tender_pdf(file_name or "tender.pdf", file_bytes.getvalue())
+    await state.clear()
+    await message.answer(_format_analyze_response(result), reply_markup=ReplyKeyboardRemove())
+
+
 @router.message(F.text.casefold() == "отмена")
 async def cancel_handler(message: Message, state: FSMContext) -> None:
     await state.clear()
@@ -206,3 +248,36 @@ async def _send_generated_document(message: Message, response: Mapping, doc_pref
     input_file = BufferedInputFile(file_data, filename=f"{doc_prefix}_{message.from_user.id}.txt")
     await message.answer_document(input_file, caption="Документ сформирован.")
     await message.answer("Готово ✅", reply_markup=ReplyKeyboardRemove())
+
+
+async def _analyze_tender_pdf(filename: str, content: bytes) -> dict:
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        response = await client.post(
+            f"{settings.core_api_url.rstrip('/')}/api/analyze/tender",
+            files={"file": (filename, content, "application/pdf")},
+        )
+        response.raise_for_status()
+        return response.json()
+
+
+def _format_analyze_response(data: Mapping) -> str:
+    risks = data.get("risks", []) if isinstance(data.get("risks"), list) else []
+    mismatches = (
+        data.get("mismatches", []) if isinstance(data.get("mismatches"), list) else data.get("non_compliances", [])
+    )
+    mismatches = mismatches if isinstance(mismatches, list) else []
+    recommendation = data.get("recommendation", "УТОЧНИТЬ")
+    confidence = data.get("confidence", 0)
+    confidence_pct = int(float(confidence) * 100) if isinstance(confidence, (int, float)) and confidence <= 1 else int(confidence)
+
+    risks_block = "\\n".join([f"• {item}" for item in risks]) or "• Нет"
+    mismatches_block = "\\n".join([f"• {item}" for item in mismatches]) or "• Нет"
+
+    return (
+        f"🔴 Риски ({len(risks)}):\\n"
+        f"{risks_block}\\n\\n"
+        f"🟡 Несоответствия ({len(mismatches)}):\\n"
+        f"{mismatches_block}\\n\\n"
+        f"✅ Рекомендация: {recommendation}\\n"
+        f"Уверенность: {confidence_pct}%"
+    )

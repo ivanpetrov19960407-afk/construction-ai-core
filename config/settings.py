@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     bot_token: str = ""
     core_api_url: str = "http://api:8000"
     telegram_bot_token: str = ""
+    telegram_webhook_url: str = ""
 
     # ── tk-generator ───────────────────────────
     tk_generator_path: str = "../tk-generator"

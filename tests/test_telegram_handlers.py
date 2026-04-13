@@ -59,6 +59,7 @@ def _install_aiogram_stubs() -> None:
     types_mod.InlineKeyboardMarkup = object
     types_mod.KeyboardButton = object
     types_mod.ReplyKeyboardMarkup = object
+    types_mod.Document = object
 
     sys.modules["aiogram"] = aiogram
     sys.modules["aiogram.filters"] = filters
@@ -93,3 +94,64 @@ def test_text_handler_calls_chat_endpoint(monkeypatch):
         },
     )
     message.answer.assert_awaited_once_with("ok")
+
+
+def test_analyze_document_downloads_and_posts(monkeypatch):
+    _install_aiogram_stubs()
+
+    handlers = importlib.import_module("telegram.handlers")
+
+    analyze_mock = AsyncMock(
+        return_value={
+            "risks": ["Риск 1"],
+            "mismatches": ["Несоответствие 1"],
+            "recommendation": "УЧАСТВОВАТЬ",
+            "confidence": 0.84,
+        }
+    )
+    monkeypatch.setattr(handlers, "_analyze_tender_pdf", analyze_mock)
+    state = SimpleNamespace(clear=AsyncMock())
+
+    document = SimpleNamespace(file_size=1024, mime_type="application/pdf", file_name="tender.pdf")
+    bot = SimpleNamespace(download=AsyncMock())
+    message = SimpleNamespace(
+        document=document,
+        bot=bot,
+        answer=AsyncMock(),
+    )
+
+    asyncio.run(handlers.analyze_document_handler(message, state))
+
+    bot.download.assert_awaited_once()
+    analyze_mock.assert_awaited_once()
+    state.clear.assert_awaited_once()
+    assert message.answer.await_count == 1
+
+
+def test_analyze_helper_posts_to_tender_endpoint(monkeypatch):
+    _install_aiogram_stubs()
+    handlers = importlib.import_module("telegram.handlers")
+
+    response = SimpleNamespace(
+        raise_for_status=lambda: None,
+        json=lambda: {"ok": True},
+    )
+    post_mock = AsyncMock(return_value=response)
+
+    class DummyAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return SimpleNamespace(post=post_mock)
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(handlers.httpx, "AsyncClient", DummyAsyncClient)
+
+    asyncio.run(handlers._analyze_tender_pdf("x.pdf", b"123"))
+
+    post_mock.assert_awaited_once()
+    called_url = post_mock.await_args.args[0]
+    assert called_url.endswith("/api/analyze/tender")
