@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -26,7 +27,8 @@ class RAGEngine:
         self.collection_name = collection_name
         self.client = chromadb.PersistentClient(path=settings.chroma_persist_dir)
         self.embedding_model_name = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
-        self.embedding_model = self._load_embedding_model()
+        self.embedding_model: Any | None = None
+        self.embedding_backend = os.getenv("RAG_EMBEDDINGS_BACKEND", "sentence_transformers")
         self.collection = self.client.get_or_create_collection(name=collection_name)
 
     async def search(
@@ -119,17 +121,28 @@ class RAGEngine:
             "last_updated": last_updated,
         }
 
-    def _load_embedding_model(self) -> Any | None:
-        if SentenceTransformer is None:
+    def _get_embedding_model(self) -> Any | None:
+        if self.embedding_backend != "sentence_transformers":
             return None
+
+        if self.embedding_model is not None:
+            return self.embedding_model
+
+        if SentenceTransformer is None:
+            self.embedding_backend = "hash"
+            return None
+
         try:
-            return SentenceTransformer(self.embedding_model_name)
+            self.embedding_model = SentenceTransformer(self.embedding_model_name)
+            return self.embedding_model
         except Exception:
+            self.embedding_backend = "hash"
             return None
 
     def _embed_texts(self, texts: list[str]) -> list[list[float]]:
-        if self.embedding_model is not None:
-            model_vectors = self.embedding_model.encode(texts, normalize_embeddings=True)
+        embedding_model = self._get_embedding_model()
+        if embedding_model is not None:
+            model_vectors = embedding_model.encode(texts, normalize_embeddings=True)
             return cast(list[list[float]], model_vectors.tolist())
 
         vectors: list[list[float]] = []
