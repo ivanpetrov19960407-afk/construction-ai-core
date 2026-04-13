@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import uuid
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, cast
 
@@ -28,13 +29,23 @@ class RAGEngine:
         self.embedding_model = self._load_embedding_model()
         self.collection = self.client.get_or_create_collection(name=collection_name)
 
-    async def search(self, query: str, n_results: int = 5) -> list[dict]:
+    async def search(
+        self,
+        query: str,
+        n_results: int = 5,
+        filter_scope: str | None = None,
+    ) -> list[dict]:
         """Найти релевантные чанки в ChromaDB."""
         query_embedding = self._embed_texts([query])[0]
+        where: dict[str, Any] | None = None
+        if filter_scope:
+            where = {"scope": {"$contains": filter_scope}}
+
         result = cast(Any, self.collection).query(
             query_embeddings=[query_embedding],
             n_results=n_results,
             include=["documents", "metadatas"],
+            where=where,
         )
 
         documents = cast(list[list[str]], result.get("documents") or [[]])
@@ -48,16 +59,19 @@ class RAGEngine:
                     "text": text,
                     "source": str(metadata.get("source", "unknown")),
                     "page": int(metadata.get("page", 0)),
+                    "tags": list(metadata.get("tags", [])),
+                    "scope": list(metadata.get("scope", [])),
                 }
             )
         return rows
 
-    def ingest_pdf(self, filepath: str, source_name: str) -> int:
+    def ingest_pdf(self, filepath: str, source_name: str, metadata: dict | None = None) -> int:
         """Извлечь текст из PDF, разбить на чанки и добавить в индекс."""
         path = Path(filepath)
         if not path.exists():
             raise FileNotFoundError(f"PDF file not found: {filepath}")
 
+        extra = dict(metadata or {})
         added = 0
         with pdfplumber.open(path) as pdf:
             for page_index, page in enumerate(pdf.pages, start=1):
@@ -65,7 +79,7 @@ class RAGEngine:
                 if not text:
                     continue
                 chunks = self._chunk_text(text)
-                added += self._upsert_chunks(chunks, source_name, page=page_index)
+                added += self._upsert_chunks(chunks, source_name, page=page_index, extra=extra)
         return added
 
     def ingest_text(self, text: str, source_name: str, metadata: dict | None = None) -> int:
@@ -75,12 +89,35 @@ class RAGEngine:
             return 0
 
         payload = dict(metadata or {})
+        payload.setdefault("tags", [])
+        payload.setdefault("scope", [])
         return self._upsert_chunks(
             chunks,
             source_name,
             page=int(payload.pop("page", 0)),
             extra=payload,
         )
+
+    def clear_collection(self) -> None:
+        """Полностью очистить текущую коллекцию ChromaDB."""
+        self.client.delete_collection(name=self.collection_name)
+        self.collection = self.client.get_or_create_collection(name=self.collection_name)
+
+    def get_stats(self) -> dict[str, Any]:
+        """Вернуть базовую статистику по коллекции."""
+        total_chunks = int(self.collection.count())
+        payload = cast(Any, self.collection).get(include=["metadatas"])
+        metadatas = cast(list[dict[str, Any]], payload.get("metadatas") or [])
+
+        sources = sorted({str(meta.get("source")) for meta in metadatas if meta.get("source")})
+        timestamps = [str(meta.get("ingested_at")) for meta in metadatas if meta.get("ingested_at")]
+        last_updated = max(timestamps) if timestamps else ""
+
+        return {
+            "total_chunks": total_chunks,
+            "sources": sources,
+            "last_updated": last_updated,
+        }
 
     def _load_embedding_model(self) -> Any | None:
         if SentenceTransformer is None:
@@ -132,7 +169,11 @@ class RAGEngine:
         if not chunks:
             return 0
 
-        extra_meta = extra or {}
+        extra_meta = dict(extra or {})
+        extra_meta.setdefault("tags", [])
+        extra_meta.setdefault("scope", [])
+        extra_meta["ingested_at"] = datetime.now(timezone(timedelta())).isoformat()
+
         ids = [str(uuid.uuid4()) for _ in chunks]
         metadatas = [{"source": source_name, "page": page, **extra_meta} for _ in chunks]
         embeddings = self._embed_texts(chunks)

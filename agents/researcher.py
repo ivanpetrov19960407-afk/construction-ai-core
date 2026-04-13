@@ -24,7 +24,10 @@ class ResearcherAgent(BaseAgent):
 
     async def run(self, state: dict[str, Any]) -> dict[str, Any]:
         message = str(state.get("message", ""))
-        chunks = await self.rag_engine.search(message)
+        role = str(state.get("role", "")) or None
+        chunks = await self.rag_engine.search(message, filter_scope=role)
+        if role and not chunks:
+            chunks = await self.rag_engine.search(message)
         chunks_text = (
             "\n".join(
                 f"- [{chunk['source']}, стр. {chunk['page']}] {chunk['text']}" for chunk in chunks

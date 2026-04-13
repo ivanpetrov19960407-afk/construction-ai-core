@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     debug: bool = False
     log_level: str = "INFO"
     api_keys: list[str] = []
+    admin_api_keys: list[str] = []
 
     # ── LLM Providers ──────────────────────────
     perplexity_api_key: str = ""
