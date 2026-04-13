@@ -22,7 +22,7 @@ from starlette.routing import BaseRoute
 
 from config.settings import settings
 
-EXCLUDED_PATHS = {"/health", "/docs", "/openapi.json"}
+EXCLUDED_PATHS = {"/health", "/docs", "/redoc", "/openapi.json", "/telegram/webhook", "/metrics"}
 limiter = Limiter(key_func=get_remote_address, default_limits=[])
 
 
