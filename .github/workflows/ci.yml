@@ -21,6 +21,7 @@ jobs:
       OPENAI_API_KEY: "test-key"
       API_KEYS: '["test-key"]'
       SQLITE_DB_PATH: ":memory:"
+      RAG_EMBEDDINGS_BACKEND: hash
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3

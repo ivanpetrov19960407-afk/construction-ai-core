@@ -20,9 +20,11 @@ class ResearcherAgent(BaseAgent):
 
     def __init__(self, llm_router: LLMRouter) -> None:
         super().__init__(agent_id="01", llm_router=llm_router)
-        self.rag_engine = RAGEngine()
+        self.rag_engine: RAGEngine | None = None
 
     async def _run(self, state: dict[str, Any]) -> dict[str, Any]:
+        if self.rag_engine is None:
+            self.rag_engine = RAGEngine()
         message = str(state.get("message", ""))
         role = str(state.get("role", "")) or None
         chunks = await self.rag_engine.search(message, filter_scope=role)
