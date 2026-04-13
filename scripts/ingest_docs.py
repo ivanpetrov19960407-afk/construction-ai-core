@@ -61,7 +61,12 @@ def _load_catalog(rag: RAGEngine, base_path: Path | None) -> tuple[int, int]:
         title = norm["title"]
         metadata = {"tags": norm.get("tags", []), "scope": norm.get("scope", [])}
         pdf_match = next(
-            (f for f in pdf_files if code.lower() in f.stem.lower() or title.lower() in f.stem.lower()),
+            (
+                f
+                for f in pdf_files
+                if code.lower() in f.stem.lower()
+                or title.lower() in f.stem.lower()
+            ),
             None,
         )
 

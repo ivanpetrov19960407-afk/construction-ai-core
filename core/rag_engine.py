@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, cast
 
@@ -17,6 +17,7 @@ try:
     from sentence_transformers import SentenceTransformer
 except Exception:  # pragma: no cover - fallback when dependency is unavailable
     SentenceTransformer = None  # type: ignore[misc,assignment]
+
 
 
 class RAGEngine:
@@ -172,7 +173,7 @@ class RAGEngine:
         extra_meta = dict(extra or {})
         extra_meta.setdefault("tags", [])
         extra_meta.setdefault("scope", [])
-        extra_meta["ingested_at"] = datetime.now(timezone.utc).isoformat()
+        extra_meta["ingested_at"] = datetime.now(timezone(timedelta())).isoformat()
 
         ids = [str(uuid.uuid4()) for _ in chunks]
         metadatas = [{"source": source_name, "page": page, **extra_meta} for _ in chunks]
