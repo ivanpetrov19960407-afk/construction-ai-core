@@ -210,6 +210,7 @@ class Orchestrator:
         message: str,
         session_id: str | None = None,
         role: str = "pto_engineer",
+        intent: str | None = None,
     ) -> dict[str, Any]:
         """Обработать запрос пользователя.
 
@@ -222,6 +223,7 @@ class Orchestrator:
             message: Сообщение пользователя.
             session_id: ID сессии (для контекста).
             role: Роль пользователя.
+            intent: Принудительный intent (если задан, без LLM-детекции).
 
         Returns:
             Словарь с ответом и метаданными.
@@ -229,7 +231,7 @@ class Orchestrator:
         session_id = session_id or str(uuid.uuid4())
         self.session_memory.add(session_id, role="user", content=message)
 
-        intent = await self._detect_intent(message)
+        intent = intent or await self._detect_intent(message)
 
         if intent != "chat":
             result = await self._run_pipeline(intent, message, session_id, role)
