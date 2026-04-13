@@ -1,10 +1,10 @@
 import { useChatStore, type ChatRole } from '../store/chatStore';
 
 const ROLES: Array<{ id: ChatRole; label: string }> = [
-  { id: 'estimator', label: 'Сметчик' },
-  { id: 'lawyer', label: 'Юрист' },
-  { id: 'engineer', label: 'Инженер' },
-  { id: 'manager', label: 'Менеджер' }
+  { id: 'pto_engineer', label: 'ПТО' },
+  { id: 'foreman', label: 'Прораб' },
+  { id: 'tender_specialist', label: 'Тендеры' },
+  { id: 'admin', label: 'Админ' }
 ];
 
 export default function RoleSelector() {

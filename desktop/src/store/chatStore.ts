@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type ChatRole = 'estimator' | 'lawyer' | 'engineer' | 'manager';
+export type ChatRole = 'pto_engineer' | 'foreman' | 'tender_specialist' | 'admin';
 export type MessageRole = 'user' | 'assistant';
 
 export interface ChatMessage {
@@ -32,7 +32,7 @@ const createSessionId = () => crypto.randomUUID();
 
 export const useChatStore = create<ChatState>((set, get) => ({
   sessionId: createSessionId(),
-  role: 'manager',
+  role: 'admin',
   messages: [],
   sessions: [],
   isTyping: false,
