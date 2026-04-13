@@ -111,20 +111,41 @@ def build_ppr_template(output_path: Path) -> None:
 
     _add_heading(doc, "ПРОЕКТ ПРОИЗВОДСТВА РАБОТ на {{work_type}}")
 
-    sections = [
-        "Общие данные",
-        "Состав ППР",
-        "Стройгенплан",
-        "Календарный план",
-        "Охрана труда",
-        "Нормативные документы",
-    ]
-    for title in sections:
-        _add_heading(doc, title)
-        doc.add_paragraph(f"{{{{{title.lower().replace(' ', '_')}}}}}")
+    _add_heading(doc, "Общие данные")
+    doc.add_paragraph("{{general_data}}")
+
+    _add_heading(doc, "Состав ППР")
+    sections_table = doc.add_table(rows=2, cols=2)
+    sections_table.rows[0].cells[0].text = "Раздел"
+    sections_table.rows[0].cells[1].text = "Описание"
+    sections_table.rows[1].cells[0].text = "{%tr for row in ppr_sections %}{{row.name}}"
+    sections_table.rows[1].cells[1].text = "{{row.description}}{%tr endfor %}"
+
+    _add_heading(doc, "Стройгенплан")
+    doc.add_paragraph("{{site_plan_description}}")
+
+    _add_heading(doc, "Календарный план")
+    schedule_table = doc.add_table(rows=2, cols=3)
+    schedule_table.rows[0].cells[0].text = "Этап"
+    schedule_table.rows[0].cells[1].text = "Дата начала"
+    schedule_table.rows[0].cells[2].text = "Длительность, дни"
+    schedule_table.rows[1].cells[0].text = "{%tr for item in schedule_table %}{{item.stage}}"
+    schedule_table.rows[1].cells[1].text = "{{item.start_date}}"
+    schedule_table.rows[1].cells[2].text = "{{item.duration_days}}{%tr endfor %}"
+
+    _add_heading(doc, "Охрана труда")
+    doc.add_paragraph(
+        "{% for measure in safety_measures %}"
+        "• {{measure}}"
+        "{% if not loop.last %}\n{% endif %}"
+        "{% endfor %}"
+    )
+
+    _add_heading(doc, "Нормативные документы")
+    doc.add_paragraph("{{normative_docs}}")
 
     doc.add_paragraph("Разработал: {{developer}}")
-    doc.add_paragraph("Дата: {{date}}")
+    doc.add_paragraph("Дата: {{start_date}}")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     doc.save(output_path)

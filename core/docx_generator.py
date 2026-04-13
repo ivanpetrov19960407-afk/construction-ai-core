@@ -52,11 +52,7 @@ class DocxGenerator:
         return buffer.getvalue()
 
     def _collect_templates(self) -> list[str]:
-        return sorted(
-            path.stem
-            for path in self.templates_dir.glob("*.docx")
-            if path.is_file()
-        )
+        return sorted(path.stem for path in self.templates_dir.glob("*.docx") if path.is_file())
 
     def list_templates(self) -> list[str]:
         """Реальный список доступных DOCX-шаблонов (без расширения)."""
