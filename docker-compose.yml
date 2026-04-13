@@ -20,20 +20,8 @@ services:
       timeout: 10s
       retries: 3
 
-  # ── Redis (только для серверного деплоя) ─────
-  # Раскомментировать при переходе к Фазе 4+
-  # redis:
-  #   image: redis:7-alpine
-  #   container_name: construction-ai-redis
-  #   ports:
-  #     - "6379:6379"
-  #   volumes:
-  #     - redis_data:/data
-  #   restart: unless-stopped
-
-
   telegram-bot:
-    image: python:3.11-slim
+    build: .
     container_name: construction-ai-telegram-bot
     working_dir: /app
     command: python -m telegram.bot
@@ -44,10 +32,9 @@ services:
     environment:
       TELEGRAM_WEBHOOK_URL: ${TELEGRAM_WEBHOOK_URL:-}
     volumes:
-      - .:/app
+      - ./data:/app/data
+      - ./templates:/app/templates
     restart: unless-stopped
-# volumes:
-#   redis_data:
 
   prometheus:
     image: prom/prometheus:latest
@@ -62,4 +49,3 @@ services:
       - "3000:3000"
     depends_on:
       - prometheus
-
