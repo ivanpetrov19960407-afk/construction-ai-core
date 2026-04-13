@@ -20,7 +20,10 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Construction AI Core",
-    description="Универсальный ИИ-помощник для строительной отрасли",
+    description=(
+        "Универсальный ИИ-помощник для строительной отрасли "
+        "(генерация документов и анализ PDF-документации)"
+    ),
     version="0.1.0",
     lifespan=lifespan,
 )
