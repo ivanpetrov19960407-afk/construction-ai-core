@@ -5,8 +5,8 @@ import importlib.util
 from unittest.mock import AsyncMock
 
 from agents.calculator import CalculatorAgent
-from core.llm_router import LLMRouter
 from config.settings import settings
+from core.llm_router import LLMRouter
 
 
 def test_calculator_totals_match_subtotals_for_3_items():
