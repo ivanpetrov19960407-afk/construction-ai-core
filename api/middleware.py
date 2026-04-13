@@ -23,7 +23,6 @@ from starlette.routing import BaseRoute
 from config.settings import settings
 
 EXCLUDED_PATHS = {"/health", "/docs", "/openapi.json"}
-EXCLUDED_PREFIXES = ("/api/generate/",)
 limiter = Limiter(key_func=get_remote_address, default_limits=[])
 
 
@@ -35,7 +34,7 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         request: Request,
         call_next: Callable[[Request], Awaitable[Response]],
     ) -> Response:
-        if request.url.path in EXCLUDED_PATHS or request.url.path.startswith(EXCLUDED_PREFIXES):
+        if request.url.path in EXCLUDED_PATHS:
             return await call_next(request)
 
         provided_key = request.headers.get("X-API-Key")

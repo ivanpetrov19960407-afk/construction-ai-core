@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock
 
 from agents.calculator import CalculatorAgent
 from core.llm_router import LLMRouter
+from config.settings import settings
 
 
 def test_calculator_totals_match_subtotals_for_3_items():
@@ -65,6 +66,8 @@ def test_generate_ks_endpoint_forces_intent_generate_ks():
     from api.routes import generate
 
     client = TestClient(app)
+    old_keys = settings.api_keys
+    settings.api_keys = ["valid-key"]
     mocked_process = AsyncMock(
         return_value={
             "session_id": "session-ks-1",
@@ -85,24 +88,28 @@ def test_generate_ks_endpoint_forces_intent_generate_ks():
     )
     generate.orchestrator.process = mocked_process
 
-    response = client.post(
-        "/api/generate/ks",
-        json={
-            "object_name": "ЖК Север",
-            "contract_number": "Д-77",
-            "period_from": "2026-01-01",
-            "period_to": "2026-01-31",
-            "work_items": [
-                {
-                    "name": "Бетонирование",
-                    "unit": "м³",
-                    "volume": 1,
-                    "norm_hours": 1,
-                    "price_per_unit": 1,
-                }
-            ],
-        },
-    )
+    try:
+        response = client.post(
+            "/api/generate/ks",
+            json={
+                "object_name": "ЖК Север",
+                "contract_number": "Д-77",
+                "period_from": "2026-01-01",
+                "period_to": "2026-01-31",
+                "work_items": [
+                    {
+                        "name": "Бетонирование",
+                        "unit": "м³",
+                        "volume": 1,
+                        "norm_hours": 1,
+                        "price_per_unit": 1,
+                    }
+                ],
+            },
+            headers={"X-API-Key": "valid-key"},
+        )
+    finally:
+        settings.api_keys = old_keys
 
     assert response.status_code == 200
     data = response.json()
