@@ -1,24 +1,19 @@
-FROM python:3.11-slim
+# Stage 1: builder
+FROM python:3.11-slim AS builder
 
-WORKDIR /app
+WORKDIR /build
 
-# Системные зависимости (Debian Trixie)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
-    libcairo2 \
-    libpango-1.0-0 \
-    libpangocairo-1.0-0 \
-    libgdk-pixbuf-2.0-0 \
     libffi-dev \
-    shared-mime-info \
     && rm -rf /var/lib/apt/lists/*
 
-# Зависимости Python — напрямую без hatchling build
-# Сначала ставим CPU-only PyTorch (без CUDA — экономит ~2.5 ГБ)
 COPY pyproject.toml README.md ./
-RUN pip install --no-cache-dir \
-    torch --index-url https://download.pytorch.org/whl/cpu \
- && pip install --no-cache-dir \
+
+RUN pip install --no-cache-dir --prefix=/install \
+    torch --index-url https://download.pytorch.org/whl/cpu
+
+RUN pip install --no-cache-dir --prefix=/install \
     "fastapi>=0.115.0" \
     "uvicorn[standard]>=0.30.0" \
     "langgraph>=0.2.0" \
@@ -32,6 +27,7 @@ RUN pip install --no-cache-dir \
     "python-dotenv>=1.0.0" \
     "docxtpl>=0.18.0" \
     "python-docx>=1.1.0" \
+    "docx2pdf>=0.1.8" \
     "weasyprint>=62.0" \
     "pdfplumber>=0.11.0" \
     "chromadb>=0.5.0" \
@@ -42,7 +38,21 @@ RUN pip install --no-cache-dir \
     "tqdm>=4.66.0" \
     "prometheus-fastapi-instrumentator>=7.0.0"
 
-# Код приложения
+# Stage 2: runtime
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libcairo2 \
+    libpango-1.0-0 \
+    libpangocairo-1.0-0 \
+    libgdk-pixbuf-2.0-0 \
+    shared-mime-info \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /install /usr/local
 COPY . .
 
 RUN mkdir -p data/chroma data/db templates
