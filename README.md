@@ -1,5 +1,8 @@
 # 🏗️ Construction AI Core
 
+[![CI](https://github.com/ivanpetrov19960407-afk/construction-ai-core/actions/workflows/ci.yml/badge.svg)](https://github.com/ivanpetrov19960407-afk/construction-ai-core/actions/workflows/ci.yml)
+[![Docker Build](https://github.com/ivanpetrov19960407-afk/construction-ai-core/actions/workflows/docker-build.yml/badge.svg)](https://github.com/ivanpetrov19960407-afk/construction-ai-core/actions/workflows/docker-build.yml)
+
 **Универсальный ИИ-помощник для строительной отрасли**
 
 4 слоя · 8 агентов · 4 роли пользователей
