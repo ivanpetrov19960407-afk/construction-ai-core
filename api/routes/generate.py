@@ -7,7 +7,7 @@ import uuid
 from enum import Enum
 from pathlib import Path
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, field_validator
 
@@ -131,15 +131,16 @@ class LetterResponse(BaseModel):
 
 
 @router.post("/generate/tk", response_model=TKResponse)
-async def generate_tk(request: TKRequest):
+async def generate_tk(payload: TKRequest, request: Request):
     """Генерация технологической карты (ТК) через orchestrator."""
-    session_id = request.session_id or str(uuid.uuid4())
-    norms_text = ", ".join(request.norms) if request.norms else "не указаны"
+    _ = request
+    session_id = payload.session_id or str(uuid.uuid4())
+    norms_text = ", ".join(payload.norms) if payload.norms else "не указаны"
     message = (
         "Сформируй технологическую карту на русском языке.\n"
-        f"Вид работ: {request.work_type}.\n"
-        f"Наименование объекта: {request.object_name}.\n"
-        f"Объём работ: {request.volume} {request.unit}.\n"
+        f"Вид работ: {payload.work_type}.\n"
+        f"Наименование объекта: {payload.object_name}.\n"
+        f"Объём работ: {payload.volume} {payload.unit}.\n"
         f"Нормативы: {norms_text}.\n"
         "Подготовь структурированный документ для последующего DOCX-форматирования."
     )
@@ -148,7 +149,7 @@ async def generate_tk(request: TKRequest):
         result = await orchestrator.process(
             message=message,
             session_id=session_id,
-            role=request.role,
+            role=payload.role,
             intent="generate_tk",
         )
     except Exception as exc:
@@ -206,15 +207,16 @@ def _extract_legal_references(history: list[dict]) -> list[str]:
 
 
 @router.post("/generate/letter", response_model=LetterResponse)
-async def generate_letter_v2(request: LetterRequest):
+async def generate_letter_v2(payload: LetterRequest, request: Request):
     """Генерация делового письма через orchestrator."""
-    session_id = request.session_id or str(uuid.uuid4())
-    body_points_text = "; ".join(request.body_points)
-    contract_number = request.contract_number or "не указан"
+    _ = request
+    session_id = payload.session_id or str(uuid.uuid4())
+    body_points_text = "; ".join(payload.body_points)
+    contract_number = payload.contract_number or "не указан"
     message = (
-        f"Тип: {request.letter_type.value}. "
-        f"Получатель: {request.addressee}. "
-        f"Тема: {request.subject}. "
+        f"Тип: {payload.letter_type.value}. "
+        f"Получатель: {payload.addressee}. "
+        f"Тема: {payload.subject}. "
         f"Тезисы: {body_points_text}. "
         f"Договор: {contract_number}."
     )
@@ -223,9 +225,9 @@ async def generate_letter_v2(request: LetterRequest):
         result = await orchestrator.process(
             message=message,
             session_id=session_id,
-            role=request.role,
+            role=payload.role,
             intent="generate_letter",
-            include_legal_expert=request.include_npa,
+            include_legal_expert=payload.include_npa,
         )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"LLM processing error: {exc}") from exc
@@ -245,24 +247,25 @@ async def generate_letter_v2(request: LetterRequest):
 
 
 @router.post("/generate/ks", response_model=KSResponse)
-async def generate_ks(request: KSRequest):
+async def generate_ks(payload: KSRequest, request: Request):
     """Генерация КС-2/КС-3 через orchestrator pipeline."""
-    session_id = request.session_id or str(uuid.uuid4())
-    work_names = ", ".join(item.name for item in request.work_items)
+    _ = request
+    session_id = payload.session_id or str(uuid.uuid4())
+    work_names = ", ".join(item.name for item in payload.work_items)
     message = (
         "Сформируй КС-2/КС-3 на русском языке. "
-        f"Объект: {request.object_name}. "
-        f"Договор: {request.contract_number}. "
-        f"Период: {request.period_from} — {request.period_to}. "
+        f"Объект: {payload.object_name}. "
+        f"Договор: {payload.contract_number}. "
+        f"Период: {payload.period_from} — {payload.period_to}. "
         f"Наименования работ: {work_names}."
     )
 
     extra_state = {
-        "object_name": request.object_name,
-        "contract_number": request.contract_number,
-        "period_from": request.period_from,
-        "period_to": request.period_to,
-        "calculation_params": {"work_items": [item.model_dump() for item in request.work_items]},
+        "object_name": payload.object_name,
+        "contract_number": payload.contract_number,
+        "period_from": payload.period_from,
+        "period_to": payload.period_to,
+        "calculation_params": {"work_items": [item.model_dump() for item in payload.work_items]},
         "context": (
             "Подготовь описательную часть КС-2 для следующих работ: "
             f"{work_names}."
@@ -273,7 +276,7 @@ async def generate_ks(request: KSRequest):
         result = await orchestrator.process(
             message=message,
             session_id=session_id,
-            role=request.role,
+            role=payload.role,
             intent="generate_ks",
             extra_state=extra_state,
         )
@@ -327,11 +330,13 @@ def _extract_risks(analysis: str) -> list[str]:
 
 @router.post("/analyze/document")
 async def analyze_document(
+    request: Request,
     file: UploadFile = File(...),
     role: str = Form("tender_specialist"),
     session_id: str | None = Form(None),
 ):
     """Анализ загруженного PDF-документа через orchestrator."""
+    _ = request
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Supported format: PDF only")
 
@@ -382,8 +387,9 @@ async def analyze_document(
 
 
 @router.get("/generate/tk/{session_id}/download")
-async def download_tk_docx(session_id: str):
+async def download_tk_docx(session_id: str, request: Request):
     """Скачать ранее сгенерированный DOCX по session_id."""
+    _ = request
     documents = await session_memory.get_session_documents(session_id)
     tk_document = next((doc for doc in documents if doc.get("doc_type") == "tk"), None)
     docx_bytes = tk_document.get("docx_bytes") if tk_document else None
@@ -405,8 +411,9 @@ async def download_tk_docx(session_id: str):
 
 
 @router.get("/generate/ks/{session_id}/download")
-async def download_ks_docx(session_id: str):
+async def download_ks_docx(session_id: str, request: Request):
     """Скачать ранее сгенерированный DOCX КС-2/КС-3 по session_id."""
+    _ = request
     documents = await session_memory.get_session_documents(session_id)
     ks_document = next((doc for doc in documents if doc.get("doc_type") == "ks"), None)
     docx_bytes = ks_document.get("docx_bytes") if ks_document else None
