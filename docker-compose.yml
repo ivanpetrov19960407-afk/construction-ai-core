@@ -11,6 +11,7 @@ services:
       - .env
     volumes:
       - ./data:/app/data
+      - ./data/chroma:/app/data/chroma
       - ./templates:/app/templates
     restart: unless-stopped
     healthcheck:
