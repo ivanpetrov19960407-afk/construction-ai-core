@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     redis_url: str | None = None
 
     # ── Telegram ───────────────────────────────
+    bot_token: str = ""
+    core_api_url: str = "http://api:8000"
     telegram_bot_token: str = ""
 
     # ── tk-generator ───────────────────────────

@@ -30,5 +30,19 @@ services:
   #     - redis_data:/data
   #   restart: unless-stopped
 
+
+  telegram-bot:
+    image: python:3.11-slim
+    container_name: construction-ai-telegram-bot
+    working_dir: /app
+    command: python -m telegram.bot
+    depends_on:
+      - api
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    restart: unless-stopped
+
 # volumes:
 #   redis_data:
