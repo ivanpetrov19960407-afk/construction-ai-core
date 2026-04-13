@@ -20,6 +20,7 @@ class Settings(BaseSettings):
 
     # ── Database ───────────────────────────────
     database_url: str = "sqlite:///./data/construction_ai.db"
+    sqlite_db_path: str = "./data/construction_ai.db"
 
     # ── ChromaDB ───────────────────────────────
     # ENV: CHROMA_PERSIST_DIR

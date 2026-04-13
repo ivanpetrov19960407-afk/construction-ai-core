@@ -14,15 +14,16 @@ from pydantic import BaseModel, Field, field_validator
 from core.orchestrator import Orchestrator
 from core.pdf_parser import PDFParser
 
+
 router = APIRouter()
 orchestrator = Orchestrator()
+session_memory = orchestrator.session_memory
 pdf_parser = PDFParser()
 
 ALLOWED_UNITS = ["м³", "м²", "пог.м.", "шт.", "т", "кг"]
 MAX_UPLOAD_SIZE_BYTES = 20 * 1024 * 1024
 ANALYZE_TIMEOUT_SECONDS = 120
 
-DOCX_CACHE: dict[str, bytes] = {}
 
 
 class TKRequest(BaseModel):
@@ -156,7 +157,13 @@ async def generate_tk(request: TKRequest):
     state = result.get("state", {}) if isinstance(result, dict) else {}
     docx_bytes = state.get("docx_bytes")
     if isinstance(docx_bytes, bytes):
-        DOCX_CACHE[session_id] = docx_bytes
+        await session_memory.save_document(
+            session_id=session_id,
+            doc_type="tk",
+            filename=f"tk_{session_id}.docx",
+            docx_bytes=docx_bytes,
+            sha256=(state.get("verification", {}) or {}).get("sha256") if isinstance(state, dict) else None,
+        )
 
     document = (
         state.get("final_output")
@@ -282,7 +289,13 @@ async def generate_ks(request: KSRequest):
     docx_bytes = state.get("docx_bytes")
     docx_bytes_key = session_id
     if isinstance(docx_bytes, bytes):
-        DOCX_CACHE[docx_bytes_key] = docx_bytes
+        await session_memory.save_document(
+            session_id=docx_bytes_key,
+            doc_type="ks",
+            filename=f"ks_{docx_bytes_key}.docx",
+            docx_bytes=docx_bytes,
+            sha256=(state.get("verification", {}) or {}).get("sha256") if isinstance(state, dict) else None,
+        )
 
     return KSResponse(
         session_id=result["session_id"],
@@ -371,7 +384,9 @@ async def analyze_document(
 @router.get("/generate/tk/{session_id}/download")
 async def download_tk_docx(session_id: str):
     """Скачать ранее сгенерированный DOCX по session_id."""
-    docx_bytes = DOCX_CACHE.get(session_id)
+    documents = await session_memory.get_session_documents(session_id)
+    tk_document = next((doc for doc in documents if doc.get("doc_type") == "tk"), None)
+    docx_bytes = tk_document.get("docx_bytes") if tk_document else None
     if not docx_bytes:
         raise HTTPException(status_code=404, detail="DOCX not found for this session")
 
@@ -385,14 +400,16 @@ async def download_tk_docx(session_id: str):
         media_type=(
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         ),
-        filename=f"tk_{session_id}.docx",
+        filename=tk_document.get("filename") if tk_document else f"tk_{session_id}.docx",
     )
 
 
 @router.get("/generate/ks/{session_id}/download")
 async def download_ks_docx(session_id: str):
     """Скачать ранее сгенерированный DOCX КС-2/КС-3 по session_id."""
-    docx_bytes = DOCX_CACHE.get(session_id)
+    documents = await session_memory.get_session_documents(session_id)
+    ks_document = next((doc for doc in documents if doc.get("doc_type") == "ks"), None)
+    docx_bytes = ks_document.get("docx_bytes") if ks_document else None
     if not docx_bytes:
         raise HTTPException(status_code=404, detail="DOCX not found for this session")
 
@@ -406,5 +423,5 @@ async def download_ks_docx(session_id: str):
         media_type=(
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         ),
-        filename=f"ks_{session_id}.docx",
+        filename=ks_document.get("filename") if ks_document else f"ks_{session_id}.docx",
     )
