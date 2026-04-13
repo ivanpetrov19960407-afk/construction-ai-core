@@ -166,6 +166,20 @@ async def generate_tk(payload: TKRequest, request: Request):
             session_id=session_id,
             role=payload.role,
             intent="generate_tk",
+            extra_state={
+                "work_type": payload.work_type,
+                "object_name": payload.object_name,
+                "volume": payload.volume,
+                "unit": payload.unit,
+                "norms": payload.norms,
+                "tk_generator_input": {
+                    "work_type": payload.work_type,
+                    "object_name": payload.object_name,
+                    "volume": payload.volume,
+                    "unit": payload.unit,
+                    "norms": payload.norms,
+                },
+            },
         )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"LLM processing error: {exc}") from exc
@@ -186,6 +200,9 @@ async def generate_tk(payload: TKRequest, request: Request):
     document = (
         state.get("final_output") or state.get("docx_payload") or {"content": result.get("reply")}
     )
+    tk_bridge_result = result.get("tk_bridge_result") if isinstance(result, dict) else None
+    if isinstance(document, dict) and tk_bridge_result:
+        document["tk_generator"] = tk_bridge_result
 
     return TKResponse(
         session_id=result["session_id"],
