@@ -1,63 +1,41 @@
 """Базовый класс агента."""
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
 from typing import Any
 
 from core.llm_router import LLMRouter
 
 
-@dataclass
-class AgentResult:
-    """Результат работы агента."""
-
-    agent_id: str
-    output: str
-    metadata: dict[str, Any] = field(default_factory=dict)
-    confidence: float | None = None
-    issues: list[str] = field(default_factory=list)
-
-
 class BaseAgent(ABC):
-    """Базовый класс для всех агентов Construction AI.
-
-    Каждый агент:
-    - Имеет уникальный ID и системный промпт
-    - Получает контекст задачи и предыдущие результаты
-    - Возвращает AgentResult
-    """
+    """Базовый класс для всех агентов Construction AI."""
 
     agent_id: str
-    name: str
     system_prompt: str
 
-    def __init__(self, llm_router: LLMRouter):
-        self.llm = llm_router
+    def __init__(self, agent_id: str, llm_router: LLMRouter) -> None:
+        self.agent_id = agent_id
+        self.llm_router = llm_router
 
     @abstractmethod
-    async def execute(
-        self,
-        task: str,
-        context: dict[str, Any] | None = None,
-        previous_results: list[AgentResult] | None = None,
-    ) -> AgentResult:
-        """Выполнить задачу агента.
+    async def run(self, state: dict[str, Any]) -> dict[str, Any]:
+        """Запустить агента и вернуть обновлённый state."""
 
-        Args:
-            task: Текст задачи / запроса.
-            context: Дополнительный контекст (файлы, параметры).
-            previous_results: Результаты предыдущих агентов в pipeline.
+    def _build_prompt(self, state: dict[str, Any]) -> str:
+        """Собрать финальный prompt из message и context."""
+        message = str(state.get("message", ""))
+        context = str(state.get("context", ""))
+        if context:
+            return f"Контекст:\n{context}\n\nЗапрос:\n{message}"
+        return message
 
-        Returns:
-            AgentResult с выходными данными.
-        """
-        ...
+    def _update_state(self, state: dict[str, Any], reply: str) -> dict[str, Any]:
+        """Добавить результат агента в историю."""
+        history = state.setdefault("history", [])
+        if not isinstance(history, list):
+            raise TypeError("state['history'] must be a list")
 
-    def _build_context_prompt(self, previous_results: list[AgentResult] | None) -> str:
-        """Сформировать контекст из результатов предыдущих агентов."""
-        if not previous_results:
-            return ""
-        parts = []
-        for r in previous_results:
-            parts.append(f"[{r.agent_id}]: {r.output[:2000]}")
-        return "\n\n--- Результаты предыдущих агентов ---\n" + "\n".join(parts)
+        history.append({"agent": self.agent_id, "output": reply})
+        state["history"] = history
+        return state

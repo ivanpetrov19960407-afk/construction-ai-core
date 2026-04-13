@@ -1,69 +1,51 @@
 """Агент Verifier — финальная KPI-проверка."""
 
+from __future__ import annotations
+
 import hashlib
 from typing import Any
 
-from agents.base import AgentResult, BaseAgent
+from agents.base import BaseAgent
 from core.llm_router import LLMRouter
 
 
 class VerifierAgent(BaseAgent):
-    """✅ Verifier — финальная проверка и верификация.
+    """✅ Verifier — проверка KPI и аудит."""
 
-    KPI:
-    - confidence ≥ 0.95
-    - conflict_rate ≤ 0.05
-    - SHA256-хэш версии документа
-
-    Результат: Approved / Reject → audit log.
-    """
-
-    agent_id = "verifier"
-    name = "Verifier"
     system_prompt = (
-        "Ты — агент-верификатор строительной ИИ-платформы. "
-        "Проводишь финальную проверку документа перед выгрузкой. "
-        "Оцени confidence (0.0–1.0) и conflict_rate (0.0–1.0). "
-        "Ответь в формате:\n"
-        "CONFIDENCE: <число>\n"
-        "CONFLICT_RATE: <число>\n"
-        "VERDICT: APPROVED или REJECTED\n"
-        "REASON: <пояснение>"
+        "Ты — Verifier агент. Проведи финальную верификацию и кратко обоснуй результат "
+        "по метрикам confidence и conflict_rate."
     )
-
     MIN_CONFIDENCE = 0.95
     MAX_CONFLICT_RATE = 0.05
 
-    def __init__(self, llm_router: LLMRouter):
-        super().__init__(llm_router)
+    def __init__(self, llm_router: LLMRouter) -> None:
+        super().__init__(agent_id="05", llm_router=llm_router)
 
-    async def execute(
-        self,
-        task: str,
-        context: dict[str, Any] | None = None,
-        previous_results: list[AgentResult] | None = None,
-    ) -> AgentResult:
-        """Провести финальную верификацию документа."""
-        prompt = f"Проведи финальную верификацию документа:\n\n{task}"
-        ctx = self._build_context_prompt(previous_results)
-        if ctx:
-            prompt += ctx
+    async def run(self, state: dict[str, Any]) -> dict[str, Any]:
+        confidence = float(state.get("confidence", 0.0))
+        conflict_rate = float(state.get("conflict_rate", 1.0))
 
-        response = await self.llm.query(
-            prompt=prompt,
-            system_prompt=self.system_prompt,
-        )
+        prompt = self._build_prompt(state)
+        response = await self.llm_router.query(prompt=prompt, system_prompt=self.system_prompt)
 
-        # Генерируем SHA256-хэш версии
-        doc_content = previous_results[-1].output if previous_results else task
-        version_hash = hashlib.sha256(doc_content.encode()).hexdigest()
+        final_text = str(state.get("final_text") or state.get("draft") or "")
+        version_hash = hashlib.sha256(final_text.encode("utf-8")).hexdigest()
 
-        return AgentResult(
-            agent_id=self.agent_id,
-            output=response.text,
-            metadata={
-                "version_hash": version_hash,
-                "provider": response.provider.value,
-                "model": response.model,
-            },
-        )
+        approved = confidence >= self.MIN_CONFIDENCE and conflict_rate <= self.MAX_CONFLICT_RATE
+        audit_entry = {
+            "agent": self.agent_id,
+            "confidence": confidence,
+            "conflict_rate": conflict_rate,
+            "approved": approved,
+            "sha256": version_hash,
+        }
+
+        audit_log = state.setdefault("audit_log", [])
+        if not isinstance(audit_log, list):
+            raise TypeError("state['audit_log'] must be a list")
+        audit_log.append(audit_entry)
+        state["audit_log"] = audit_log
+        state["verification"] = {"approved": approved, "sha256": version_hash, "details": response.text}
+
+        return self._update_state(state, response.text)

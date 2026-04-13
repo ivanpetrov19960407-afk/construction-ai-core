@@ -1,50 +1,26 @@
 """Агент Legal Expert — проверка ссылок на НПА."""
 
+from __future__ import annotations
+
 from typing import Any
 
-from agents.base import AgentResult, BaseAgent
+from agents.base import BaseAgent
 from core.llm_router import LLMRouter
 
 
 class LegalExpertAgent(BaseAgent):
-    """⚖️ Legal Expert — юридическая проверка.
+    """⚖️ Legal Expert — добавляет ссылки на ФЗ/ГК РФ/ТК РФ."""
 
-    Проверяет ссылки на НПА: ФЗ, ГК РФ, ТК РФ, договорные условия.
-    Формулировки претензий. Активируется при генерации писем и анализе тендеров.
-    """
-
-    agent_id = "legal_expert"
-    name = "Legal Expert"
     system_prompt = (
-        "Ты — юридический агент строительной ИИ-платформы. "
-        "Проверяешь и добавляешь ссылки на нормативно-правовые акты: "
-        "ФЗ, ГК РФ, ТК РФ, Градостроительный кодекс, договорные условия. "
-        "Проверяешь корректность формулировок претензий и уведомлений. "
-        "Указывай конкретные статьи и пункты."
+        "Ты — Legal Expert агент. Проверь юридические формулировки и добавь релевантные "
+        "ссылки на ФЗ, ГК РФ, ТК РФ (статья/часть/пункт). Верни правки списком."
     )
 
-    def __init__(self, llm_router: LLMRouter):
-        super().__init__(llm_router)
+    def __init__(self, llm_router: LLMRouter) -> None:
+        super().__init__(agent_id="06", llm_router=llm_router)
 
-    async def execute(
-        self,
-        task: str,
-        context: dict[str, Any] | None = None,
-        previous_results: list[AgentResult] | None = None,
-    ) -> AgentResult:
-        """Провести юридическую проверку."""
-        prompt = f"Проведи юридическую проверку документа:\n\n{task}"
-        ctx = self._build_context_prompt(previous_results)
-        if ctx:
-            prompt += ctx
-
-        response = await self.llm.query(
-            prompt=prompt,
-            system_prompt=self.system_prompt,
-        )
-
-        return AgentResult(
-            agent_id=self.agent_id,
-            output=response.text,
-            metadata={"provider": response.provider.value, "model": response.model},
-        )
+    async def run(self, state: dict[str, Any]) -> dict[str, Any]:
+        prompt = self._build_prompt(state)
+        response = await self.llm_router.query(prompt=prompt, system_prompt=self.system_prompt)
+        state["legal_review"] = response.text
+        return self._update_state(state, response.text)
