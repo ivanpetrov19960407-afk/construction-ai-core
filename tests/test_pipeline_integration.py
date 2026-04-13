@@ -1,5 +1,6 @@
 """Интеграционный тест LangGraph pipeline в оркестраторе."""
 
+import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -19,8 +20,8 @@ def test_generate_tk_pipeline_end_to_end() -> None:
             SimpleNamespace(text="formatter output"),
         ]
     )
-
-    import asyncio
+    # Mock session_memory.get to avoid SQLite initialisation in CI
+    orchestrator.session_memory.get = AsyncMock(return_value=[])
 
     result = asyncio.run(
         orchestrator._run_pipeline(
