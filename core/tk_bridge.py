@@ -22,42 +22,55 @@ class TKGeneratorBridge:
         """Вызывает tk-generator через subprocess и возвращает результат."""
         generator_root = Path(self.path).expanduser().resolve()
         out_dir = Path(tempfile.mkdtemp(prefix="tk_generator_out_"))
+        timeout_seconds = 120
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as input_file:
             json.dump(input_json, input_file, ensure_ascii=False, indent=2)
             input_path = Path(input_file.name)
 
-        cmd = [
-            "node",
-            "src/index.js",
-            "--input",
-            str(input_path),
-            "--output",
-            str(out_dir),
-        ]
-        process = await asyncio.create_subprocess_exec(
-            *cmd,
-            cwd=str(generator_root),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, stderr = await process.communicate()
-
-        if process.returncode != 0:
-            raise RuntimeError(
-                "tk-generator failed: "
-                f"returncode={process.returncode}, stdout={stdout.decode(errors='ignore')}, "
-                f"stderr={stderr.decode(errors='ignore')}"
+        try:
+            cmd = [
+                "node",
+                "src/index.js",
+                "--input",
+                str(input_path),
+                "--output",
+                str(out_dir),
+            ]
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                cwd=str(generator_root),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
             )
+            try:
+                stdout, stderr = await asyncio.wait_for(
+                    process.communicate(), timeout=timeout_seconds
+                )
+            except TimeoutError as exc:
+                process.kill()
+                await process.wait()
+                raise RuntimeError(
+                    f"tk-generator timed out after {timeout_seconds} seconds"
+                ) from exc
 
-        docx_file = next(out_dir.rglob("*.docx"), None)
-        pdf_file = next(out_dir.rglob("*.pdf"), None)
+            if process.returncode != 0:
+                raise RuntimeError(
+                    "tk-generator failed: "
+                    f"returncode={process.returncode}, stdout={stdout.decode(errors='ignore')}, "
+                    f"stderr={stderr.decode(errors='ignore')}"
+                )
 
-        return {
-            "output_dir": str(out_dir),
-            "docx_path": str(docx_file) if docx_file else "",
-            "pdf_path": str(pdf_file) if pdf_file else "",
-        }
+            docx_file = next(out_dir.rglob("*.docx"), None)
+            pdf_file = next(out_dir.rglob("*.pdf"), None)
+
+            return {
+                "output_dir": str(out_dir),
+                "docx_path": str(docx_file) if docx_file else "",
+                "pdf_path": str(pdf_file) if pdf_file else "",
+            }
+        finally:
+            input_path.unlink(missing_ok=True)
 
     def is_available(self) -> bool:
         """Проверяет что tk-generator установлен и Node.js доступен."""
