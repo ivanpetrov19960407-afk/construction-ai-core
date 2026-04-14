@@ -39,3 +39,9 @@ class AnalyzeForm(StatesGroup):
     """Состояние загрузки документа для анализа."""
 
     document = State()
+
+
+class UploadForm(StatesGroup):
+    """Состояние загрузки документа в базу знаний."""
+
+    document = State()

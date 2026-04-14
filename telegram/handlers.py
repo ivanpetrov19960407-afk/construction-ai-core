@@ -30,7 +30,7 @@ from telegram.keyboards import (
     skip_keyboard,
     unit_keyboard,
 )
-from telegram.states import AnalyzeForm, KSStates, LetterStates, TKStates
+from telegram.states import AnalyzeForm, KSStates, LetterStates, TKStates, UploadForm
 
 router = Router()
 
@@ -52,6 +52,13 @@ def _get_api_key() -> str:
     if settings.api_keys:
         return settings.api_keys[0]
     return ""
+
+
+def _get_admin_api_key() -> str:
+    """Возвращает первый admin API-ключ из настроек."""
+    if settings.admin_api_keys:
+        return settings.admin_api_keys[0]
+    return _get_api_key()
 
 
 @dataclass
@@ -500,6 +507,65 @@ async def analyze_document_handler(message: Message, state: FSMContext) -> None:
     await message.answer(_format_analyze_response(result), reply_markup=ReplyKeyboardRemove())
 
 
+# ── Загрузка нормативов в RAG ────────────────────────────────────────────────
+
+
+@router.message(Command("upload"))
+async def upload_start_handler(message: Message, state: FSMContext) -> None:
+    user_id = _require_user_id(message)
+    if user_id not in settings.admin_telegram_ids:
+        await message.answer("⛔ Команда доступна только администраторам.")
+        return
+    await state.set_state(UploadForm.document)
+    await message.answer("Отправь PDF для загрузки в базу знаний", reply_markup=cancel_keyboard())
+
+
+@router.message(UploadForm.document, F.document)
+async def upload_document_handler(message: Message, state: FSMContext) -> None:
+    user_id = _require_user_id(message)
+    if user_id not in settings.admin_telegram_ids:
+        await state.clear()
+        await message.answer("⛔ Команда доступна только администраторам.")
+        return
+
+    document = message.document
+    if document is None:
+        await message.answer("Отправь документ в формате PDF.")
+        return
+
+    if document.file_size and document.file_size > MAX_PDF_SIZE_BYTES:
+        await message.answer("Файл слишком большой (макс. 20 МБ)")
+        return
+
+    file_name = document.file_name or "document.pdf"
+    if document.mime_type != "application/pdf" and not file_name.lower().endswith(".pdf"):
+        await message.answer("Поддерживаются только PDF-документы.")
+        return
+
+    bot = message.bot
+    if bot is None:
+        await message.answer("Bot не инициализирован.")
+        return
+
+    file_bytes = BytesIO()
+    await bot.download(document, destination=file_bytes)
+    file_bytes.seek(0)
+
+    try:
+        result = await _ingest_rag_pdf(file_name, file_bytes.getvalue())
+    except (httpx.TimeoutException, httpx.HTTPStatusError) as exc:
+        await message.answer(f"Ошибка загрузки в базу знаний: {exc}")
+        return
+
+    chunks_added = int(result.get("chunks_added", 0))
+    source = str(result.get("source", file_name))
+    await state.clear()
+    await message.answer(
+        f"✅ Загружено {chunks_added} chunks из документа {source}",
+        reply_markup=ReplyKeyboardRemove(),
+    )
+
+
 # ── Отмена и текстовый fallback ───────────────────────────────────────────────
 
 
@@ -544,6 +610,21 @@ async def _analyze_tender_pdf(filename: str, content: bytes) -> dict:
         response = await client.post(
             f"{settings.core_api_url.rstrip('/')}/api/analyze/tender",
             files={"file": (filename, content, "application/pdf")},
+            headers=headers,
+        )
+        response.raise_for_status()
+        return response.json()
+
+
+async def _ingest_rag_pdf(filename: str, content: bytes) -> dict:
+    headers = {"X-API-Key": _get_admin_api_key()}
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        response = await client.post(
+            f"{settings.core_api_url.rstrip('/')}/api/rag/ingest",
+            files={
+                "file": (filename, content, "application/pdf"),
+                "source_name": (None, filename),
+            },
             headers=headers,
         )
         response.raise_for_status()
