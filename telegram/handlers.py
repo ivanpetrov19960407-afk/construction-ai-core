@@ -618,7 +618,6 @@ async def _analyze_tender_pdf(filename: str, content: bytes) -> dict:
             f"{settings.core_api_url.rstrip('/')}/api/analyze/tender",
             files={"file": (filename, content, "application/pdf")},
             headers=headers,
-<<<<<<< Updated upstream
         )
         response.raise_for_status()
         return response.json()
@@ -634,8 +633,6 @@ async def _ingest_rag_pdf(filename: str, content: bytes) -> dict:
                 "source_name": (None, filename),
             },
             headers=headers,
-=======
->>>>>>> Stashed changes
         )
         response.raise_for_status()
         return response.json()
