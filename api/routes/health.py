@@ -1,15 +1,97 @@
 """Health-check endpoint."""
 
-from fastapi import APIRouter
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Request
+
+from config.settings import settings
+from core.database import get_db, init_db
+from core.llm_router import PROVIDER_CONFIG, LLMProvider
+from core.rag_engine import RAGEngine
 
 router = APIRouter()
 
 
 @router.get("/health")
-async def health_check():
+async def health_check(request: Request):
     """Проверка состояния сервиса."""
+    components: dict[str, dict[str, str | int]] = {}
+
+    # database
+    db_status = "ok"
+    sessions_count = 0
+    try:
+        await init_db(settings.sqlite_db_path)
+        async with get_db(settings.sqlite_db_path) as db:
+            cursor = await db.execute("SELECT COUNT(*) AS total FROM sessions")
+            row = await cursor.fetchone()
+            sessions_count = int(row["total"]) if row else 0
+    except Exception:
+        db_status = "error"
+    components["database"] = {
+        "status": db_status,
+        "sessions_count": sessions_count,
+    }
+
+    # rag engine
+    rag_status = "ok"
+    chunks_count = 0
+    rag_sources_count = 0
+    try:
+        rag_stats = RAGEngine().get_stats()
+        chunks_count = int(rag_stats.get("total_chunks", 0))
+        rag_sources_count = len(rag_stats.get("sources", []))
+    except Exception:
+        rag_status = "error"
+    components["rag_engine"] = {
+        "status": rag_status,
+        "chunks_count": chunks_count,
+        "sources": rag_sources_count,
+    }
+
+    # llm router
+    llm_status = "ok"
+    provider_name = settings.default_llm_provider
+    try:
+        provider = LLMProvider(provider_name)
+        _ = PROVIDER_CONFIG[provider]
+    except Exception:
+        llm_status = "error"
+    components["llm_router"] = {
+        "status": llm_status,
+        "provider": provider_name,
+    }
+
+    # telegram webhook
+    telegram_configured = bool(settings.telegram_webhook_url and settings.bot_token)
+    telegram_active = bool(
+        settings.telegram_webhook_url
+        and settings.bot_token
+        and getattr(request.app.state, "telegram_bot", None) is not None
+        and getattr(request.app.state, "telegram_dp", None) is not None
+    )
+    components["telegram_webhook"] = {
+        "status": "active" if telegram_active else "inactive",
+    }
+
+    service_status = "ok"
+    if components["database"]["status"] == "error" or components["llm_router"]["status"] == "error":
+        service_status = "error"
+    elif rag_status == "error" or (
+        telegram_configured and components["telegram_webhook"]["status"] == "inactive"
+    ):
+        service_status = "degraded"
+
+    started_at = getattr(request.app.state, "started_at", None)
+    uptime_seconds = 0.0
+    if started_at is not None:
+        now = datetime.now(timezone.utc)  # noqa: UP017
+        uptime_seconds = max(0.0, (now - started_at).total_seconds())
+
     return {
-        "status": "ok",
+        "status": service_status,
         "service": "construction-ai-core",
         "version": "0.1.0",
+        "uptime_seconds": round(uptime_seconds, 1),
+        "components": components,
     }

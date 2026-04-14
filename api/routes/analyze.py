@@ -52,7 +52,36 @@ def _extract_list_items(text: str) -> list[str]:
     return items
 
 
-@router.post("/tender", response_model=TenderAnalysisResponse)
+@router.post(
+    "/tender",
+    response_model=TenderAnalysisResponse,
+    summary="Анализ тендерного PDF",
+    description=(
+        "Извлекает текст из тендерного PDF и формирует список рисков, противоречий и рекомендацию."
+    ),
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {
+                "multipart/form-data": {
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "file": {"type": "string", "format": "binary"},
+                            "session_id": {"type": "string"},
+                            "role": {"type": "string", "default": "tender_specialist"},
+                        },
+                        "required": ["file"],
+                    },
+                    "example": {
+                        "session_id": "88f0ea7c-cfa2-4af7-a226-cf12f862eeb4",
+                        "role": "tender_specialist",
+                    },
+                }
+            },
+        }
+    },
+)
 async def analyze_tender(
     request: Request,
     file: UploadFile = File(...),

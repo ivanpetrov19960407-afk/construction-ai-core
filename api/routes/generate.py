@@ -145,7 +145,30 @@ class PPRRequest(BaseModel):
     export_format: Literal["docx", "pdf"] = "docx"
 
 
-@router.post("/generate/tk", response_model=TKResponse)
+@router.post(
+    "/generate/tk",
+    response_model=TKResponse,
+    summary="Генерация технологической карты",
+    description="Генерирует ТК на основе вида работ, объёмов и нормативов.",
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {
+                "application/json": {
+                    "example": {
+                        "work_type": "Устройство монолитной плиты",
+                        "object_name": "ЖК Северный квартал, корпус 3",
+                        "volume": 120.5,
+                        "unit": "м³",
+                        "norms": ["СП 70.13330", "СП 48.13330"],
+                        "role": "pto_engineer",
+                        "session_id": "1c53f75f-4036-4b8f-9046-a46ad9175d1f",
+                    }
+                }
+            },
+        }
+    },
+)
 async def generate_tk(payload: TKRequest, request: Request):
     """Генерация технологической карты (ТК) через orchestrator."""
     _ = request
@@ -238,7 +261,34 @@ def _extract_legal_references(history: list[dict]) -> list[str]:
     return references
 
 
-@router.post("/generate/letter", response_model=LetterResponse)
+@router.post(
+    "/generate/letter",
+    response_model=LetterResponse,
+    summary="Генерация делового письма",
+    description="Формирует деловое письмо по заданному типу, адресату, теме и ключевым тезисам.",
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {
+                "application/json": {
+                    "example": {
+                        "letter_type": "запрос",
+                        "addressee": "ООО СтройМонтаж",
+                        "subject": "Предоставление исполнительной документации",
+                        "body_points": [
+                            "Просим направить акты скрытых работ",
+                            "Указать сроки предоставления",
+                        ],
+                        "contract_number": "Д-17/2026",
+                        "include_npa": True,
+                        "role": "foreman",
+                        "session_id": "802d28ad-2381-4837-97d6-4096bb5659fd",
+                    }
+                }
+            },
+        }
+    },
+)
 async def generate_letter_v2(payload: LetterRequest, request: Request):
     """Генерация делового письма через orchestrator."""
     _ = request
@@ -289,7 +339,33 @@ async def generate_letter_v2(payload: LetterRequest, request: Request):
     )
 
 
-@router.post("/generate/ppr")
+@router.post(
+    "/generate/ppr",
+    summary="Генерация ППР",
+    description=(
+        "Формирует проект производства работ (ППР) с возможностью дальнейшей выгрузки в DOCX/PDF."
+    ),
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {
+                "application/json": {
+                    "example": {
+                        "work_type": "Монтаж металлоконструкций",
+                        "object_name": "Складской комплекс А-12",
+                        "developer": "ПТО ООО Генподряд",
+                        "start_date": "2026-05-10",
+                        "duration_days": 45,
+                        "workers_count": 18,
+                        "role": "pto_engineer",
+                        "session_id": "ea8f6325-26a2-4bd1-a831-c4b8ec3c5aa5",
+                        "export_format": "docx",
+                    }
+                }
+            },
+        }
+    },
+)
 async def generate_ppr(payload: PPRRequest, request: Request):
     """Генерация ППР в DOCX/PDF."""
     _ = request
@@ -373,7 +449,38 @@ async def generate_ppr(payload: PPRRequest, request: Request):
     }
 
 
-@router.post("/generate/ks", response_model=KSResponse)
+@router.post(
+    "/generate/ks",
+    response_model=KSResponse,
+    summary="Генерация КС-2 и КС-3",
+    description="Генерирует формы КС-2/КС-3 по перечню выполненных работ за указанный период.",
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {
+                "application/json": {
+                    "example": {
+                        "object_name": "БЦ Речной, секция Б",
+                        "contract_number": "К-2026-11",
+                        "period_from": "2026-03-01",
+                        "period_to": "2026-03-31",
+                        "work_items": [
+                            {
+                                "name": "Устройство бетонной подготовки",
+                                "unit": "м³",
+                                "volume": 80.0,
+                                "norm_hours": 12.5,
+                                "price_per_unit": 5200.0,
+                            }
+                        ],
+                        "role": "pto_engineer",
+                        "session_id": "7042f67a-7df6-4cf4-8fd4-065a2b3fac58",
+                    }
+                }
+            },
+        }
+    },
+)
 async def generate_ks(payload: KSRequest, request: Request):
     """Генерация КС-2/КС-3 через orchestrator pipeline."""
     _ = request
@@ -454,7 +561,36 @@ def _extract_risks(analysis: str) -> list[str]:
     return risks
 
 
-@router.post("/analyze/document")
+@router.post(
+    "/analyze/document",
+    summary="Анализ загруженного документа",
+    description=(
+        "Анализирует PDF-документ и возвращает "
+        "структурированный результат с рисками и рекомендациями."
+    ),
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {
+                "multipart/form-data": {
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "file": {"type": "string", "format": "binary"},
+                            "role": {"type": "string", "default": "tender_specialist"},
+                            "session_id": {"type": "string"},
+                        },
+                        "required": ["file"],
+                    },
+                    "example": {
+                        "role": "tender_specialist",
+                        "session_id": "0b55b82d-d086-4f45-81d6-627dfd6d9fd7",
+                    },
+                }
+            },
+        }
+    },
+)
 async def analyze_document(
     request: Request,
     file: UploadFile = File(...),
