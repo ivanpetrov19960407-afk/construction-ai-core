@@ -61,6 +61,13 @@ def _get_admin_api_key() -> str:
     return _get_api_key()
 
 
+def _get_api_key() -> str:
+    """Возвращает первый API-ключ из настроек."""
+    if settings.api_keys:
+        return settings.api_keys[0]
+    return ""
+
+
 @dataclass
 class TelegramCoreClient:
     """Клиент для запросов к Construction AI Core API."""
@@ -611,6 +618,7 @@ async def _analyze_tender_pdf(filename: str, content: bytes) -> dict:
             f"{settings.core_api_url.rstrip('/')}/api/analyze/tender",
             files={"file": (filename, content, "application/pdf")},
             headers=headers,
+<<<<<<< Updated upstream
         )
         response.raise_for_status()
         return response.json()
@@ -626,6 +634,8 @@ async def _ingest_rag_pdf(filename: str, content: bytes) -> dict:
                 "source_name": (None, filename),
             },
             headers=headers,
+=======
+>>>>>>> Stashed changes
         )
         response.raise_for_status()
         return response.json()
