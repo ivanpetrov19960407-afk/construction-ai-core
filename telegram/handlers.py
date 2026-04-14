@@ -233,7 +233,7 @@ async def tk_norms_handler(message: Message, state: FSMContext) -> None:
 async def tk_confirm_yes_handler(callback: CallbackQuery, state: FSMContext) -> None:
     data = await state.get_data()
     await state.clear()
-    if callback.message is None:
+    if callback.message is None or not isinstance(callback.message, Message):
         return
     message = callback.message
     user_id = callback.from_user.id
@@ -344,7 +344,7 @@ async def letter_contract_number_handler(message: Message, state: FSMContext) ->
 async def letter_confirm_yes_handler(callback: CallbackQuery, state: FSMContext) -> None:
     data = await state.get_data()
     await state.clear()
-    if callback.message is None:
+    if callback.message is None or not isinstance(callback.message, Message):
         return
     message = callback.message
     user_id = callback.from_user.id
@@ -432,7 +432,7 @@ async def ks_work_items_handler(message: Message, state: FSMContext) -> None:
 async def ks_confirm_yes_handler(callback: CallbackQuery, state: FSMContext) -> None:
     data = await state.get_data()
     await state.clear()
-    if callback.message is None:
+    if callback.message is None or not isinstance(callback.message, Message):
         return
     message = callback.message
     user_id = callback.from_user.id
