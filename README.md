@@ -2,6 +2,8 @@
 
 [![CI](https://github.com/ivanpetrov19960407-afk/construction-ai-core/actions/workflows/ci.yml/badge.svg)](https://github.com/ivanpetrov19960407-afk/construction-ai-core/actions/workflows/ci.yml)
 [![Docker Build](https://github.com/ivanpetrov19960407-afk/construction-ai-core/actions/workflows/docker-build.yml/badge.svg)](https://github.com/ivanpetrov19960407-afk/construction-ai-core/actions/workflows/docker-build.yml)
+[![Release](https://img.shields.io/github/v/release/ivanpetrov19960407-afk/construction-ai-core)](https://github.com/ivanpetrov19960407-afk/construction-ai-core/releases)
+[![PRs](https://img.shields.io/github/issues-pr-closed/ivanpetrov19960407-afk/construction-ai-core)](https://github.com/ivanpetrov19960407-afk/construction-ai-core/pulls?q=is%3Apr+is%3Aclosed)
 
 **Универсальный ИИ-помощник для строительной отрасли**
 
@@ -10,6 +12,20 @@
 > Платформа для инженера ПТО, прораба, зам. генерального и специалиста по тендерам.
 
 ---
+
+## Текущий статус
+
+**v0.2.0-beta** · Фаза 2 завершена · Деплой: https://ваш-домен.ru
+
+### Что работает прямо сейчас ✅
+
+- 8 агентов-оркестраторов (Researcher, Analyst, Author, Critic, Verifier, Legal, Formatter, Calculator)
+- Telegram-бот с FSM-диалогами: /tk, /letter, /ks, /ppr, /analyze, /upload
+- Генерация документов: ТК, ППР, Деловые письма, КС-2/КС-3 (DOCX + PDF)
+- RAG-база: 30+ строительных нормативов (СП, ГОСТ, 44-ФЗ)
+- LLM: Perplexity, OpenAI, Claude, Deepseek (с fallback-цепочкой)
+- Мониторинг: Prometheus + Grafana
+- Авто-бэкапы, CI/CD через GitHub Actions
 
 ## Архитектура
 
@@ -23,105 +39,13 @@
 │  Session Memory                              │
 ├─────────────────────────────────────────────┤
 │  03 · Генераторы и Анализаторы              │
-│  ТК/ППР · Письма · КС-2/КС-3 · РД/ПСД     │
+│  ТК/ППР · Письма · КС-2/КС-3 · РД/ПСД        │
 │  Нормативы                                   │
 ├─────────────────────────────────────────────┤
 │  04 · Хранилище знаний (RAG)                │
 │  ChromaDB/Qdrant · SQLite/PostgreSQL         │
 │  Нормативы + Учебники + Справочники          │
 └─────────────────────────────────────────────┘
-```
-
-## Агенты оркестратора
-
-| # | Агент | Специализация |
-|---|-------|---------------|
-| 01 | 🔍 Researcher | Поиск по нормативам, RAG, анализ РД/ПСД |
-| 02 | 📊 Analyst | Конфликт-анализ, оценка рисков |
-| 03 | ✍️ Author | Генерация ТК, ППР, писем, отчётов |
-| 04 | 🔎 Critic | Рецензирование черновиков |
-| 05 | ✅ Verifier | KPI-проверка (confidence ≥ 0.95) |
-| 06 | ⚖️ Legal Expert | Ссылки на НПА, юридическая проверка |
-| 07 | 📐 Formatter | ГОСТ-форматирование DOCX |
-| 08 | 🧮 Calculator | Расчёты объёмов, трудозатрат, смет |
-
-## Структура проекта
-
-```
-construction-ai-core/
-├── api/                    # FastAPI application
-│   ├── main.py             # Точка входа
-│   └── routes/
-│       ├── health.py       # Health-check
-│       ├── chat.py         # Чат-интерфейс
-│       └── generate.py     # Генерация документов
-├── core/                   # Ядро системы
-│   ├── orchestrator.py     # Оркестратор (LangGraph)
-│   └── llm_router.py       # Маршрутизация LLM
-├── agents/                 # 8 агентов
-│   ├── base.py             # Базовый класс
-│   ├── researcher.py
-│   ├── analyst.py
-│   ├── author.py
-│   ├── critic.py
-│   ├── verifier.py
-│   ├── legal_expert.py
-│   ├── formatter.py
-│   └── calculator.py
-├── config/
-│   ├── orchestrator.json   # Конфигурация агентов
-│   └── settings.py         # Настройки (pydantic-settings)
-├── templates/              # DOCX-шаблоны (Jinja2)
-├── tests/
-├── docker-compose.yml
-├── Dockerfile
-├── pyproject.toml
-└── .env.example
-```
-
-## Быстрый старт
-
-### 1. Клонировать репозиторий
-
-```bash
-git clone https://github.com/ivanpetrov19960407-afk/construction-ai-core.git
-cd construction-ai-core
-```
-
-### 2. Настроить окружение
-
-```bash
-cp .env.example .env
-# Заполнить API-ключи в .env
-```
-
-### 3. Установить зависимости
-
-```bash
-# С uv (рекомендуется)
-uv sync
-
-# Или с pip
-pip install -e ".[dev]"
-```
-
-### 4. Запустить сервер
-
-```bash
-uvicorn api.main:app --reload --port 8000
-```
-
-### 5. Или через Docker
-
-```bash
-docker compose up --build
-```
-
-### 6. Проверить
-
-```bash
-curl http://localhost:8000/health
-# → {"status": "ok", "service": "construction-ai-core", "version": "0.1.0"}
 ```
 
 ## API Endpoints
@@ -132,20 +56,31 @@ curl http://localhost:8000/health
 | POST | `/api/chat` | Чат с ИИ-помощником |
 | POST | `/api/generate/tk` | Генерация технологической карты |
 | POST | `/api/generate/letter` | Генерация делового письма |
-| POST | `/api/generate/ks` | Генерация КС-2/КС-3 (Фаза 4) |
+| POST | `/api/generate/ks` | Генерация КС-2/КС-3 |
+| POST | `/api/generate/ppr` | Генерация ППР |
+| POST | `/api/analyze/tender` | Анализ тендерной документации |
+| POST | `/api/rag/ingest` | Загрузка нормативов в RAG (admin) |
+| GET | `/api/rag/sources` | Список загруженных источников |
+| GET | `/metrics` | Prometheus метрики |
+| GET | `/web` | Web Mini App |
 
 ## Roadmap
 
-- [x] **Фаза 0** — tk-generator (Node.js), Telegram-бот (laughing-memory)
-- [ ] **Фаза 1** — MVP: FastAPI + Оркестратор + LLM Router + Telegram ← _мы здесь_
-- [ ] **Фаза 2** — Генераторы: ТК/ППР, письма, PDF-парсер, RAG
-- [ ] **Фаза 3** — Desktop GUI (Tauri), экраны «Нормативы» и «Архив»
-- [ ] **Фаза 4** — КС-2/КС-3, OCR, полная RAG, инсталлятор
+- [x] Фаза 0 — tk-generator + Telegram-бот
+- [x] Фаза 1 — MVP: FastAPI + 8 агентов + RAG + документы
+- [x] Фаза 2 — Стабилизация: Docker, CI, мониторинг, бэкапы, tk-bridge
+- [ ] Фаза 3 — Desktop GUI (Tauri 2) + JWT + PostgreSQL + Redis ← мы здесь
+- [ ] Фаза 4 — Сметный калькулятор, командная работа, мобильный UI
 
-## Связанные репозитории
+## Быстрый старт
 
-- [tk-generator](https://github.com/ivanpetrov19960407-afk/tk-generator) — генератор ТК/МК (Node.js)
-- [laughing-memory](https://github.com/ivanpetrov19960407-afk/laughing-memory) — Telegram-бот (aiogram 3)
+```bash
+git clone https://github.com/ivanpetrov19960407-afk/construction-ai-core.git
+cd construction-ai-core
+cp .env.example .env
+uv sync
+uvicorn api.main:app --reload --port 8000
+```
 
 ## Технологический стек
 
@@ -153,10 +88,10 @@ curl http://localhost:8000/health
 **LLM:** Perplexity API, OpenAI, Claude, Deepseek  
 **RAG:** ChromaDB → Qdrant  
 **Документы:** docxtpl, pdfplumber, python-docx  
-**Инфраструктура:** Docker, SQLite → PostgreSQL  
+**Инфраструктура:** Docker, Prometheus, Grafana, PostgreSQL, Redis-ready  
 **Desktop:** Tauri 2 (Фаза 3)  
-**Telegram:** aiogram 3  
+**Telegram:** aiogram 3
 
 ---
 
-**v0.1-alpha · In Development**
+**v0.2.0-beta · Beta — доступно для тестирования**

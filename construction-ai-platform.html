@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Construction AI Platform</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; background: #0f172a; color: #e2e8f0; }
+    .container { max-width: 980px; margin: 0 auto; padding: 32px 20px 48px; }
+    .card { background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 20px; margin-top: 16px; }
+    h1, h2 { margin: 0 0 12px; }
+    ul { margin: 0; padding-left: 20px; }
+    li { margin: 8px 0; }
+    .badge { display: inline-block; background: #1d4ed8; color: #fff; border-radius: 999px; padding: 6px 12px; font-size: 14px; margin-bottom: 14px; }
+    .muted { color: #94a3b8; }
+    .btn { display: inline-block; margin-top: 16px; background: #22c55e; color: #052e16; text-decoration: none; padding: 12px 16px; border-radius: 10px; font-weight: 700; }
+    .roadmap li { list-style: none; padding-left: 0; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <span class="badge">v0.2.0-beta</span>
+    <h1>Construction AI Platform</h1>
+    <p class="muted">Beta — доступно для тестирования</p>
+
+    <div class="card">
+      <h2>Что работает прямо сейчас ✅</h2>
+      <ul>
+        <li>8 агентов-оркестраторов (Researcher, Analyst, Author, Critic, Verifier, Legal, Formatter, Calculator)</li>
+        <li>Telegram-бот с FSM-диалогами: /tk, /letter, /ks, /ppr, /analyze, /upload</li>
+        <li>Генерация документов: ТК, ППР, Деловые письма, КС-2/КС-3 (DOCX + PDF)</li>
+        <li>RAG-база: 30+ строительных нормативов (СП, ГОСТ, 44-ФЗ)</li>
+        <li>LLM: Perplexity, OpenAI, Claude, Deepseek (с fallback-цепочкой)</li>
+        <li>Мониторинг: Prometheus + Grafana</li>
+        <li>Авто-бэкапы, CI/CD через GitHub Actions</li>
+      </ul>
+      <a class="btn" href="https://t.me/construction_ai_core_bot" target="_blank" rel="noopener noreferrer">Открыть Telegram-бот</a>
+    </div>
+
+    <div class="card">
+      <h2>Roadmap</h2>
+      <ul class="roadmap">
+        <li>✅ Фаза 0 — tk-generator + Telegram-бот</li>
+        <li>✅ Фаза 1 — MVP: FastAPI + 8 агентов + RAG + документы</li>
+        <li>✅ Фаза 2 — Стабилизация: Docker, CI, мониторинг, бэкапы, tk-bridge</li>
+        <li>⬜ Фаза 3 — Desktop GUI (Tauri 2) + JWT + PostgreSQL + Redis ← мы здесь</li>
+        <li>⬜ Фаза 4 — Сметный калькулятор, командная работа, мобильный UI</li>
+      </ul>
+    </div>
+  </div>
+</body>
+</html>
