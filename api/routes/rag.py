@@ -5,6 +5,8 @@ from __future__ import annotations
 from functools import lru_cache
 from tempfile import NamedTemporaryFile
 
+from typing import TypedDict
+
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 
 from config.settings import settings
@@ -55,8 +57,13 @@ async def rag_ingest(
     return {"chunks_added": int(chunks_added), "source": source_name}
 
 
+class SourceSummary(TypedDict):
+    source: str
+    chunks: int
+
+
 @router.get("/sources")
-async def rag_sources(request: Request) -> dict[str, list[dict[str, int | str]]]:
+async def rag_sources(request: Request) -> dict[str, list[SourceSummary]]:
     """Вернуть список источников RAG с количеством чанков (доступно только admin)."""
     _require_admin(request)
     payload = get_rag_engine().collection.get(include=["metadatas"])
@@ -66,5 +73,8 @@ async def rag_sources(request: Request) -> dict[str, list[dict[str, int | str]]]
         source = str((meta or {}).get("source", "unknown"))
         counters[source] = counters.get(source, 0) + 1
 
-    sources = [{"source": source, "chunks": count} for source, count in sorted(counters.items())]
+    sources: list[SourceSummary] = [
+        SourceSummary(source=source, chunks=count)
+        for source, count in sorted(counters.items())
+    ]
     return {"sources": sources}

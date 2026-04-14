@@ -61,13 +61,6 @@ def _get_admin_api_key() -> str:
     return _get_api_key()
 
 
-def _get_api_key() -> str:
-    """Возвращает первый API-ключ из настроек."""
-    if settings.api_keys:
-        return settings.api_keys[0]
-    return ""
-
-
 @dataclass
 class TelegramCoreClient:
     """Клиент для запросов к Construction AI Core API."""
