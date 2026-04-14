@@ -56,7 +56,10 @@ def _extract_list_items(text: str) -> list[str]:
     "/tender",
     response_model=TenderAnalysisResponse,
     summary="Анализ тендерного PDF",
-    description="Извлекает текст из тендерного PDF и формирует список рисков, противоречий и рекомендацию.",
+    description=(
+        "Извлекает текст из тендерного PDF и формирует "
+        "список рисков, противоречий и рекомендацию."
+    ),
     openapi_extra={
         "requestBody": {
             "required": True,

@@ -1,12 +1,12 @@
 """Health-check endpoint."""
 
-from datetime import datetime, timezone
+from datetime import datetime
 
 from fastapi import APIRouter, Request
 
 from config.settings import settings
 from core.database import get_db
-from core.llm_router import LLMProvider, PROVIDER_CONFIG
+from core.llm_router import PROVIDER_CONFIG, LLMProvider
 from core.rag_engine import RAGEngine
 
 router = APIRouter()
@@ -83,7 +83,7 @@ async def health_check(request: Request):
     started_at = getattr(request.app.state, "started_at", None)
     uptime_seconds = 0.0
     if started_at is not None:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(datetime.UTC)
         uptime_seconds = max(0.0, (now - started_at).total_seconds())
 
     return {

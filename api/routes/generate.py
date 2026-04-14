@@ -342,7 +342,10 @@ async def generate_letter_v2(payload: LetterRequest, request: Request):
 @router.post(
     "/generate/ppr",
     summary="Генерация ППР",
-    description="Формирует проект производства работ (ППР) с возможностью дальнейшей выгрузки в DOCX/PDF.",
+    description=(
+        "Формирует проект производства работ (ППР) "
+        "с возможностью дальнейшей выгрузки в DOCX/PDF."
+    ),
     openapi_extra={
         "requestBody": {
             "required": True,
@@ -562,7 +565,10 @@ def _extract_risks(analysis: str) -> list[str]:
 @router.post(
     "/analyze/document",
     summary="Анализ загруженного документа",
-    description="Анализирует PDF-документ и возвращает структурированный результат с рисками и рекомендациями.",
+    description=(
+        "Анализирует PDF-документ и возвращает "
+        "структурированный результат с рисками и рекомендациями."
+    ),
     openapi_extra={
         "requestBody": {
             "required": True,
