@@ -1,6 +1,6 @@
 """Health-check endpoint."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Request
 
@@ -64,6 +64,7 @@ async def health_check(request: Request):
     }
 
     # telegram webhook
+    telegram_configured = bool(settings.telegram_webhook_url and settings.bot_token)
     telegram_active = bool(
         settings.telegram_webhook_url
         and settings.bot_token
@@ -77,13 +78,15 @@ async def health_check(request: Request):
     service_status = "ok"
     if components["database"]["status"] == "error" or components["llm_router"]["status"] == "error":
         service_status = "error"
-    elif chunks_count == 0 or components["telegram_webhook"]["status"] == "inactive":
+    elif chunks_count == 0 or (
+        telegram_configured and components["telegram_webhook"]["status"] == "inactive"
+    ):
         service_status = "degraded"
 
     started_at = getattr(request.app.state, "started_at", None)
     uptime_seconds = 0.0
     if started_at is not None:
-        now = datetime.now(datetime.UTC)
+        now = datetime.now(timezone.utc)  # noqa: UP017
         uptime_seconds = max(0.0, (now - started_at).total_seconds())
 
     return {
