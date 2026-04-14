@@ -73,7 +73,6 @@ async def rag_sources(request: Request) -> dict[str, list[SourceSummary]]:
         counters[source] = counters.get(source, 0) + 1
 
     sources: list[SourceSummary] = [
-        SourceSummary(source=source, chunks=count)
-        for source, count in sorted(counters.items())
+        SourceSummary(source=source, chunks=count) for source, count in sorted(counters.items())
     ]
     return {"sources": sources}
