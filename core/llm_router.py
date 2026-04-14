@@ -5,10 +5,10 @@
 """
 
 import asyncio
+import time
 from collections import OrderedDict
 from dataclasses import dataclass
 from enum import Enum
-import time
 
 import httpx
 import structlog

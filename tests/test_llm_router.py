@@ -1,6 +1,7 @@
 """Тесты fallback и usage в LLMRouter."""
 
 import asyncio
+
 import httpx
 
 from config.settings import settings
