@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Request
 
 from config.settings import settings
-from core.database import get_db
+from core.database import get_db, init_db
 from core.llm_router import PROVIDER_CONFIG, LLMProvider
 from core.rag_engine import RAGEngine
 
@@ -21,6 +21,7 @@ async def health_check(request: Request):
     db_status = "ok"
     sessions_count = 0
     try:
+        await init_db(settings.sqlite_db_path)
         async with get_db(settings.sqlite_db_path) as db:
             cursor = await db.execute("SELECT COUNT(*) AS total FROM sessions")
             row = await cursor.fetchone()
@@ -76,7 +77,7 @@ async def health_check(request: Request):
     service_status = "ok"
     if components["database"]["status"] == "error" or components["llm_router"]["status"] == "error":
         service_status = "error"
-    elif chunks_count == 0 or (
+    elif rag_status == "error" or (
         telegram_configured and components["telegram_webhook"]["status"] == "inactive"
     ):
         service_status = "degraded"
