@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from io import BytesIO
@@ -11,11 +13,24 @@ import httpx
 from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import BufferedInputFile, CallbackQuery, Message, ReplyKeyboardRemove
+from aiogram.types import (
+    BufferedInputFile,
+    CallbackQuery,
+    Message,
+    ReplyKeyboardRemove,
+)
 
 from config.settings import settings
-from telegram.keyboards import cancel_keyboard, main_menu_keyboard, role_keyboard
+from telegram.keyboards import (
+    cancel_keyboard,
+    confirm_keyboard,
+    letter_type_keyboard,
+    main_menu_keyboard,
+    role_keyboard,
+    skip_keyboard,
+    unit_keyboard,
+)
+from telegram.states import AnalyzeForm, KSStates, LetterStates, TKStates
 
 router = Router()
 
@@ -28,6 +43,8 @@ ROLE_NAMES = {
     "tender_specialist": "Тендеры",
     "admin": "Админ",
 }
+
+_PERIOD_RE = re.compile(r"^\d{2}\.\d{2}\.\d{4}\s*-\s*\d{2}\.\d{2}\.\d{4}$")
 
 
 def _get_api_key() -> str:
@@ -59,24 +76,6 @@ api_client = TelegramCoreClient(base_url=settings.core_api_url.rstrip("/"))
 MAX_PDF_SIZE_BYTES = 20_971_520
 
 
-class TKForm(StatesGroup):
-    work_type = State()
-    object_name = State()
-    volume = State()
-    unit = State()
-
-
-class LetterForm(StatesGroup):
-    letter_type = State()
-    addressee = State()
-    subject = State()
-    body_points = State()
-
-
-class AnalyzeForm(StatesGroup):
-    document = State()
-
-
 def _get_user_role(user_id: int) -> str:
     return user_roles.get(user_id, "pto_engineer")
 
@@ -85,6 +84,43 @@ def _require_user_id(message: Message) -> int:
     if message.from_user is None:
         raise ValueError("Message has no from_user")
     return message.from_user.id
+
+
+async def _call_api_with_typing(
+    message: Message,
+    path: str,
+    payload: dict,
+    timeout: float = 120.0,
+) -> dict | None:
+    """POST к API с typing-action и таймаутом."""
+    bot = message.bot
+    chat_id = message.chat.id
+
+    async def _typing_loop() -> None:
+        while True:
+            if bot is not None:
+                await bot.send_chat_action(chat_id=chat_id, action="typing")
+            await asyncio.sleep(5)
+
+    typing_task = asyncio.create_task(_typing_loop())
+    try:
+        headers = {"X-API-Key": _get_api_key()}
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.post(
+                f"{settings.core_api_url.rstrip('/')}{path}",
+                json=payload,
+                headers=headers,
+            )
+            response.raise_for_status()
+            return response.json()
+    except (httpx.TimeoutException, httpx.HTTPStatusError) as exc:
+        await message.answer(f"Ошибка при обращении к API: {exc}")
+        return None
+    finally:
+        typing_task.cancel()
+
+
+# ── /start, /role ─────────────────────────────────────────────────────────────
 
 
 @router.message(Command("start"))
@@ -117,100 +153,315 @@ async def role_callback_handler(callback: CallbackQuery) -> None:
     await callback.answer("Роль сохранена")
 
 
+# ── /tk — Технологическая карта (TKStates) ────────────────────────────────────
+
+
 @router.message(Command("tk"))
 async def tk_start_handler(message: Message, state: FSMContext) -> None:
-    await state.set_state(TKForm.work_type)
+    await state.set_state(TKStates.work_type)
     await message.answer("Введите вид работ:", reply_markup=cancel_keyboard())
 
 
-@router.message(TKForm.work_type)
+@router.message(TKStates.work_type)
 async def tk_work_type_handler(message: Message, state: FSMContext) -> None:
     await state.update_data(work_type=message.text)
-    await state.set_state(TKForm.object_name)
+    await state.set_state(TKStates.object_name)
     await message.answer("Введите наименование объекта:")
 
 
-@router.message(TKForm.object_name)
+@router.message(TKStates.object_name)
 async def tk_object_name_handler(message: Message, state: FSMContext) -> None:
     await state.update_data(object_name=message.text)
-    await state.set_state(TKForm.volume)
+    await state.set_state(TKStates.volume)
     await message.answer("Введите объём работ (число):")
 
 
-@router.message(TKForm.volume)
+@router.message(TKStates.volume)
 async def tk_volume_handler(message: Message, state: FSMContext) -> None:
-    await state.update_data(volume=message.text)
-    await state.set_state(TKForm.unit)
-    await message.answer("Введите единицу измерения (например: м², м³, шт.):")
+    text = (message.text or "").strip()
+    try:
+        float(text)
+    except ValueError:
+        await message.answer("Введите корректное число для объёма.")
+        return
+    await state.update_data(volume=text)
+    await state.set_state(TKStates.unit)
+    await message.answer("Выберите единицу измерения:", reply_markup=unit_keyboard())
 
 
-@router.message(TKForm.unit)
+@router.callback_query(F.data.startswith("unit:"))
+async def tk_unit_callback_handler(callback: CallbackQuery, state: FSMContext) -> None:
+    unit = (callback.data or "").split(":", maxsplit=1)[1]
+    await state.update_data(unit=unit)
+    await state.set_state(TKStates.norms)
+    if callback.message is not None:
+        await callback.message.answer(
+            "Введите ссылки на нормативы (или нажмите Пропустить):",
+            reply_markup=skip_keyboard(),
+        )
+    await callback.answer()
+
+
+@router.message(TKStates.unit)
 async def tk_unit_handler(message: Message, state: FSMContext) -> None:
     await state.update_data(unit=message.text)
+    await state.set_state(TKStates.norms)
+    await message.answer(
+        "Введите ссылки на нормативы (или нажмите Пропустить):",
+        reply_markup=skip_keyboard(),
+    )
+
+
+@router.message(TKStates.norms)
+async def tk_norms_handler(message: Message, state: FSMContext) -> None:
+    text = (message.text or "").strip()
+    norms = "" if text.lower() == "пропустить" else text
+    await state.update_data(norms=norms)
+    await state.set_state(TKStates.confirm)
+    data = await state.get_data()
+    summary = (
+        f"Вид работ: {data['work_type']}\n"
+        f"Объект: {data['object_name']}\n"
+        f"Объём: {data['volume']} {data['unit']}\n"
+        f"Нормативы: {norms or '—'}\n\n"
+        "Генерировать ТК?"
+    )
+    await message.answer(summary, reply_markup=confirm_keyboard())
+
+
+@router.callback_query(F.data == "confirm:yes", TKStates.confirm)
+async def tk_confirm_yes_handler(callback: CallbackQuery, state: FSMContext) -> None:
     data = await state.get_data()
     await state.clear()
-
-    user_id = _require_user_id(message)
+    if callback.message is None:
+        return
+    message = callback.message
+    user_id = callback.from_user.id
     payload = {
         "work_type": data["work_type"],
         "object_name": data["object_name"],
         "volume": float(data["volume"]),
         "unit": data["unit"],
+        "norms": data.get("norms", ""),
         "session_id": str(user_id),
         "role": _get_user_role(user_id),
     }
-    response = await api_client.post("/api/generate/tk", payload)
-    await _send_generated_document(message, response, "tk")
+    response = await _call_api_with_typing(message, "/api/generate/tk", payload)
+    if response is not None:
+        await _send_generated_document(message, response, "tk")
+    await callback.answer()
+
+
+# ── /letter — Деловое письмо (LetterStates) ───────────────────────────────────
 
 
 @router.message(Command("letter"))
 async def letter_start_handler(message: Message, state: FSMContext) -> None:
-    await state.set_state(LetterForm.letter_type)
+    await state.set_state(LetterStates.letter_type)
     await message.answer(
-        "Введите тип письма (запрос, претензия, уведомление, ответ):",
-        reply_markup=cancel_keyboard(),
+        "Выберите тип письма:",
+        reply_markup=letter_type_keyboard(),
     )
 
 
-@router.message(LetterForm.letter_type)
+@router.callback_query(F.data.startswith("letter_type:"))
+async def letter_type_callback_handler(callback: CallbackQuery, state: FSMContext) -> None:
+    lt = (callback.data or "").split(":", maxsplit=1)[1]
+    await state.update_data(letter_type=lt)
+    await state.set_state(LetterStates.addressee)
+    if callback.message is not None:
+        await callback.message.answer("Введите адресата:", reply_markup=cancel_keyboard())
+    await callback.answer()
+
+
+@router.message(LetterStates.letter_type)
 async def letter_type_handler(message: Message, state: FSMContext) -> None:
     await state.update_data(letter_type=message.text)
-    await state.set_state(LetterForm.addressee)
-    await message.answer("Введите адресата:")
+    await state.set_state(LetterStates.addressee)
+    await message.answer("Введите адресата:", reply_markup=cancel_keyboard())
 
 
-@router.message(LetterForm.addressee)
+@router.message(LetterStates.addressee)
 async def letter_addressee_handler(message: Message, state: FSMContext) -> None:
     await state.update_data(addressee=message.text)
-    await state.set_state(LetterForm.subject)
+    await state.set_state(LetterStates.subject)
     await message.answer("Введите тему письма:")
 
 
-@router.message(LetterForm.subject)
+@router.message(LetterStates.subject)
 async def letter_subject_handler(message: Message, state: FSMContext) -> None:
     await state.update_data(subject=message.text)
-    await state.set_state(LetterForm.body_points)
-    await message.answer("Введите тезисы письма (через ';'):")
+    await state.set_state(LetterStates.body_points)
+    await state.update_data(body_points=[])
+    await message.answer("Введите тезисы по одному. Когда закончите, отправьте «готово».")
 
 
-@router.message(LetterForm.body_points)
+@router.message(LetterStates.body_points)
 async def letter_body_points_handler(message: Message, state: FSMContext) -> None:
-    body_points = [p.strip() for p in (message.text or "").split(";") if p.strip()]
-    await state.update_data(body_points=body_points)
+    text = (message.text or "").strip()
+    if text.lower() == "готово":
+        data = await state.get_data()
+        points = data.get("body_points", [])
+        if not points:
+            await message.answer("Нужно ввести хотя бы один тезис.")
+            return
+        await state.set_state(LetterStates.contract_number)
+        await message.answer(
+            "Введите номер договора (или нажмите Пропустить):",
+            reply_markup=skip_keyboard(),
+        )
+        return
+    if not text:
+        await message.answer("Тезис не может быть пустым.")
+        return
+    data = await state.get_data()
+    points = data.get("body_points", [])
+    points.append(text)
+    await state.update_data(body_points=points)
+    await message.answer(f"Тезис #{len(points)} добавлен. Следующий или «готово».")
+
+
+@router.message(LetterStates.contract_number)
+async def letter_contract_number_handler(message: Message, state: FSMContext) -> None:
+    text = (message.text or "").strip()
+    contract = "" if text.lower() == "пропустить" else text
+    await state.update_data(contract_number=contract)
+    await state.set_state(LetterStates.confirm)
+    data = await state.get_data()
+    points_str = "\n".join(f"  • {p}" for p in data["body_points"])
+    summary = (
+        f"Тип: {data['letter_type']}\n"
+        f"Адресат: {data['addressee']}\n"
+        f"Тема: {data['subject']}\n"
+        f"Тезисы:\n{points_str}\n"
+        f"Договор: {contract or '—'}\n\n"
+        "Генерировать письмо?"
+    )
+    await message.answer(summary, reply_markup=confirm_keyboard())
+
+
+@router.callback_query(F.data == "confirm:yes", LetterStates.confirm)
+async def letter_confirm_yes_handler(callback: CallbackQuery, state: FSMContext) -> None:
     data = await state.get_data()
     await state.clear()
-
-    user_id = _require_user_id(message)
+    if callback.message is None:
+        return
+    message = callback.message
+    user_id = callback.from_user.id
     payload = {
         "letter_type": data["letter_type"],
         "addressee": data["addressee"],
         "subject": data["subject"],
         "body_points": data["body_points"],
+        "contract_number": data.get("contract_number", ""),
         "session_id": str(user_id),
         "role": _get_user_role(user_id),
     }
-    response = await api_client.post("/api/generate/letter", payload)
-    await _send_generated_document(message, response, "letter")
+    response = await _call_api_with_typing(message, "/api/generate/letter", payload)
+    if response is not None:
+        await _send_generated_document(message, response, "letter")
+    await callback.answer()
+
+
+# ── /ks — Акт КС-2/КС-3 (KSStates) ──────────────────────────────────────────
+
+
+@router.message(Command("ks"))
+async def ks_start_handler(message: Message, state: FSMContext) -> None:
+    await state.set_state(KSStates.object_name)
+    await message.answer("Введите наименование объекта:", reply_markup=cancel_keyboard())
+
+
+@router.message(KSStates.object_name)
+async def ks_object_name_handler(message: Message, state: FSMContext) -> None:
+    await state.update_data(object_name=message.text)
+    await state.set_state(KSStates.contract_number)
+    await message.answer("Введите номер договора:")
+
+
+@router.message(KSStates.contract_number)
+async def ks_contract_number_handler(message: Message, state: FSMContext) -> None:
+    await state.update_data(contract_number=message.text)
+    await state.set_state(KSStates.period)
+    await message.answer("Введите период (ДД.ММ.ГГГГ - ДД.ММ.ГГГГ):")
+
+
+@router.message(KSStates.period)
+async def ks_period_handler(message: Message, state: FSMContext) -> None:
+    text = (message.text or "").strip()
+    if not _PERIOD_RE.match(text):
+        await message.answer("Неверный формат. Введите период в формате ДД.ММ.ГГГГ - ДД.ММ.ГГГГ")
+        return
+    await state.update_data(period=text)
+    await state.set_state(KSStates.work_items)
+    await state.update_data(work_items=[])
+    await message.answer("Введите позиции работ по одной. Когда закончите, отправьте «готово».")
+
+
+@router.message(KSStates.work_items)
+async def ks_work_items_handler(message: Message, state: FSMContext) -> None:
+    text = (message.text or "").strip()
+    if text.lower() == "готово":
+        data = await state.get_data()
+        items = data.get("work_items", [])
+        if not items:
+            await message.answer("Нужно ввести хотя бы одну позицию работ.")
+            return
+        await state.set_state(KSStates.confirm)
+        items_str = "\n".join(f"  • {it}" for it in items)
+        summary = (
+            f"Объект: {data['object_name']}\n"
+            f"Договор: {data['contract_number']}\n"
+            f"Период: {data['period']}\n"
+            f"Работы:\n{items_str}\n\n"
+            "Генерировать акт КС?"
+        )
+        await message.answer(summary, reply_markup=confirm_keyboard())
+        return
+    if not text:
+        await message.answer("Позиция работ не может быть пустой.")
+        return
+    data = await state.get_data()
+    items = data.get("work_items", [])
+    items.append(text)
+    await state.update_data(work_items=items)
+    await message.answer(f"Позиция #{len(items)} добавлена. Следующая или «готово».")
+
+
+@router.callback_query(F.data == "confirm:yes", KSStates.confirm)
+async def ks_confirm_yes_handler(callback: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    await state.clear()
+    if callback.message is None:
+        return
+    message = callback.message
+    user_id = callback.from_user.id
+    payload = {
+        "object_name": data["object_name"],
+        "contract_number": data["contract_number"],
+        "period": data["period"],
+        "work_items": data["work_items"],
+        "session_id": str(user_id),
+        "role": _get_user_role(user_id),
+    }
+    response = await _call_api_with_typing(message, "/api/generate/ks", payload)
+    if response is not None:
+        await _send_generated_document(message, response, "ks")
+    await callback.answer()
+
+
+# ── confirm:no — общий для всех форм ─────────────────────────────────────────
+
+
+@router.callback_query(F.data == "confirm:no")
+async def confirm_no_handler(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.clear()
+    if callback.message is not None:
+        await callback.message.answer("Генерация отменена.", reply_markup=ReplyKeyboardRemove())
+    await callback.answer("Отменено")
+
+
+# ── Анализ тендера ────────────────────────────────────────────────────────────
 
 
 @router.message(Command("analyze"))
@@ -249,6 +500,9 @@ async def analyze_document_handler(message: Message, state: FSMContext) -> None:
     await message.answer(_format_analyze_response(result), reply_markup=ReplyKeyboardRemove())
 
 
+# ── Отмена и текстовый fallback ───────────────────────────────────────────────
+
+
 @router.message(F.text.casefold() == "отмена")
 async def cancel_handler(message: Message, state: FSMContext) -> None:
     await state.clear()
@@ -267,6 +521,9 @@ async def text_message_handler(message: Message) -> None:
     await message.answer(response.get("reply", "Нет ответа от API"))
 
 
+# ── Утилиты ──────────────────────────────────────────────────────────────────
+
+
 async def _send_generated_document(message: Message, response: Mapping, doc_prefix: str) -> None:
     document = response.get("document")
     if isinstance(document, Mapping):
@@ -274,7 +531,7 @@ async def _send_generated_document(message: Message, response: Mapping, doc_pref
     else:
         text_payload = str(document)
 
-    user_id = _require_user_id(message)
+    user_id = message.chat.id
     file_data = text_payload.encode("utf-8")
     input_file = BufferedInputFile(file_data, filename=f"{doc_prefix}_{user_id}.txt")
     await message.answer_document(input_file, caption="Документ сформирован.")

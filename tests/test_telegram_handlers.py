@@ -9,6 +9,10 @@ from unittest.mock import AsyncMock
 
 
 def _install_aiogram_stubs() -> None:
+    """Устанавливает стабы aiogram для тестирования без реального пакета."""
+    if "aiogram" in sys.modules:
+        return
+
     aiogram = types.ModuleType("aiogram")
 
     class DummyRouter:
@@ -47,18 +51,54 @@ def _install_aiogram_stubs() -> None:
     fsm_context.FSMContext = object
 
     fsm_state = types.ModuleType("aiogram.fsm.state")
-    fsm_state.State = object
-    fsm_state.StatesGroup = object
+
+    class _State:
+        def __init__(self, *args, **kwargs):
+            pass
+
+    class _StatesGroupMeta(type):
+        def __new__(mcs, name, bases, namespace):
+            cls = super().__new__(mcs, name, bases, namespace)
+            for key, val in namespace.items():
+                if isinstance(val, _State):
+                    setattr(cls, key, f"{name}:{key}")
+            return cls
+
+    class _StatesGroup(metaclass=_StatesGroupMeta):
+        pass
+
+    fsm_state.State = _State
+    fsm_state.StatesGroup = _StatesGroup
 
     types_mod = types.ModuleType("aiogram.types")
     types_mod.BufferedInputFile = object
     types_mod.CallbackQuery = object
     types_mod.Message = object
-    types_mod.ReplyKeyboardRemove = object
-    types_mod.InlineKeyboardButton = object
-    types_mod.InlineKeyboardMarkup = object
-    types_mod.KeyboardButton = object
-    types_mod.ReplyKeyboardMarkup = object
+    types_mod.ReplyKeyboardRemove = lambda **kw: None
+
+    class _InlineKeyboardButton:
+        def __init__(self, *, text="", callback_data=""):
+            self.text = text
+            self.callback_data = callback_data
+
+    class _InlineKeyboardMarkup:
+        def __init__(self, *, inline_keyboard=None):
+            self.inline_keyboard = inline_keyboard or []
+
+    class _KeyboardButton:
+        def __init__(self, *, text=""):
+            self.text = text
+
+    class _ReplyKeyboardMarkup:
+        def __init__(self, *, keyboard=None, resize_keyboard=False, one_time_keyboard=False):
+            self.keyboard = keyboard or []
+            self.resize_keyboard = resize_keyboard
+            self.one_time_keyboard = one_time_keyboard
+
+    types_mod.InlineKeyboardButton = _InlineKeyboardButton
+    types_mod.InlineKeyboardMarkup = _InlineKeyboardMarkup
+    types_mod.KeyboardButton = _KeyboardButton
+    types_mod.ReplyKeyboardMarkup = _ReplyKeyboardMarkup
     types_mod.Document = object
 
     sys.modules["aiogram"] = aiogram
@@ -66,6 +106,43 @@ def _install_aiogram_stubs() -> None:
     sys.modules["aiogram.fsm.context"] = fsm_context
     sys.modules["aiogram.fsm.state"] = fsm_state
     sys.modules["aiogram.types"] = types_mod
+    sys.modules["aiogram.enums"] = types.ModuleType("aiogram.enums")
+    sys.modules["aiogram.client"] = types.ModuleType("aiogram.client")
+    sys.modules["aiogram.client.default"] = types.ModuleType("aiogram.client.default")
+
+
+def _reload_modules():
+    """Перезагружает модули telegram для получения свежих определений."""
+    for mod_name in list(sys.modules):
+        if mod_name.startswith("telegram."):
+            del sys.modules[mod_name]
+    states = importlib.import_module("telegram.states")
+    keyboards = importlib.import_module("telegram.keyboards")
+    handlers = importlib.import_module("telegram.handlers")
+    return states, keyboards, handlers
+
+
+def _make_fsm_state():
+    """Создаёт мок FSMContext."""
+    data = {}
+
+    async def update_data(**kwargs):
+        data.update(kwargs)
+
+    async def get_data():
+        return dict(data)
+
+    state = SimpleNamespace(
+        set_state=AsyncMock(),
+        update_data=AsyncMock(side_effect=update_data),
+        get_data=AsyncMock(side_effect=get_data),
+        clear=AsyncMock(),
+    )
+    state._data = data
+    return state
+
+
+# ── Существующие тесты ────────────────────────────────────────────────────────
 
 
 def test_text_handler_calls_chat_endpoint(monkeypatch):
@@ -155,3 +232,113 @@ def test_analyze_helper_posts_to_tender_endpoint(monkeypatch):
     post_mock.assert_awaited_once()
     called_url = post_mock.await_args.args[0]
     assert called_url.endswith("/api/analyze/tender")
+
+
+# ── Новые тесты FSM-диалогов ─────────────────────────────────────────────────
+
+
+def test_tk_volume_validation_rejects_non_number():
+    """Валидация объёма: нечисловое значение отклоняется."""
+    _install_aiogram_stubs()
+    _reload_modules()
+    handlers = importlib.import_module("telegram.handlers")
+
+    state = _make_fsm_state()
+    message = SimpleNamespace(
+        text="не число",
+        from_user=SimpleNamespace(id=1),
+        answer=AsyncMock(),
+    )
+
+    asyncio.run(handlers.tk_volume_handler(message, state))
+
+    message.answer.assert_awaited_once_with("Введите корректное число для объёма.")
+    state.set_state.assert_not_awaited()
+
+
+def test_ks_period_validation_rejects_bad_format():
+    """Валидация периода КС: некорректный формат отклоняется."""
+    _install_aiogram_stubs()
+    _reload_modules()
+    handlers = importlib.import_module("telegram.handlers")
+
+    state = _make_fsm_state()
+    message = SimpleNamespace(
+        text="2024-01-01 - 2024-02-01",
+        from_user=SimpleNamespace(id=1),
+        answer=AsyncMock(),
+    )
+
+    asyncio.run(handlers.ks_period_handler(message, state))
+
+    message.answer.assert_awaited_once()
+    call_text = message.answer.await_args.args[0]
+    assert "формат" in call_text.lower() or "неверн" in call_text.lower()
+    state.set_state.assert_not_awaited()
+
+
+def test_letter_body_points_accumulates_theses():
+    """Тезисы письма накапливаются по одному."""
+    _install_aiogram_stubs()
+    _reload_modules()
+    handlers = importlib.import_module("telegram.handlers")
+
+    state = _make_fsm_state()
+
+    # Первый тезис
+    msg1 = SimpleNamespace(
+        text="Тезис 1",
+        from_user=SimpleNamespace(id=1),
+        answer=AsyncMock(),
+    )
+    asyncio.run(handlers.letter_body_points_handler(msg1, state))
+
+    assert state._data["body_points"] == ["Тезис 1"]
+
+    # Второй тезис
+    msg2 = SimpleNamespace(
+        text="Тезис 2",
+        from_user=SimpleNamespace(id=1),
+        answer=AsyncMock(),
+    )
+    asyncio.run(handlers.letter_body_points_handler(msg2, state))
+
+    assert state._data["body_points"] == ["Тезис 1", "Тезис 2"]
+
+
+def test_keyboards_have_correct_structure():
+    """Клавиатуры имеют правильную структуру."""
+    _install_aiogram_stubs()
+    _reload_modules()
+    keyboards = importlib.import_module("telegram.keyboards")
+
+    # unit_keyboard: 6 единиц
+    uk = keyboards.unit_keyboard()
+    unit_buttons = [row[0] for row in uk.inline_keyboard]
+    unit_texts = [b.text for b in unit_buttons]
+    assert len(unit_texts) == 6
+    assert "м³" in unit_texts
+    assert "м²" in unit_texts
+    assert "шт." in unit_texts
+
+    # letter_type_keyboard: 4 типа
+    lt = keyboards.letter_type_keyboard()
+    lt_buttons = [row[0] for row in lt.inline_keyboard]
+    lt_texts = [b.text for b in lt_buttons]
+    assert len(lt_texts) == 4
+    assert "Запрос" in lt_texts
+    assert "Претензия" in lt_texts
+
+    # confirm_keyboard: 2 кнопки в одном ряду
+    ck = keyboards.confirm_keyboard()
+    assert len(ck.inline_keyboard) == 1
+    row = ck.inline_keyboard[0]
+    assert len(row) == 2
+    assert row[0].callback_data == "confirm:yes"
+    assert row[1].callback_data == "confirm:no"
+
+    # skip_keyboard: Пропустить и Отмена
+    sk = keyboards.skip_keyboard()
+    skip_texts = [b.text for b in sk.keyboard[0]]
+    assert "Пропустить" in skip_texts
+    assert "Отмена" in skip_texts
