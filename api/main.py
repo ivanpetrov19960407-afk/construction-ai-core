@@ -95,8 +95,7 @@ setup_rate_limiter(app.routes)
     "/telegram/webhook",
     summary="Webhook Telegram",
     description=(
-        "Принимает входящие обновления от Telegram Bot API "
-        "и передаёт их в диспетчер aiogram."
+        "Принимает входящие обновления от Telegram Bot API и передаёт их в диспетчер aiogram."
     ),
     openapi_extra={
         "requestBody": {

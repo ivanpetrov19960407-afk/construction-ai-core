@@ -343,8 +343,7 @@ async def generate_letter_v2(payload: LetterRequest, request: Request):
     "/generate/ppr",
     summary="Генерация ППР",
     description=(
-        "Формирует проект производства работ (ППР) "
-        "с возможностью дальнейшей выгрузки в DOCX/PDF."
+        "Формирует проект производства работ (ППР) с возможностью дальнейшей выгрузки в DOCX/PDF."
     ),
     openapi_extra={
         "requestBody": {
