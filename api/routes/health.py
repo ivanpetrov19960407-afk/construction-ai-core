@@ -53,9 +53,7 @@ async def health_check(request: Request):
     provider_name = settings.default_llm_provider
     try:
         provider = LLMProvider(provider_name)
-        api_key_field = str(PROVIDER_CONFIG[provider]["api_key_field"])
-        if not getattr(settings, api_key_field):
-            llm_status = "error"
+        _ = PROVIDER_CONFIG[provider]
     except Exception:
         llm_status = "error"
     components["llm_router"] = {
@@ -91,6 +89,7 @@ async def health_check(request: Request):
 
     return {
         "status": service_status,
+        "service": "construction-ai-core",
         "version": "0.1.0",
         "uptime_seconds": round(uptime_seconds, 1),
         "components": components,
