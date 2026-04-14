@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from functools import lru_cache
 from tempfile import NamedTemporaryFile
-from typing import TypedDict
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
+from typing_extensions import TypedDict
 
 from config.settings import settings
 from core.pdf_parser import PDFParser
