@@ -1,6 +1,7 @@
 """Construction AI Core — FastAPI application."""
 
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from typing import cast
 
 from aiogram.types import Update
@@ -34,6 +35,7 @@ async def lifespan(app: FastAPI):
     """Startup / shutdown events."""
     configure_structlog()
     await init_db(settings.sqlite_db_path)
+    app.state.started_at = datetime.now(timezone.utc)
     app.state.telegram_bot = None
     app.state.telegram_dp = None
     if settings.telegram_webhook_url and settings.bot_token:
@@ -89,7 +91,29 @@ app.include_router(rag.router, prefix="/api/rag", tags=["rag"])
 setup_rate_limiter(app.routes)
 
 
-@telegram_router.post("/telegram/webhook")
+@telegram_router.post(
+    "/telegram/webhook",
+    summary="Webhook Telegram",
+    description="Принимает входящие обновления от Telegram Bot API и передаёт их в диспетчер aiogram.",
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {
+                "application/json": {
+                    "example": {
+                        "update_id": 123456789,
+                        "message": {
+                            "message_id": 101,
+                            "date": 1735689600,
+                            "chat": {"id": 123456789, "type": "private"},
+                            "text": "/start",
+                        },
+                    }
+                }
+            },
+        }
+    },
+)
 async def telegram_webhook_handler(request: Request) -> dict[str, bool]:
     bot = request.app.state.telegram_bot
     dp = request.app.state.telegram_dp

@@ -28,7 +28,26 @@ class ChatResponse(BaseModel):
     confidence: float | None = None
 
 
-@router.post("/chat", response_model=ChatResponse)
+@router.post(
+    "/chat",
+    response_model=ChatResponse,
+    summary="Чат с ИИ-ассистентом",
+    description="Обрабатывает сообщение пользователя через оркестратор агентов и возвращает ответ.",
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {
+                "application/json": {
+                    "example": {
+                        "message": "Составь краткий план производства работ по кирпичной кладке.",
+                        "session_id": "bdb98f51-9eaa-4e5c-aa53-3a53fce4e19a",
+                        "role": "pto_engineer",
+                    }
+                }
+            },
+        }
+    },
+)
 async def chat(payload: ChatRequest, request: Request):
     """Обработать сообщение пользователя через оркестратор."""
     _ = request
