@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import math
 from datetime import date
+from difflib import get_close_matches
 from typing import Any
 
 from agents.base import BaseAgent
 from core.llm_router import LLMRouter
+from scripts.rates_catalog import RATES
 
 
 class CalculatorAgent(BaseAgent):
@@ -17,6 +19,81 @@ class CalculatorAgent(BaseAgent):
 
     def __init__(self, llm_router: LLMRouter) -> None:
         super().__init__(agent_id="08", llm_router=llm_router)
+
+    def _find_rate(self, work_type: str) -> dict[str, float | str] | None:
+        normalized_query = work_type.strip().lower()
+        if not normalized_query:
+            return None
+
+        names = [str(rate["name"]) for rate in RATES]
+        lower_to_rate = {name.lower(): rate for name, rate in zip(names, RATES, strict=False)}
+
+        for name, rate in zip(names, RATES, strict=False):
+            if normalized_query in name.lower() or name.lower() in normalized_query:
+                return rate
+
+        close = get_close_matches(normalized_query, list(lower_to_rate.keys()), n=1, cutoff=0.35)
+        if close:
+            return lower_to_rate[close[0]]
+        return None
+
+    def _apply_index(self, base_cost: float, region: str = "Москва") -> float:
+        indices = {"москва": 1.0, "мо": 0.95, "спб": 0.92}
+        index = indices.get(region.strip().lower(), 0.85)
+        return round(base_cost * index, 2)
+
+    def _calculate_estimate(self, work_items: list[dict[str, Any]]) -> dict[str, Any]:
+        estimate_items: list[dict[str, Any]] = []
+        total_cost = 0.0
+        total_labor = 0.0
+
+        for item in work_items:
+            work_type = str(item.get("work_type", "")).strip()
+            volume = float(item.get("volume", 0.0))
+            input_unit = str(item.get("unit", "")).strip()
+            matched_rate = self._find_rate(work_type)
+
+            if matched_rate is None:
+                estimate_items.append(
+                    {
+                        "work_type": work_type,
+                        "volume": volume,
+                        "unit": input_unit,
+                        "rate_found": False,
+                        "message": "Расценка не найдена",
+                    }
+                )
+                continue
+
+            rate_rub = float(matched_rate["rate_rub"])
+            labor_hours = float(matched_rate["labor_hours"])
+            subtotal_cost = round(rate_rub * volume, 2)
+            subtotal_labor = round(labor_hours * volume, 2)
+
+            total_cost += subtotal_cost
+            total_labor += subtotal_labor
+
+            estimate_items.append(
+                {
+                    "code": str(matched_rate["code"]),
+                    "name": str(matched_rate["name"]),
+                    "work_type": work_type,
+                    "unit": str(matched_rate["unit"]),
+                    "input_unit": input_unit,
+                    "volume": volume,
+                    "rate_rub": rate_rub,
+                    "labor_hours": labor_hours,
+                    "total_cost": subtotal_cost,
+                    "total_labor_hours": subtotal_labor,
+                    "rate_found": True,
+                }
+            )
+
+        return {
+            "items": estimate_items,
+            "total_cost": round(total_cost, 2),
+            "total_labor_hours": round(total_labor, 2),
+        }
 
     def _period_days(self, state: dict[str, Any]) -> int:
         period_from = state.get("period_from")
