@@ -34,6 +34,7 @@ telegram_router = APIRouter()
 async def lifespan(app: FastAPI):
     """Startup / shutdown events."""
     configure_structlog()
+    settings.validate_jwt_secret()
     await init_db(settings.sqlite_db_path)
     app.state.started_at = datetime.now(timezone.utc)  # noqa: UP017
     app.state.telegram_bot = None

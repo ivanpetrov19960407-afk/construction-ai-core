@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from api.main import app
 from api.routes import rag as rag_routes
+from api.routes.auth import _create_token
 from config.settings import settings
 
 
@@ -97,6 +98,34 @@ def test_rag_sources_requires_admin_and_returns_counts(monkeypatch):
 
     assert ok.status_code == 200
     assert ok.json() == {
+        "sources": [
+            {"source": "gost_21.pdf", "chunks": 1},
+            {"source": "sp_48.pdf", "chunks": 2},
+        ]
+    }
+
+
+def test_rag_sources_allows_admin_jwt(monkeypatch):
+    old_api_keys = settings.api_keys
+    old_admin_keys = settings.admin_api_keys
+    settings.api_keys = ["valid-key"]
+    settings.admin_api_keys = []
+
+    monkeypatch.setattr(rag_routes, "get_rag_engine", lambda: _DummyRAGEngine())
+
+    admin_token = _create_token("admin-user", "admin")
+    try:
+        client = TestClient(app)
+        response = client.get(
+            "/api/rag/sources",
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+    finally:
+        settings.api_keys = old_api_keys
+        settings.admin_api_keys = old_admin_keys
+
+    assert response.status_code == 200
+    assert response.json() == {
         "sources": [
             {"source": "gost_21.pdf", "chunks": 1},
             {"source": "sp_48.pdf", "chunks": 2},

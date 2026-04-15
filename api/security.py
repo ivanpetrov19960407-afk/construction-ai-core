@@ -1,4 +1,4 @@
-"""Minimal JWT HS256 helpers compatible with python-jose APIs used in tests."""
+"""Security helpers for JWT and password hashing."""
 
 from __future__ import annotations
 
@@ -8,9 +8,11 @@ import hmac
 import json
 import time
 
+import bcrypt
+
 
 class JWTError(Exception):
-    """Token decoding/validation error."""
+    """JWT decoding/validation errors."""
 
 
 def _b64url_encode(raw: bytes) -> str:
@@ -22,7 +24,8 @@ def _b64url_decode(data: str) -> bytes:
     return base64.urlsafe_b64decode(data + padding)
 
 
-def encode(payload: dict[str, object], key: str, algorithm: str = "HS256") -> str:
+def encode_jwt(payload: dict[str, object], key: str, algorithm: str = "HS256") -> str:
+    """Encode a JWT using HS256."""
     if algorithm != "HS256":
         raise JWTError("Unsupported algorithm")
 
@@ -34,7 +37,8 @@ def encode(payload: dict[str, object], key: str, algorithm: str = "HS256") -> st
     return f"{header_segment}.{payload_segment}.{_b64url_encode(signature)}"
 
 
-def decode(token: str, key: str, algorithms: list[str] | None = None) -> dict[str, object]:
+def decode_jwt(token: str, key: str, algorithms: list[str] | None = None) -> dict[str, object]:
+    """Decode and validate a JWT signed with HS256."""
     allowed_algorithms = algorithms or ["HS256"]
     if "HS256" not in allowed_algorithms:
         raise JWTError("Unsupported algorithm")
@@ -52,8 +56,18 @@ def decode(token: str, key: str, algorithms: list[str] | None = None) -> dict[st
 
     payload_raw = _b64url_decode(payload_segment)
     payload = json.loads(payload_raw.decode("utf-8"))
-
     exp = payload.get("exp")
     if isinstance(exp, (int, float)) and exp < time.time():
         raise JWTError("Token expired")
     return payload
+
+
+def hash_password(password: str) -> str:
+    """Hash password using adaptive bcrypt with salt."""
+    hashed = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt())
+    return hashed.decode("utf-8")
+
+
+def verify_password(password: str, password_hash: str) -> bool:
+    """Verify password against bcrypt hash."""
+    return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))

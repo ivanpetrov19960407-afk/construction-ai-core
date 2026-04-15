@@ -9,13 +9,11 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Request
 
 from api.models import TokenResponse, UserCreate, UserLogin
+from api.security import JWTError, decode_jwt, encode_jwt, hash_password, verify_password
 from config.settings import settings
-from jose import JWTError, jwt
-from passlib.context import CryptContext
 
 ALGORITHM = "HS256"
 UTC = getattr(dt, "UTC", dt.timezone.utc)  # noqa: UP017
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
@@ -56,7 +54,7 @@ def _create_token(username: str, role: str) -> str:
         "role": role,
         "exp": int(expire_at.timestamp()),
     }
-    return jwt.encode(payload, settings.jwt_secret, algorithm=ALGORITHM)
+    return encode_jwt(payload, settings.jwt_secret, algorithm=ALGORITHM)
 
 
 @router.post("/register")
@@ -71,7 +69,7 @@ async def register_user(payload: UserCreate) -> dict[str, str]:
 
     _ensure_users_table()
     created_at = dt.datetime.now(UTC).isoformat()
-    password_hash = pwd_context.hash(payload.password)
+    password_hash = hash_password(payload.password)
     with sqlite3.connect(settings.users_db_path) as connection:
         connection.execute(
             """
@@ -92,7 +90,7 @@ async def login_user(payload: UserLogin) -> TokenResponse:
         raise HTTPException(status_code=401, detail="Invalid username or password")
 
     username, password_hash, role, _created_at = user
-    if not pwd_context.verify(payload.password, password_hash):
+    if not verify_password(payload.password, password_hash):
         raise HTTPException(status_code=401, detail="Invalid username or password")
 
     return TokenResponse(
@@ -122,7 +120,7 @@ async def me(request: Request) -> dict[str, str]:
 def decode_jwt_token(token: str) -> dict[str, str]:
     """Decode JWT and return username/role payload."""
     try:
-        payload = jwt.decode(token, settings.jwt_secret, algorithms=[ALGORITHM])
+        payload = decode_jwt(token, settings.jwt_secret, algorithms=[ALGORITHM])
     except JWTError as exc:
         raise HTTPException(status_code=401, detail="Invalid token") from exc
 

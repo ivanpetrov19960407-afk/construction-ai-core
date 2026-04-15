@@ -59,5 +59,14 @@ class Settings(BaseSettings):
         "extra": "ignore",
     }
 
+    def validate_jwt_secret(self) -> None:
+        """Ensure JWT secret is explicitly configured and strong enough."""
+        normalized = self.jwt_secret.strip().lower()
+        insecure_values = {"", "changeme", "change-me", "default", "secret"}
+        if normalized in insecure_values or len(self.jwt_secret) < 32:
+            raise ValueError(
+                "Unsafe JWT secret: set JWT_SECRET to a unique value with at least 32 chars",
+            )
+
 
 settings = Settings()
