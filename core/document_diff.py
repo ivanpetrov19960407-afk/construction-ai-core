@@ -37,14 +37,10 @@ class DocumentDiff:
         )
 
         added = [
-            line[1:]
-            for line in diff_lines
-            if line.startswith("+") and not line.startswith("+++")
+            line[1:] for line in diff_lines if line.startswith("+") and not line.startswith("+++")
         ]
         removed = [
-            line[1:]
-            for line in diff_lines
-            if line.startswith("-") and not line.startswith("---")
+            line[1:] for line in diff_lines if line.startswith("-") and not line.startswith("---")
         ]
         changed_sections = [line for line in diff_lines if line.startswith("@@")]
 

@@ -105,6 +105,7 @@ class KSResponse(BaseModel):
     total_hours: float
     sha256: str | None
 
+
 class EstimateWorkItem(BaseModel):
     """Позиция работ для сметного расчёта по ГЭСН/ТСН."""
 
