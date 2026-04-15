@@ -1,6 +1,5 @@
 """Настройки приложения — загружаются из .env."""
 
-from pydantic import Field
 from pydantic_settings import BaseSettings
 
 
@@ -14,7 +13,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     api_keys: list[str] = []
     admin_api_keys: list[str] = []
-    jwt_secret: str = Field(default="changeme", env="JWT_SECRET")
+    jwt_secret: str = "changeme"
     jwt_expire_minutes: int = 60
     users_db_path: str = "data/users.db"
     invite_codes: dict[str, str] = {
