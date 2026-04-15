@@ -5,6 +5,7 @@
 """
 
 import asyncio
+import hashlib
 from dataclasses import dataclass
 from enum import Enum
 
@@ -196,7 +197,8 @@ class LLMRouter:
 
     def _intent_cache_key(self, system_prompt: str | None, prompt: str) -> str | None:
         if system_prompt and "Определи intent запроса" in system_prompt:
-            return f"llm:{hash(prompt[:100])}"
+            digest = hashlib.sha256(prompt[:100].encode("utf-8")).hexdigest()
+            return f"llm:{digest}"
         return None
 
     def _extract_usage(self, usage: dict | None) -> dict[str, int]:

@@ -8,6 +8,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Literal
 
+import structlog
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, field_validator
@@ -24,6 +25,7 @@ session_memory = orchestrator.session_memory
 pdf_parser = PDFParser()
 pdf_exporter = PDFExporter()
 redis_cache = RedisCache(settings.redis_url)
+logger = structlog.get_logger("api.generate")
 
 ALLOWED_UNITS = ["м³", "м²", "пог.м.", "шт.", "т", "кг"]
 MAX_UPLOAD_SIZE_BYTES = 20 * 1024 * 1024
@@ -383,7 +385,7 @@ async def generate_ppr(payload: PPRRequest, request: Request):
         f"Численность: {payload.workers_count} чел."
     )
     if len(payload.norms) > 5:
-        await redis_cache.enqueue(
+        queued = await redis_cache.enqueue(
             "doc_generation",
             {
                 "task_type": "generate_ppr",
@@ -391,6 +393,17 @@ async def generate_ppr(payload: PPRRequest, request: Request):
                 "payload": payload.model_dump(),
             },
         )
+        if not queued:
+            logger.warning(
+                "ppr_enqueue_failed",
+                session_id=session_id,
+                queue="doc_generation",
+            )
+            raise HTTPException(
+                status_code=503,
+                detail="Task queue is unavailable. Please retry later.",
+            )
+
         return {
             "session_id": session_id,
             "status": "queued",

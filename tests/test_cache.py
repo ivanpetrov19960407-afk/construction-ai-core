@@ -54,3 +54,4 @@ def test_cache_fallback_on_unavailable():
 
     assert value == "computed"
     assert asyncio.run(cache.get("key")) is None
+    assert asyncio.run(cache.enqueue("doc_generation", {"task": 1})) is False

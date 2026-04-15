@@ -69,14 +69,16 @@ class RedisCache:
         await self.set(key, value, ttl=ttl)
         return value
 
-    async def enqueue(self, queue: str, task: dict[str, Any]) -> None:
+    async def enqueue(self, queue: str, task: dict[str, Any]) -> bool:
         """Добавить задачу в Redis-очередь."""
         if self._redis is None:
-            return
+            return False
         try:
             await self._redis.rpush(queue, json.dumps(task, ensure_ascii=False))
+            return True
         except Exception as exc:  # noqa: BLE001
             self._logger.warning("redis_enqueue_failed", queue=queue, error=str(exc))
+            return False
 
     async def dequeue(self, queue: str) -> dict[str, Any] | None:
         """Извлечь задачу из Redis-очереди (FIFO)."""
