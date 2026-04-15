@@ -20,21 +20,31 @@ from slowapi.util import get_remote_address
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.routing import BaseRoute
 
+from api.routes.auth import decode_jwt_token
 from config.settings import settings
 
 EXCLUDED_PATHS = {"/health", "/docs", "/redoc", "/openapi.json", "/telegram/webhook", "/metrics"}
+PUBLIC_AUTH_PATHS = {"/auth/register", "/auth/login"}
 limiter = Limiter(key_func=get_remote_address, default_limits=[])
 
 
 class APIKeyMiddleware(BaseHTTPMiddleware):
-    """Simple API key middleware based on `X-API-Key` header."""
+    """Security middleware supporting JWT bearer and legacy X-API-Key."""
 
     async def dispatch(
         self,
         request: Request,
         call_next: Callable[[Request], Awaitable[Response]],
     ) -> Response:
-        if request.url.path in EXCLUDED_PATHS:
+        if request.url.path in EXCLUDED_PATHS or request.url.path in PUBLIC_AUTH_PATHS:
+            return await call_next(request)
+
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header.removeprefix("Bearer ").strip()
+            payload = decode_jwt_token(token)
+            request.state.username = payload["username"]
+            request.state.user_role = payload["role"]
             return await call_next(request)
 
         provided_key = request.headers.get("X-API-Key")
