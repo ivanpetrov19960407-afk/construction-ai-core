@@ -2,6 +2,14 @@ import { useState } from 'react';
 import DocumentForm, { type DocumentField } from '../components/DocumentForm';
 import { generateLetter, getApiConfig } from '../api/coreClient';
 
+
+const letterTypeMap: Record<string, 'запрос' | 'претензия' | 'уведомление' | 'ответ'> = {
+  Запрос: 'запрос',
+  Претензия: 'претензия',
+  Уведомление: 'уведомление',
+  Ответ: 'ответ'
+};
+
 const fields: DocumentField[] = [
   {
     name: 'letter_type',
@@ -25,14 +33,25 @@ export default function GenerateLetterPage() {
 
     try {
       const { apiUrl, apiKey } = await getApiConfig();
+      const bodyPoints = data.body
+        .split('\n')
+        .map((item) => item.trim())
+        .filter(Boolean);
+
       const response = await generateLetter(apiUrl, apiKey, {
-        letter_type: data.letter_type,
+        letter_type: letterTypeMap[data.letter_type] ?? 'запрос',
         addressee: data.addressee,
         subject: data.subject,
-        body: data.body
+        body_points: bodyPoints
       });
 
-      setResult(String(response.result ?? response.text ?? response.content ?? ''));
+      const normalizedResult =
+        response.document ?? response.result ?? response.text ?? response.content ?? '';
+      setResult(
+        typeof normalizedResult === 'string'
+          ? normalizedResult
+          : JSON.stringify(normalizedResult, null, 2)
+      );
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : 'Ошибка генерации письма');
     } finally {

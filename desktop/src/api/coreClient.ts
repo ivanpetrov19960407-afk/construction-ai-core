@@ -15,29 +15,38 @@ export interface ChatResponse {
 export interface TKRequest {
   work_type: string;
   object_name: string;
-  volume: string;
+  volume: number;
   unit: string;
 }
 
 export interface LetterRequest {
-  letter_type: string;
+  letter_type: 'запрос' | 'претензия' | 'уведомление' | 'ответ';
   addressee: string;
   subject: string;
-  body: string;
+  body_points: string[];
+}
+
+export interface KSWorkItem {
+  name: string;
+  unit: string;
+  volume: number;
+  norm_hours: number;
+  price_per_unit: number;
 }
 
 export interface KSRequest {
   object_name: string;
   contract_number: string;
-  date_from: string;
-  date_to: string;
-  work_items: string;
+  period_from: string;
+  period_to: string;
+  work_items: KSWorkItem[];
 }
 
 export interface GenerateDocumentResponse {
   result?: string;
   text?: string;
   content?: string;
+  document?: Record<string, unknown>;
   session_id?: string;
   [key: string]: unknown;
 }
@@ -114,7 +123,7 @@ export function generateKS(apiUrl: string, apiKey: string, payload: KSRequest) {
 
 export async function downloadTKDocx(apiUrl: string, apiKey: string, sessionId: string): Promise<Blob> {
   const response = await fetch(
-    `${normalizeApiUrl(apiUrl)}/api/generate/tk/download?session_id=${encodeURIComponent(sessionId)}`,
+    `${normalizeApiUrl(apiUrl)}/api/generate/tk/${encodeURIComponent(sessionId)}/download`,
     {
       method: 'GET',
       headers: {

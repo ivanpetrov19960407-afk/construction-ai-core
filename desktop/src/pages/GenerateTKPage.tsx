@@ -6,7 +6,12 @@ const fields: DocumentField[] = [
   { name: 'work_type', label: 'Тип работ', type: 'text' },
   { name: 'object_name', label: 'Название объекта', type: 'text' },
   { name: 'volume', label: 'Объём', type: 'number' },
-  { name: 'unit', label: 'Единица измерения', type: 'select', options: ['м³', 'м²', 'шт'] }
+  {
+    name: 'unit',
+    label: 'Единица измерения',
+    type: 'select',
+    options: ['м³', 'м²', 'пог.м.', 'шт.', 'т', 'кг']
+  }
 ];
 
 export default function GenerateTKPage() {
@@ -25,11 +30,17 @@ export default function GenerateTKPage() {
       const response = await generateTK(apiUrl, apiKey, {
         work_type: data.work_type,
         object_name: data.object_name,
-        volume: data.volume,
+        volume: Number(data.volume),
         unit: data.unit
       });
 
-      setResult(String(response.result ?? response.text ?? response.content ?? ''));
+      const normalizedResult =
+        response.document ?? response.result ?? response.text ?? response.content ?? '';
+      setResult(
+        typeof normalizedResult === 'string'
+          ? normalizedResult
+          : JSON.stringify(normalizedResult, null, 2)
+      );
       setSessionId(String(response.session_id ?? ''));
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : 'Ошибка генерации ТК');
