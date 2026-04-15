@@ -16,8 +16,11 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import (
     BufferedInputFile,
     CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
     Message,
     ReplyKeyboardRemove,
+    WebAppInfo,
 )
 
 from config.settings import settings
@@ -145,6 +148,22 @@ async def start_handler(message: Message) -> None:
 @router.message(Command("role"))
 async def role_handler(message: Message) -> None:
     await message.answer("Выберите новую роль:", reply_markup=role_keyboard())
+
+
+@router.message(Command("app"))
+async def app_handler(message: Message) -> None:
+    webapp_url = f"https://{settings.domain}/web"
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🌐 Открыть Web-приложение",
+                    web_app=WebAppInfo(url=webapp_url),
+                )
+            ]
+        ],
+    )
+    await message.answer("Откройте мини-приложение:", reply_markup=keyboard)
 
 
 @router.callback_query(F.data.startswith("role:"))

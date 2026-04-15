@@ -1,5 +1,6 @@
 """Настройки приложения — загружаются из .env."""
 
+from pydantic import Field
 from pydantic_settings import BaseSettings
 
 
@@ -49,6 +50,7 @@ class Settings(BaseSettings):
     telegram_bot_token: str = ""
     telegram_webhook_url: str = ""
     admin_telegram_ids: list[int] = []
+    domain: str = Field(default="localhost", env="DOMAIN")
 
     # ── tk-generator ───────────────────────────
     tk_generator_path: str = "../tk-generator"
