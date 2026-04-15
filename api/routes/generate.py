@@ -611,8 +611,9 @@ async def generate_ks(payload: KSRequest, request: Request):
     summary="Сметный расчёт по ТСН/ГЭСН",
     description="Выполняет ориентировочный расчёт стоимости и трудозатрат по каталогу расценок.",
 )
-async def generate_estimate(payload: EstimateRequest):
+async def generate_estimate(payload: EstimateRequest, request: Request):
     """Сметный калькулятор по справочнику расценок с региональным индексом."""
+    _ = request
     calculator = CalculatorAgent(LLMRouter())
     estimate = calculator._calculate_estimate([item.model_dump() for item in payload.work_items])
     indexed_total_cost = calculator._apply_index(

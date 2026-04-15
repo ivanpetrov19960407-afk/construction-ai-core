@@ -1,4 +1,17 @@
 const tg = window.Telegram?.WebApp;
+const queryParams = new URLSearchParams(window.location.search);
+const webApiKey = queryParams.get("api_key") || "";
+const authToken = window.localStorage.getItem("auth_token") || "";
+
+function buildAuthHeaders(extraHeaders = {}) {
+  const headers = { ...extraHeaders };
+  if (authToken) {
+    headers.Authorization = `Bearer ${authToken}`;
+  } else if (webApiKey) {
+    headers["X-API-Key"] = webApiKey;
+  }
+  return headers;
+}
 
 if (tg) {
   tg.ready();
@@ -23,9 +36,7 @@ async function initChatProbe() {
   try {
     await fetch("/api/chat", {
       method: "GET",
-      headers: {
-        "X-API-Key": tg?.initData || "",
-      },
+      headers: buildAuthHeaders(),
     });
   } catch (error) {
     console.warn("Chat probe failed", error);
@@ -70,8 +81,9 @@ if (tkForm) {
       const response = await fetch("/api/generate/tk", {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
-          "X-API-Key": tg?.initData || "",
+          ...buildAuthHeaders({
+            "Content-Type": "application/json",
+          }),
         },
         body: JSON.stringify(payload),
       });

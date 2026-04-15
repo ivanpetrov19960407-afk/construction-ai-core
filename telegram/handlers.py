@@ -8,6 +8,7 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from io import BytesIO
+from urllib.parse import urlencode
 
 import httpx
 from aiogram import F, Router
@@ -152,7 +153,11 @@ async def role_handler(message: Message) -> None:
 
 @router.message(Command("app"))
 async def app_handler(message: Message) -> None:
-    webapp_url = f"https://{settings.domain}/web"
+    params = {}
+    if settings.api_keys:
+        params["api_key"] = settings.api_keys[0]
+    query = f"?{urlencode(params)}" if params else ""
+    webapp_url = f"https://{settings.domain}/web/{query}"
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [

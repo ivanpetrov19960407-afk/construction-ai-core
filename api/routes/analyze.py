@@ -201,8 +201,9 @@ async def analyze_tender(
     response_model=DiffResponse,
     summary="Сравнение версий документа по session_id",
 )
-async def analyze_diff(payload: DiffRequest):
+async def analyze_diff(payload: DiffRequest, request: Request):
     """Сравнить две версии документов, сохранённых в архиве по session_id."""
+    _ = request
     docs_v1 = await orchestrator.session_memory.get_session_documents(payload.session_id_v1)
     docs_v2 = await orchestrator.session_memory.get_session_documents(payload.session_id_v2)
 
@@ -234,10 +235,12 @@ async def analyze_diff(payload: DiffRequest):
     summary="Сравнение двух загруженных версий документа",
 )
 async def analyze_diff_upload(
+    request: Request,
     file_v1: UploadFile = File(...),
     file_v2: UploadFile = File(...),
 ):
     """Загрузить две версии документов (DOCX/TXT) и получить diff."""
+    _ = request
     if not file_v1.filename or not file_v2.filename:
         raise HTTPException(status_code=400, detail="Both files are required")
 
