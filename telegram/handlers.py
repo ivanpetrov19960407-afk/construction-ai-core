@@ -8,6 +8,7 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from io import BytesIO
+from urllib.parse import urlencode
 
 import httpx
 from aiogram import F, Router
@@ -16,8 +17,11 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import (
     BufferedInputFile,
     CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
     Message,
     ReplyKeyboardRemove,
+    WebAppInfo,
 )
 
 from config.settings import settings
@@ -145,6 +149,26 @@ async def start_handler(message: Message) -> None:
 @router.message(Command("role"))
 async def role_handler(message: Message) -> None:
     await message.answer("Выберите новую роль:", reply_markup=role_keyboard())
+
+
+@router.message(Command("app"))
+async def app_handler(message: Message) -> None:
+    params = {}
+    if settings.api_keys:
+        params["api_key"] = settings.api_keys[0]
+    query = f"?{urlencode(params)}" if params else ""
+    webapp_url = f"https://{settings.domain}/web/{query}"
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🌐 Открыть Web-приложение",
+                    web_app=WebAppInfo(url=webapp_url),
+                )
+            ]
+        ],
+    )
+    await message.answer("Откройте мини-приложение:", reply_markup=keyboard)
 
 
 @router.callback_query(F.data.startswith("role:"))

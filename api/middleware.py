@@ -36,7 +36,13 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         request: Request,
         call_next: Callable[[Request], Awaitable[Response]],
     ) -> Response:
-        if request.url.path in EXCLUDED_PATHS or request.url.path in PUBLIC_AUTH_PATHS:
+        path = request.url.path
+        if (
+            path in EXCLUDED_PATHS
+            or path in PUBLIC_AUTH_PATHS
+            or path == "/web"
+            or path.startswith("/web/")
+        ):
             return await call_next(request)
 
         auth_header = request.headers.get("Authorization", "")

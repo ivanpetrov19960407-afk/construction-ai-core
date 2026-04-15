@@ -1,0 +1,9 @@
+{
+  "name": "Construction AI",
+  "short_name": "ConstrAI",
+  "start_url": "/web/",
+  "display": "standalone",
+  "background_color": "#1a1a1a",
+  "theme_color": "#1a1a1a",
+  "icons": []
+}

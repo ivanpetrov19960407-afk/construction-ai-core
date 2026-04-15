@@ -13,8 +13,10 @@ from fastapi import APIRouter, File, Form, HTTPException, Query, Request, Upload
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, field_validator
 
+from agents.calculator import CalculatorAgent
 from config.settings import settings
 from core.cache import RedisCache
+from core.llm_router import LLMRouter
 from core.orchestrator import Orchestrator
 from core.pdf_exporter import PDFExporter
 from core.pdf_parser import PDFParser
@@ -102,6 +104,7 @@ class KSResponse(BaseModel):
     total_cost: float
     total_hours: float
     sha256: str | None
+
 
 class EstimateWorkItem(BaseModel):
     """Позиция работ для сметного расчёта по ГЭСН/ТСН."""
@@ -608,8 +611,9 @@ async def generate_ks(payload: KSRequest, request: Request):
     summary="Сметный расчёт по ТСН/ГЭСН",
     description="Выполняет ориентировочный расчёт стоимости и трудозатрат по каталогу расценок.",
 )
-async def generate_estimate(payload: EstimateRequest):
+async def generate_estimate(payload: EstimateRequest, request: Request):
     """Сметный калькулятор по справочнику расценок с региональным индексом."""
+    _ = request
     calculator = CalculatorAgent(LLMRouter())
     estimate = calculator._calculate_estimate([item.model_dump() for item in payload.work_items])
     indexed_total_cost = calculator._apply_index(
