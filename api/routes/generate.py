@@ -13,8 +13,10 @@ from fastapi import APIRouter, File, Form, HTTPException, Query, Request, Upload
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, field_validator
 
+from agents.calculator import CalculatorAgent
 from config.settings import settings
 from core.cache import RedisCache
+from core.llm_router import LLMRouter
 from core.orchestrator import Orchestrator
 from core.pdf_exporter import PDFExporter
 from core.pdf_parser import PDFParser
