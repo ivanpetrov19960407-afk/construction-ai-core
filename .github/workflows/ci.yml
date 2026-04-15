@@ -24,12 +24,13 @@ jobs:
       API_KEYS: '["test-key"]'
       SQLITE_DB_PATH: ":memory:"
       RAG_EMBEDDINGS_BACKEND: hash
+      PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
       - run: uv sync --extra dev --no-install-project
       - run: >-
-          timeout 25m uv run --no-project pytest tests/ -v --tb=short
+          uv run --no-project pytest tests/ -v --tb=short
           -o faulthandler_timeout=60
           --ignore=tests/test_rag_engine.py
       - uses: actions/upload-artifact@v4
