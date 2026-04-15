@@ -5,6 +5,7 @@ on: [push, pull_request]
 jobs:
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
@@ -16,18 +17,21 @@ jobs:
   test:
     runs-on: ubuntu-latest
     needs: lint
+    timeout-minutes: 30
     env:
       DEFAULT_LLM_PROVIDER: openai
       OPENAI_API_KEY: "test-key"
       API_KEYS: '["test-key"]'
       SQLITE_DB_PATH: ":memory:"
       RAG_EMBEDDINGS_BACKEND: hash
+      PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
       - run: uv sync --extra dev --no-install-project
       - run: >-
           uv run --no-project pytest tests/ -v --tb=short
+          -o faulthandler_timeout=60
           --ignore=tests/test_rag_engine.py
       - uses: actions/upload-artifact@v4
         if: failure()
