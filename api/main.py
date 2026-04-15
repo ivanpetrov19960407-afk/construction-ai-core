@@ -20,7 +20,7 @@ from api.middleware import (
     rate_limit_exceeded_handler,
     setup_rate_limiter,
 )
-from api.routes import chat, generate, health, rag
+from api.routes import auth, chat, generate, health, rag
 from api.routes.analyze import router as analyze_router
 from config.settings import settings
 from core.database import init_db
@@ -34,6 +34,7 @@ telegram_router = APIRouter()
 async def lifespan(app: FastAPI):
     """Startup / shutdown events."""
     configure_structlog()
+    settings.validate_jwt_secret()
     await init_db(settings.sqlite_db_path)
     app.state.started_at = datetime.now(timezone.utc)  # noqa: UP017
     app.state.telegram_bot = None
@@ -84,6 +85,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)
 
 # ── Routes ─────────────────────────────────────
 app.include_router(health.router, tags=["health"])
+app.include_router(auth.router, tags=["auth"])
 app.include_router(chat.router, prefix="/api", tags=["chat"])
 app.include_router(generate.router, prefix="/api", tags=["generate"])
 app.include_router(analyze_router, prefix="/api/analyze", tags=["analyze"])

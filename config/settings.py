@@ -13,6 +13,15 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     api_keys: list[str] = []
     admin_api_keys: list[str] = []
+    jwt_secret: str = "changeme"
+    jwt_expire_minutes: int = 60
+    users_db_path: str = "data/users.db"
+    invite_codes: dict[str, str] = {
+        "ADMIN-XXX": "admin",
+        "PTO-XXX": "pto_engineer",
+        "FOREMAN-XXX": "foreman",
+        "TENDER-XXX": "tender_specialist",
+    }
 
     # ── LLM Providers ──────────────────────────
     perplexity_api_key: str = ""
@@ -49,6 +58,15 @@ class Settings(BaseSettings):
         "env_file_encoding": "utf-8",
         "extra": "ignore",
     }
+
+    def validate_jwt_secret(self) -> None:
+        """Ensure JWT secret is explicitly configured and strong enough."""
+        normalized = self.jwt_secret.strip().lower()
+        insecure_values = {"", "changeme", "change-me", "default", "secret"}
+        if normalized in insecure_values or len(self.jwt_secret) < 32:
+            raise ValueError(
+                "Unsafe JWT secret: set JWT_SECRET to a unique value with at least 32 chars",
+            )
 
 
 settings = Settings()

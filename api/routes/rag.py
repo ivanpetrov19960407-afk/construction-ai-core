@@ -22,6 +22,9 @@ def get_rag_engine() -> RAGEngine:
 
 
 def _require_admin(request: Request) -> None:
+    user_role = getattr(request.state, "user_role", None)
+    if user_role == "admin":
+        return
     api_key = request.headers.get("X-API-Key")
     if not api_key or api_key not in settings.admin_api_keys:
         raise HTTPException(status_code=403, detail="Admin role required")

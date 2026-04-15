@@ -33,6 +33,7 @@ dependencies = [
     "structlog>=24.0.0",
     "tqdm>=4.66.0",
     "prometheus-fastapi-instrumentator>=7.0.0",
+    "bcrypt>=4.1.0",
 ]
 
 [project.optional-dependencies]
