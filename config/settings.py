@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     rag_embeddings_backend: str = "sentence_transformers"
 
     # ── Redis (серверный деплой) ────────────────
-    redis_url: str | None = None
+    redis_url: str = "redis://redis:6379"
 
     # ── Telegram ───────────────────────────────
     bot_token: str = ""
