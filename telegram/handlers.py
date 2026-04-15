@@ -82,6 +82,13 @@ class TelegramCoreClient:
             response.raise_for_status()
             return response.json()
 
+    async def get(self, path: str) -> dict:
+        headers = {"X-API-Key": _get_api_key()}
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.get(f"{self.base_url}{path}", headers=headers)
+            response.raise_for_status()
+            return response.json()
+
 
 api_client = TelegramCoreClient(base_url=settings.core_api_url.rstrip("/"))
 MAX_PDF_SIZE_BYTES = 20_971_520
@@ -171,6 +178,19 @@ async def app_handler(message: Message) -> None:
     await message.answer("Откройте мини-приложение:", reply_markup=keyboard)
 
 
+@router.callback_query(F.data.startswith("project_doc:"))
+async def project_doc_callback_handler(callback: CallbackQuery) -> None:
+    """Быстро показать session_id выбранного документа проекта."""
+    data = callback.data or ""
+    session_id = data.split(":", maxsplit=1)[1] if ":" in data else ""
+    if callback.message is not None and isinstance(callback.message, Message):
+        if session_id:
+            await callback.message.answer(f"Откройте документ в сессии: {session_id}")
+        else:
+            await callback.message.answer("Не удалось открыть документ.")
+    await callback.answer()
+
+
 @router.callback_query(F.data.startswith("role:"))
 async def role_callback_handler(callback: CallbackQuery) -> None:
     data = callback.data or ""
@@ -183,6 +203,44 @@ async def role_callback_handler(callback: CallbackQuery) -> None:
         await callback.message.answer(f"Роль переключена: {ROLE_NAMES.get(role, role)}")
     await callback.answer("Роль сохранена")
 
+
+
+@router.message(Command("projects"))
+async def projects_handler(message: Message) -> None:
+    """Показать проекты пользователя и кнопки документов."""
+    user_id = _require_user_id(message)
+    try:
+        data = await api_client.get(f"/api/projects?user_id={user_id}")
+    except httpx.HTTPError as exc:
+        await message.answer(f"Не удалось загрузить проекты: {exc}")
+        return
+
+    projects = data.get("projects", [])
+    if not projects:
+        await message.answer("У вас пока нет проектов.")
+        return
+
+    lines = ["📁 Ваши проекты:"]
+    inline_rows: list[list[InlineKeyboardButton]] = []
+    for project in projects:
+        project_id = project.get("id", "")
+        name = project.get("name", "Без названия")
+        lines.append(f"• {name}")
+        docs = await api_client.get(f"/api/projects/{project_id}/documents?user_id={user_id}")
+        for doc in docs.get("documents", [])[:3]:
+            title = doc.get("title", "Документ")
+            session_id = doc.get("session_id", "")
+            inline_rows.append(
+                [
+                    InlineKeyboardButton(
+                        text=f"📄 {title}",
+                        callback_data=f"project_doc:{session_id}",
+                    )
+                ]
+            )
+
+    markup = InlineKeyboardMarkup(inline_keyboard=inline_rows) if inline_rows else None
+    await message.answer("\n".join(lines), reply_markup=markup)
 
 # ── /tk — Технологическая карта (TKStates) ────────────────────────────────────
 
