@@ -29,7 +29,7 @@ def encode(payload: dict[str, object], key: str, algorithm: str = "HS256") -> st
     header = {"alg": "HS256", "typ": "JWT"}
     header_segment = _b64url_encode(json.dumps(header, separators=(",", ":")).encode("utf-8"))
     payload_segment = _b64url_encode(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
-    signing_input = f"{header_segment}.{payload_segment}".encode("utf-8")
+    signing_input = f"{header_segment}.{payload_segment}".encode()
     signature = hmac.new(key.encode("utf-8"), signing_input, hashlib.sha256).digest()
     return f"{header_segment}.{payload_segment}.{_b64url_encode(signature)}"
 
@@ -44,7 +44,7 @@ def decode(token: str, key: str, algorithms: list[str] | None = None) -> dict[st
     except ValueError as exc:
         raise JWTError("Malformed token") from exc
 
-    signing_input = f"{header_segment}.{payload_segment}".encode("utf-8")
+    signing_input = f"{header_segment}.{payload_segment}".encode()
     expected_signature = hmac.new(key.encode("utf-8"), signing_input, hashlib.sha256).digest()
     actual_signature = _b64url_decode(signature_segment)
     if not hmac.compare_digest(expected_signature, actual_signature):

@@ -2,18 +2,19 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import sqlite3
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
-from jose import JWTError, jwt
-from passlib.context import CryptContext
 
 from api.models import TokenResponse, UserCreate, UserLogin
 from config.settings import settings
+from jose import JWTError, jwt
+from passlib.context import CryptContext
 
 ALGORITHM = "HS256"
+UTC = getattr(dt, "UTC", dt.timezone.utc)  # noqa: UP017
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -49,7 +50,7 @@ def _get_user(username: str) -> tuple[str, str, str, str] | None:
 
 
 def _create_token(username: str, role: str) -> str:
-    expire_at = datetime.now(timezone.utc) + timedelta(minutes=settings.jwt_expire_minutes)
+    expire_at = dt.datetime.now(UTC) + dt.timedelta(minutes=settings.jwt_expire_minutes)
     payload = {
         "sub": username,
         "role": role,
@@ -69,7 +70,7 @@ async def register_user(payload: UserCreate) -> dict[str, str]:
         raise HTTPException(status_code=409, detail="User already exists")
 
     _ensure_users_table()
-    created_at = datetime.now(timezone.utc).isoformat()
+    created_at = dt.datetime.now(UTC).isoformat()
     password_hash = pwd_context.hash(payload.password)
     with sqlite3.connect(settings.users_db_path) as connection:
         connection.execute(
