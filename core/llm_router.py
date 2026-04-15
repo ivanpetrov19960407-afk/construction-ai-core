@@ -5,8 +5,7 @@
 """
 
 import asyncio
-import time
-from collections import OrderedDict
+import hashlib
 from dataclasses import dataclass
 from enum import Enum
 
@@ -15,6 +14,7 @@ import structlog
 
 from api.metrics import LLM_TOKENS_USED
 from config.settings import settings
+from core.cache import RedisCache
 
 
 class LLMProvider(str, Enum):  # noqa: UP042
@@ -75,9 +75,8 @@ class LLMRouter:
         self.default_provider = default_provider or LLMProvider(settings.default_llm_provider)
         self._client = httpx.AsyncClient(timeout=60.0)
         self._logger = structlog.get_logger("core.llm_router")
-        self._intent_cache: OrderedDict[int, tuple[str, float]] = OrderedDict()
+        self._cache = RedisCache(settings.redis_url)
         self._intent_cache_ttl_seconds = 3600
-        self._intent_cache_max_entries = 1000
 
     async def query(
         self,
@@ -113,7 +112,7 @@ class LLMRouter:
 
         cache_key = self._intent_cache_key(system_prompt, prompt)
         if cache_key is not None:
-            cached_intent = self._get_cached_intent(cache_key)
+            cached_intent = await self._cache.get(cache_key)
             if cached_intent is not None:
                 return LLMResponse(
                     text=cached_intent,
@@ -183,7 +182,11 @@ class LLMRouter:
         self._update_token_metrics(used_provider, usage)
 
         if cache_key is not None:
-            self._set_cached_intent(cache_key, response_data["text"])
+            await self._cache.set(
+                cache_key,
+                response_data["text"],
+                ttl=self._intent_cache_ttl_seconds,
+            )
 
         return LLMResponse(
             text=response_data["text"],
@@ -192,27 +195,11 @@ class LLMRouter:
             usage=usage,
         )
 
-    def _intent_cache_key(self, system_prompt: str | None, prompt: str) -> int | None:
+    def _intent_cache_key(self, system_prompt: str | None, prompt: str) -> str | None:
         if system_prompt and "Определи intent запроса" in system_prompt:
-            return hash(prompt[:100])
+            digest = hashlib.sha256(prompt[:100].encode("utf-8")).hexdigest()
+            return f"llm:{digest}"
         return None
-
-    def _get_cached_intent(self, cache_key: int) -> str | None:
-        record = self._intent_cache.get(cache_key)
-        if not record:
-            return None
-        cached_intent, expires_at = record
-        if expires_at < time.time():
-            self._intent_cache.pop(cache_key, None)
-            return None
-        self._intent_cache.move_to_end(cache_key)
-        return cached_intent
-
-    def _set_cached_intent(self, cache_key: int, intent: str) -> None:
-        self._intent_cache[cache_key] = (intent, time.time() + self._intent_cache_ttl_seconds)
-        self._intent_cache.move_to_end(cache_key)
-        if len(self._intent_cache) > self._intent_cache_max_entries:
-            self._intent_cache.popitem(last=False)
 
     def _extract_usage(self, usage: dict | None) -> dict[str, int]:
         usage = usage or {}

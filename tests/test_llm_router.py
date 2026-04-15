@@ -55,12 +55,13 @@ def test_query_fallback_to_next_provider_on_500(monkeypatch):
 
 
 def test_intent_detection_cache(monkeypatch):
-    """Intent detection должен использовать in-memory кеш по hash(message[:100])."""
+    """Intent detection должен использовать Redis-кеш по стабильному ключу."""
     router = LLMRouter(default_provider=LLMProvider.OPENAI)
 
     monkeypatch.setattr(settings, "openai_api_key", "openai-test")
 
     calls = 0
+    redis_store: dict[str, str] = {}
 
     async def _mock_query_openai_compatible(
         base_url: str,
@@ -79,6 +80,16 @@ def test_intent_detection_cache(monkeypatch):
 
     monkeypatch.setattr(router, "_query_openai_compatible", _mock_query_openai_compatible)
 
+    async def _cache_get(key: str):
+        return redis_store.get(key)
+
+    async def _cache_set(key: str, value: str, ttl: int = 3600):
+        _ = ttl
+        redis_store[key] = value
+
+    monkeypatch.setattr(router._cache, "get", _cache_get)
+    monkeypatch.setattr(router._cache, "set", _cache_set)
+
     system_prompt = (
         "Определи intent запроса. Верни ровно одно слово из списка: "
         "generate_tk, generate_letter, analyze_tender, generate_ks, chat."
@@ -91,3 +102,14 @@ def test_intent_detection_cache(monkeypatch):
     assert second.text == "generate_tk"
     assert calls == 1
     assert second.usage == {"tokens_input": 0, "tokens_output": 0}
+
+
+def test_intent_cache_key_is_stable_hash():
+    router = LLMRouter(default_provider=LLMProvider.OPENAI)
+    key1 = router._intent_cache_key("Определи intent запроса", "сделай ТК на бетон")
+    key2 = router._intent_cache_key("Определи intent запроса", "сделай ТК на бетон")
+
+    assert key1 == key2
+    assert isinstance(key1, str)
+    assert key1.startswith("llm:")
+    assert len(key1) == 68
