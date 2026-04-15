@@ -144,3 +144,30 @@ def test_get_history(tmp_path):
     assert {item["type"] for item in items}.issuperset(
         {"project_created", "document_added", "comment_added"},
     )
+
+
+def test_query_param_user_id_does_not_authorize(tmp_path):
+    old_db_path = _with_temp_db(tmp_path)
+    old_api_keys = settings.api_keys
+    settings.api_keys = ["test-key"]
+    try:
+        client = TestClient(app)
+        create = client.post(
+            "/api/projects",
+            json={"name": "Secure", "description": "Auth only", "members": []},
+            headers=_auth_headers("owner"),
+        )
+        project_id = create.json()["id"]
+
+        response = client.get(
+            f"/api/projects/{project_id}?user_id=owner",
+            headers={"X-API-Key": "test-key"},
+        )
+    finally:
+        settings.sqlite_db_path = old_db_path
+        settings.api_keys = old_api_keys
+        projects_core._ENGINE_CACHE.clear()
+        projects_core._SESSIONMAKER_CACHE.clear()
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Authentication required"}

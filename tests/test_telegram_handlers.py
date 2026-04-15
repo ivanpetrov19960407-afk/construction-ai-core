@@ -342,3 +342,55 @@ def test_keyboards_have_correct_structure():
     skip_texts = [b.text for b in sk.keyboard[0]]
     assert "Пропустить" in skip_texts
     assert "Отмена" in skip_texts
+
+
+def test_projects_handler_continues_when_documents_request_fails(monkeypatch):
+    _install_aiogram_stubs()
+    handlers = importlib.import_module("telegram.handlers")
+    handlers.project_doc_tokens.clear()
+
+    async def _fake_get(path: str):
+        if path == "/api/projects":
+            return {"projects": [{"id": "project-1", "name": "Test project"}]}
+        raise handlers.httpx.HTTPStatusError(
+            "boom",
+            request=SimpleNamespace(url=path),
+            response=SimpleNamespace(status_code=500),
+        )
+
+    monkeypatch.setattr(handlers.api_client, "get", _fake_get)
+
+    message = SimpleNamespace(
+        from_user=SimpleNamespace(id=777),
+        answer=AsyncMock(),
+    )
+
+    asyncio.run(handlers.projects_handler(message))
+
+    message.answer.assert_awaited_once()
+    text = message.answer.await_args.args[0]
+    assert "Test project" in text
+    assert "Документы временно недоступны" in text
+
+
+def test_project_doc_callback_uses_short_token_mapping():
+    _install_aiogram_stubs()
+    handlers = importlib.import_module("telegram.handlers")
+    handlers.project_doc_tokens.clear()
+    handlers.Message = object
+
+    token = handlers._store_project_doc_token(10, "very-long-session-id-value")
+
+    callback = SimpleNamespace(
+        data=f"project_doc:{token}",
+        from_user=SimpleNamespace(id=10),
+        message=SimpleNamespace(answer=AsyncMock()),
+        answer=AsyncMock(),
+    )
+
+    asyncio.run(handlers.project_doc_callback_handler(callback))
+
+    callback.message.answer.assert_awaited_once_with(
+        "Откройте документ в сессии: very-long-session-id-value",
+    )
+    callback.answer.assert_awaited_once()

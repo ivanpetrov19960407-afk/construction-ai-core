@@ -40,8 +40,6 @@ class AddCommentRequest(BaseModel):
 def _require_username(request: Request) -> str:
     username = getattr(request.state, "username", None)
     if not username:
-        username = request.query_params.get("user_id")
-    if not username:
         raise HTTPException(status_code=401, detail="Authentication required")
     return str(username)
 

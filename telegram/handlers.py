@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import secrets
 from collections.abc import Mapping
 from dataclasses import dataclass
 from io import BytesIO
@@ -39,6 +40,7 @@ from telegram.states import AnalyzeForm, KSStates, LetterStates, TKStates, Uploa
 router = Router()
 
 user_roles: dict[int, str] = {}
+project_doc_tokens: dict[int, dict[str, str]] = {}
 
 
 ROLE_NAMES = {
@@ -102,6 +104,17 @@ def _require_user_id(message: Message) -> int:
     if message.from_user is None:
         raise ValueError("Message has no from_user")
     return message.from_user.id
+
+
+def _store_project_doc_token(user_id: int, session_id: str) -> str:
+    """Store session id under a short callback token (<64 bytes with prefix)."""
+    token = secrets.token_urlsafe(9)
+    user_tokens = project_doc_tokens.setdefault(user_id, {})
+    user_tokens[token] = session_id
+    if len(user_tokens) > 200:
+        oldest = next(iter(user_tokens))
+        del user_tokens[oldest]
+    return token
 
 
 async def _call_api_with_typing(
@@ -182,7 +195,8 @@ async def app_handler(message: Message) -> None:
 async def project_doc_callback_handler(callback: CallbackQuery) -> None:
     """Быстро показать session_id выбранного документа проекта."""
     data = callback.data or ""
-    session_id = data.split(":", maxsplit=1)[1] if ":" in data else ""
+    token = data.split(":", maxsplit=1)[1] if ":" in data else ""
+    session_id = project_doc_tokens.get(callback.from_user.id, {}).get(token, "")
     if callback.message is not None and isinstance(callback.message, Message):
         if session_id:
             await callback.message.answer(f"Откройте документ в сессии: {session_id}")
@@ -210,7 +224,7 @@ async def projects_handler(message: Message) -> None:
     """Показать проекты пользователя и кнопки документов."""
     user_id = _require_user_id(message)
     try:
-        data = await api_client.get(f"/api/projects?user_id={user_id}")
+        data = await api_client.get("/api/projects")
     except httpx.HTTPError as exc:
         await message.answer(f"Не удалось загрузить проекты: {exc}")
         return
@@ -226,15 +240,21 @@ async def projects_handler(message: Message) -> None:
         project_id = project.get("id", "")
         name = project.get("name", "Без названия")
         lines.append(f"• {name}")
-        docs = await api_client.get(f"/api/projects/{project_id}/documents?user_id={user_id}")
+        try:
+            docs = await api_client.get(f"/api/projects/{project_id}/documents")
+        except httpx.HTTPError:
+            lines.append("  └ ⚠️ Документы временно недоступны")
+            continue
+
         for doc in docs.get("documents", [])[:3]:
             title = doc.get("title", "Документ")
             session_id = doc.get("session_id", "")
+            token = _store_project_doc_token(user_id, session_id)
             inline_rows.append(
                 [
                     InlineKeyboardButton(
                         text=f"📄 {title}",
-                        callback_data=f"project_doc:{session_id}",
+                        callback_data=f"project_doc:{token}",
                     )
                 ]
             )
