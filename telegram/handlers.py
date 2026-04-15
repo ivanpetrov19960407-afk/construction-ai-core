@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import secrets
 from collections.abc import Mapping
 from dataclasses import dataclass
 from io import BytesIO
@@ -39,6 +40,7 @@ from telegram.states import AnalyzeForm, KSStates, LetterStates, TKStates, Uploa
 router = Router()
 
 user_roles: dict[int, str] = {}
+project_doc_tokens: dict[int, dict[str, str]] = {}
 
 
 ROLE_NAMES = {
@@ -82,6 +84,13 @@ class TelegramCoreClient:
             response.raise_for_status()
             return response.json()
 
+    async def get(self, path: str) -> dict:
+        headers = {"X-API-Key": _get_api_key()}
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.get(f"{self.base_url}{path}", headers=headers)
+            response.raise_for_status()
+            return response.json()
+
 
 api_client = TelegramCoreClient(base_url=settings.core_api_url.rstrip("/"))
 MAX_PDF_SIZE_BYTES = 20_971_520
@@ -95,6 +104,17 @@ def _require_user_id(message: Message) -> int:
     if message.from_user is None:
         raise ValueError("Message has no from_user")
     return message.from_user.id
+
+
+def _store_project_doc_token(user_id: int, session_id: str) -> str:
+    """Store session id under a short callback token (<64 bytes with prefix)."""
+    token = secrets.token_urlsafe(9)
+    user_tokens = project_doc_tokens.setdefault(user_id, {})
+    user_tokens[token] = session_id
+    if len(user_tokens) > 200:
+        oldest = next(iter(user_tokens))
+        del user_tokens[oldest]
+    return token
 
 
 async def _call_api_with_typing(
@@ -171,6 +191,20 @@ async def app_handler(message: Message) -> None:
     await message.answer("Откройте мини-приложение:", reply_markup=keyboard)
 
 
+@router.callback_query(F.data.startswith("project_doc:"))
+async def project_doc_callback_handler(callback: CallbackQuery) -> None:
+    """Быстро показать session_id выбранного документа проекта."""
+    data = callback.data or ""
+    token = data.split(":", maxsplit=1)[1] if ":" in data else ""
+    session_id = project_doc_tokens.get(callback.from_user.id, {}).get(token, "")
+    if callback.message is not None and isinstance(callback.message, Message):
+        if session_id:
+            await callback.message.answer(f"Откройте документ в сессии: {session_id}")
+        else:
+            await callback.message.answer("Не удалось открыть документ.")
+    await callback.answer()
+
+
 @router.callback_query(F.data.startswith("role:"))
 async def role_callback_handler(callback: CallbackQuery) -> None:
     data = callback.data or ""
@@ -182,6 +216,50 @@ async def role_callback_handler(callback: CallbackQuery) -> None:
     if callback.message is not None:
         await callback.message.answer(f"Роль переключена: {ROLE_NAMES.get(role, role)}")
     await callback.answer("Роль сохранена")
+
+
+@router.message(Command("projects"))
+async def projects_handler(message: Message) -> None:
+    """Показать проекты пользователя и кнопки документов."""
+    user_id = _require_user_id(message)
+    try:
+        data = await api_client.get("/api/projects")
+    except httpx.HTTPError as exc:
+        await message.answer(f"Не удалось загрузить проекты: {exc}")
+        return
+
+    projects = data.get("projects", [])
+    if not projects:
+        await message.answer("У вас пока нет проектов.")
+        return
+
+    lines = ["📁 Ваши проекты:"]
+    inline_rows: list[list[InlineKeyboardButton]] = []
+    for project in projects:
+        project_id = project.get("id", "")
+        name = project.get("name", "Без названия")
+        lines.append(f"• {name}")
+        try:
+            docs = await api_client.get(f"/api/projects/{project_id}/documents")
+        except httpx.HTTPError:
+            lines.append("  └ ⚠️ Документы временно недоступны")
+            continue
+
+        for doc in docs.get("documents", [])[:3]:
+            title = doc.get("title", "Документ")
+            session_id = doc.get("session_id", "")
+            token = _store_project_doc_token(user_id, session_id)
+            inline_rows.append(
+                [
+                    InlineKeyboardButton(
+                        text=f"📄 {title}",
+                        callback_data=f"project_doc:{token}",
+                    )
+                ]
+            )
+
+    markup = InlineKeyboardMarkup(inline_keyboard=inline_rows) if inline_rows else None
+    await message.answer("\n".join(lines), reply_markup=markup)
 
 
 # ── /tk — Технологическая карта (TKStates) ────────────────────────────────────
