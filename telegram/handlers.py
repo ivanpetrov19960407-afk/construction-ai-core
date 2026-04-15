@@ -218,7 +218,6 @@ async def role_callback_handler(callback: CallbackQuery) -> None:
     await callback.answer("Роль сохранена")
 
 
-
 @router.message(Command("projects"))
 async def projects_handler(message: Message) -> None:
     """Показать проекты пользователя и кнопки документов."""
@@ -261,6 +260,7 @@ async def projects_handler(message: Message) -> None:
 
     markup = InlineKeyboardMarkup(inline_keyboard=inline_rows) if inline_rows else None
     await message.answer("\n".join(lines), reply_markup=markup)
+
 
 # ── /tk — Технологическая карта (TKStates) ────────────────────────────────────
 
