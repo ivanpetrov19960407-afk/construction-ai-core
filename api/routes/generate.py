@@ -12,6 +12,8 @@ from fastapi import APIRouter, File, Form, HTTPException, Query, Request, Upload
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, field_validator
 
+from config.settings import settings
+from core.cache import RedisCache
 from core.orchestrator import Orchestrator
 from core.pdf_exporter import PDFExporter
 from core.pdf_parser import PDFParser
@@ -21,6 +23,7 @@ orchestrator = Orchestrator()
 session_memory = orchestrator.session_memory
 pdf_parser = PDFParser()
 pdf_exporter = PDFExporter()
+redis_cache = RedisCache(settings.redis_url)
 
 ALLOWED_UNITS = ["м³", "м²", "пог.м.", "шт.", "т", "кг"]
 MAX_UPLOAD_SIZE_BYTES = 20 * 1024 * 1024
@@ -143,6 +146,7 @@ class PPRRequest(BaseModel):
     role: str = "pto_engineer"
     session_id: str | None = None
     export_format: Literal["docx", "pdf"] = "docx"
+    norms: list[str] = []
 
 
 @router.post(
@@ -378,6 +382,22 @@ async def generate_ppr(payload: PPRRequest, request: Request):
         f"Длительность: {payload.duration_days} дней. "
         f"Численность: {payload.workers_count} чел."
     )
+    if len(payload.norms) > 5:
+        await redis_cache.enqueue(
+            "doc_generation",
+            {
+                "task_type": "generate_ppr",
+                "session_id": session_id,
+                "payload": payload.model_dump(),
+            },
+        )
+        return {
+            "session_id": session_id,
+            "status": "queued",
+            "queue": "doc_generation",
+            "message": "Тяжелая генерация ППР поставлена в очередь.",
+        }
+
     context = {
         "work_type": payload.work_type,
         "object_name": payload.object_name,
