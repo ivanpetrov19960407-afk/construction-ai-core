@@ -10,6 +10,9 @@ from typing import Literal
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse
+
+from agents.calculator import CalculatorAgent
+from core.llm_router import LLMRouter
 from pydantic import BaseModel, Field, field_validator
 
 from core.orchestrator import Orchestrator
@@ -97,6 +100,31 @@ class KSResponse(BaseModel):
     total_cost: float
     total_hours: float
     sha256: str | None
+
+class EstimateWorkItem(BaseModel):
+    """Позиция работ для сметного расчёта по ГЭСН/ТСН."""
+
+    work_type: str
+    volume: float
+    unit: str
+
+
+class EstimateRequest(BaseModel):
+    """Запрос на сметный расчёт по расценкам."""
+
+    work_items: list[EstimateWorkItem] = Field(min_length=1, max_length=100)
+    region: str = "Москва"
+
+
+class EstimateResponse(BaseModel):
+    """Ответ сметного расчёта."""
+
+    items: list[dict]
+    total_cost: float
+    total_labor_hours: float
+    region: str
+    indexed_total_cost: float
+    docx_available: bool = False
 
 
 class LetterType(str, Enum):  # noqa: UP042
@@ -541,6 +569,31 @@ async def generate_ks(payload: KSRequest, request: Request):
         total_cost=total_cost,
         total_hours=total_hours,
         sha256=sha256,
+    )
+
+
+@router.post(
+    "/generate/estimate",
+    response_model=EstimateResponse,
+    summary="Сметный расчёт по ТСН/ГЭСН",
+    description="Выполняет ориентировочный расчёт стоимости и трудозатрат по каталогу расценок.",
+)
+async def generate_estimate(payload: EstimateRequest):
+    """Сметный калькулятор по справочнику расценок с региональным индексом."""
+    calculator = CalculatorAgent(LLMRouter())
+    estimate = calculator._calculate_estimate([item.model_dump() for item in payload.work_items])
+    indexed_total_cost = calculator._apply_index(
+        base_cost=float(estimate["total_cost"]),
+        region=payload.region,
+    )
+
+    return EstimateResponse(
+        items=estimate["items"],
+        total_cost=float(estimate["total_cost"]),
+        total_labor_hours=float(estimate["total_labor_hours"]),
+        region=payload.region,
+        indexed_total_cost=indexed_total_cost,
+        docx_available=False,
     )
 
 
