@@ -36,8 +36,16 @@ class DocumentDiff:
             )
         )
 
-        added = [line[1:] for line in diff_lines if line.startswith("+") and not line.startswith("+++")]
-        removed = [line[1:] for line in diff_lines if line.startswith("-") and not line.startswith("---")]
+        added = [
+            line[1:]
+            for line in diff_lines
+            if line.startswith("+") and not line.startswith("+++")
+        ]
+        removed = [
+            line[1:]
+            for line in diff_lines
+            if line.startswith("-") and not line.startswith("---")
+        ]
         changed_sections = [line for line in diff_lines if line.startswith("@@")]
 
         similarity_pct = round(SequenceMatcher(a=text_v1, b=text_v2).ratio() * 100, 2)

@@ -216,7 +216,10 @@ async def analyze_diff(payload: DiffRequest):
     bytes_v1 = doc_v1.get("docx_bytes")
     bytes_v2 = doc_v2.get("docx_bytes")
     if not isinstance(bytes_v1, bytes) or not isinstance(bytes_v2, bytes):
-        raise HTTPException(status_code=400, detail="Session documents do not contain binary content")
+        raise HTTPException(
+            status_code=400,
+            detail="Session documents do not contain binary content",
+        )
 
     text_v1 = _extract_text_from_document(str(doc_v1.get("filename") or "v1.docx"), bytes_v1)
     text_v2 = _extract_text_from_document(str(doc_v2.get("filename") or "v2.docx"), bytes_v2)
