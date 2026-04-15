@@ -29,9 +29,7 @@ jobs:
       - uses: astral-sh/setup-uv@v3
       - run: uv sync --extra dev --no-install-project
       - run: >-
-          uv run --no-project pytest tests/ -v --tb=short
-          --timeout=600
-          --timeout-method=thread
+          timeout 25m uv run --no-project pytest tests/ -v --tb=short
           -o faulthandler_timeout=60
           --ignore=tests/test_rag_engine.py
       - uses: actions/upload-artifact@v4
