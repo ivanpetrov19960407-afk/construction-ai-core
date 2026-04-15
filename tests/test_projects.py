@@ -141,4 +141,6 @@ def test_get_history(tmp_path):
     assert history.status_code == 200
     items = history.json()["history"]
     assert len(items) >= 3
-    assert {item["type"] for item in items}.issuperset({"project_created", "document_added", "comment_added"})
+    assert {item["type"] for item in items}.issuperset(
+        {"project_created", "document_added", "comment_added"},
+    )

@@ -7,7 +7,16 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, create_engine
-from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
+from sqlalchemy.orm import (
+    DeclarativeBase,
+    Mapped,
+    Session,
+    mapped_column,
+    relationship,
+    sessionmaker,
+)
+
+UTC = getattr(dt, "UTC", dt.timezone(dt.timedelta(0)))
 
 
 class Base(DeclarativeBase):
@@ -23,7 +32,10 @@ class Project(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(String(2000), default="", nullable=False)
     owner_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=lambda: dt.datetime.now(dt.timezone.utc))
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: dt.datetime.now(UTC),
+    )
     members: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
 
     documents: Mapped[list[ProjectDocument]] = relationship(
@@ -38,11 +50,17 @@ class ProjectDocument(Base):
     __tablename__ = "project_documents"
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    project_id: Mapped[UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    project_id: Mapped[UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        index=True,
+    )
     document_type: Mapped[str] = mapped_column(String(120), nullable=False)
     session_id: Mapped[str] = mapped_column(String(255), nullable=False)
     created_by: Mapped[str] = mapped_column(String(255), nullable=False)
-    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=lambda: dt.datetime.now(dt.timezone.utc))
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: dt.datetime.now(UTC),
+    )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
@@ -59,10 +77,16 @@ class ProjectComment(Base):
     __tablename__ = "project_comments"
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    document_id: Mapped[UUID] = mapped_column(ForeignKey("project_documents.id", ondelete="CASCADE"), index=True)
+    document_id: Mapped[UUID] = mapped_column(
+        ForeignKey("project_documents.id", ondelete="CASCADE"),
+        index=True,
+    )
     author: Mapped[str] = mapped_column(String(255), nullable=False)
     text: Mapped[str] = mapped_column(String(4000), nullable=False)
-    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=lambda: dt.datetime.now(dt.timezone.utc))
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: dt.datetime.now(UTC),
+    )
 
     document: Mapped[ProjectDocument] = relationship(back_populates="comments")
 
@@ -84,5 +108,9 @@ def get_projects_sessionmaker(db_path: str) -> sessionmaker[Session]:
         engine = create_engine(url, future=True)
         Base.metadata.create_all(engine)
         _ENGINE_CACHE[db_path] = engine
-        _SESSIONMAKER_CACHE[db_path] = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+        _SESSIONMAKER_CACHE[db_path] = sessionmaker(
+            bind=engine,
+            autoflush=False,
+            autocommit=False,
+        )
     return _SESSIONMAKER_CACHE[db_path]

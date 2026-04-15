@@ -13,6 +13,7 @@ from config.settings import settings
 from core.projects import Project, ProjectComment, ProjectDocument, get_projects_sessionmaker
 
 router = APIRouter(prefix="/projects", tags=["projects"])
+UTC = getattr(dt, "UTC", dt.timezone(dt.timedelta(0)))
 
 
 class CreateProjectRequest(BaseModel):
@@ -75,11 +76,11 @@ def _serialize_document(document: ProjectDocument) -> dict:
 @router.post("", status_code=201)
 async def create_project(payload: CreateProjectRequest, request: Request) -> dict:
     owner = _require_username(request)
-    SessionLocal = get_projects_sessionmaker(settings.sqlite_db_path)
+    session_local = get_projects_sessionmaker(settings.sqlite_db_path)
 
     members = sorted(set(payload.members + [owner]))
 
-    with SessionLocal() as session:
+    with session_local() as session:
         project = Project(
             name=payload.name,
             description=payload.description,
@@ -95,9 +96,9 @@ async def create_project(payload: CreateProjectRequest, request: Request) -> dic
 @router.get("")
 async def list_projects(request: Request) -> dict[str, list[dict]]:
     username = _require_username(request)
-    SessionLocal = get_projects_sessionmaker(settings.sqlite_db_path)
+    session_local = get_projects_sessionmaker(settings.sqlite_db_path)
 
-    with SessionLocal() as session:
+    with session_local() as session:
         projects = session.query(Project).order_by(desc(Project.created_at)).all()
         visible = [p for p in projects if username == p.owner_id or username in (p.members or [])]
         return {"projects": [_serialize_project(project) for project in visible]}
@@ -106,9 +107,9 @@ async def list_projects(request: Request) -> dict[str, list[dict]]:
 @router.get("/{project_id}")
 async def get_project(project_id: UUID, request: Request) -> dict:
     username = _require_username(request)
-    SessionLocal = get_projects_sessionmaker(settings.sqlite_db_path)
+    session_local = get_projects_sessionmaker(settings.sqlite_db_path)
 
-    with SessionLocal() as session:
+    with session_local() as session:
         project = session.get(Project, project_id)
         if project is None:
             raise HTTPException(status_code=404, detail="Project not found")
@@ -121,9 +122,9 @@ async def get_project(project_id: UUID, request: Request) -> dict:
 @router.post("/{project_id}/members")
 async def add_project_member(project_id: UUID, payload: AddMemberRequest, request: Request) -> dict:
     username = _require_username(request)
-    SessionLocal = get_projects_sessionmaker(settings.sqlite_db_path)
+    session_local = get_projects_sessionmaker(settings.sqlite_db_path)
 
-    with SessionLocal() as session:
+    with session_local() as session:
         project = session.get(Project, project_id)
         if project is None:
             raise HTTPException(status_code=404, detail="Project not found")
@@ -141,11 +142,15 @@ async def add_project_member(project_id: UUID, payload: AddMemberRequest, reques
 
 
 @router.post("/{project_id}/documents", status_code=201)
-async def add_project_document(project_id: UUID, payload: AddDocumentRequest, request: Request) -> dict:
+async def add_project_document(
+    project_id: UUID,
+    payload: AddDocumentRequest,
+    request: Request,
+) -> dict:
     username = _require_username(request)
-    SessionLocal = get_projects_sessionmaker(settings.sqlite_db_path)
+    session_local = get_projects_sessionmaker(settings.sqlite_db_path)
 
-    with SessionLocal() as session:
+    with session_local() as session:
         project = session.get(Project, project_id)
         if project is None:
             raise HTTPException(status_code=404, detail="Project not found")
@@ -170,9 +175,9 @@ async def add_project_document(project_id: UUID, payload: AddDocumentRequest, re
 @router.get("/{project_id}/documents")
 async def list_project_documents(project_id: UUID, request: Request) -> dict[str, list[dict]]:
     username = _require_username(request)
-    SessionLocal = get_projects_sessionmaker(settings.sqlite_db_path)
+    session_local = get_projects_sessionmaker(settings.sqlite_db_path)
 
-    with SessionLocal() as session:
+    with session_local() as session:
         project = session.get(Project, project_id)
         if project is None:
             raise HTTPException(status_code=404, detail="Project not found")
@@ -197,9 +202,9 @@ async def add_document_comment(
     request: Request,
 ) -> dict:
     username = _require_username(request)
-    SessionLocal = get_projects_sessionmaker(settings.sqlite_db_path)
+    session_local = get_projects_sessionmaker(settings.sqlite_db_path)
 
-    with SessionLocal() as session:
+    with session_local() as session:
         project = session.get(Project, project_id)
         if project is None:
             raise HTTPException(status_code=404, detail="Project not found")
@@ -227,9 +232,9 @@ async def add_document_comment(
 @router.get("/{project_id}/history")
 async def get_project_history(project_id: UUID, request: Request) -> dict[str, list[dict]]:
     username = _require_username(request)
-    SessionLocal = get_projects_sessionmaker(settings.sqlite_db_path)
+    session_local = get_projects_sessionmaker(settings.sqlite_db_path)
 
-    with SessionLocal() as session:
+    with session_local() as session:
         project = session.get(Project, project_id)
         if project is None:
             raise HTTPException(status_code=404, detail="Project not found")
@@ -289,7 +294,7 @@ async def get_project_history(project_id: UUID, request: Request) -> dict[str, l
         for item in entries[:50]:
             ts = item["created_at"]
             if isinstance(ts, dt.datetime):
-                created_at = ts.astimezone(dt.timezone.utc).isoformat()
+                created_at = ts.astimezone(UTC).isoformat()
             else:
                 created_at = str(ts)
             row = dict(item)
