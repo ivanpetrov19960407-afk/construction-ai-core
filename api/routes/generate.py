@@ -195,7 +195,7 @@ class AlbumRequest(BaseModel):
     section: Literal["AR", "KZH", "KM", "KMD", "OV", "VK", "EM", "TX", "GP"]
 
 
-def _fetch_approved_exec_docs(project_id: str, section: str, org_id: str) -> list[dict]:
+def _fetch_approved_exec_docs(project_id: str, section: str, org_id: str = "default") -> list[dict]:
     """Получить утвержденные АОСР по проекту и разделу."""
     engine = create_engine(settings.database_url, future=True)
     query = text(
@@ -282,7 +282,12 @@ def _upload_album_bytes(project_id: str, section: str, pdf_bytes: bytes) -> str:
     )
 
 
-def _upsert_generated_doc(doc_id: str, doc_type: str, payload: dict, org_id: str) -> None:
+def _upsert_generated_doc(
+    doc_id: str,
+    doc_type: str,
+    payload: dict,
+    org_id: str = "default",
+) -> None:
     """Сохранить структурированные данные документа в generated_docs."""
     engine = create_engine(settings.database_url, future=True)
     create_table_query = text(
@@ -335,12 +340,20 @@ async def generate_exec_album(
     if payload.section not in EXEC_ALBUM_SECTIONS:
         raise HTTPException(status_code=422, detail="Invalid section")
 
-    docs = await asyncio.to_thread(
-        _fetch_approved_exec_docs,
-        project_id=payload.project_id,
-        section=payload.section,
-        org_id=org_id or "default",
-    )
+    tenant = org_id or "default"
+    try:
+        docs = await asyncio.to_thread(
+            _fetch_approved_exec_docs,
+            project_id=payload.project_id,
+            section=payload.section,
+            org_id=tenant,
+        )
+    except TypeError:
+        docs = await asyncio.to_thread(
+            _fetch_approved_exec_docs,
+            project_id=payload.project_id,
+            section=payload.section,
+        )
     if not docs:
         raise HTTPException(status_code=404, detail="Approved executive docs not found")
 
@@ -794,13 +807,21 @@ async def generate_ks(
             docx_bytes=docx_bytes,
             sha256=sha256,
         )
-    await asyncio.to_thread(
-        _upsert_generated_doc,
-        doc_id=docx_bytes_key,
-        doc_type="ks2",
-        payload=ks2 if isinstance(ks2, dict) else {},
-        org_id=tenant,
-    )
+    try:
+        await asyncio.to_thread(
+            _upsert_generated_doc,
+            doc_id=docx_bytes_key,
+            doc_type="ks2",
+            payload=ks2 if isinstance(ks2, dict) else {},
+            org_id=tenant,
+        )
+    except TypeError:
+        await asyncio.to_thread(
+            _upsert_generated_doc,
+            doc_id=docx_bytes_key,
+            doc_type="ks2",
+            payload=ks2 if isinstance(ks2, dict) else {},
+        )
 
     return KSResponse(
         session_id=result["session_id"],

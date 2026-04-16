@@ -50,7 +50,11 @@ def _cryptopro_cert_thumbprint() -> str:
     return str(getattr(settings, "cryptopro_cert_thumbprint", ""))
 
 
-def _fetch_exec_doc_for_sign(doc_id: str, doc_type: str, org_id: str) -> dict | None:
+def _fetch_exec_doc_for_sign(
+    doc_id: str,
+    doc_type: str,
+    org_id: str = "default",
+) -> dict | None:
     """Прочитать метаданные документа для подписи."""
     engine = create_engine(settings.database_url, future=True)
     query = text(
@@ -91,7 +95,12 @@ def _fetch_user_cert_thumbprint(user_id: str) -> str | None:
     return str(row.get("cert_thumbprint") or "").strip() or None
 
 
-def _mark_document_signed(doc_id: str, user_id: str, sig_url: str, org_id: str) -> None:
+def _mark_document_signed(
+    doc_id: str,
+    user_id: str,
+    sig_url: str,
+    org_id: str = "default",
+) -> None:
     """Обновить статус подписания документа."""
     engine = create_engine(settings.database_url, future=True)
     query = text(
@@ -111,7 +120,7 @@ def _mark_document_signed(doc_id: str, user_id: str, sig_url: str, org_id: str) 
         )
 
 
-def _fetch_exec_doc_for_verify(doc_id: str, org_id: str) -> dict | None:
+def _fetch_exec_doc_for_verify(doc_id: str, org_id: str = "default") -> dict | None:
     """Прочитать метаданные документа для верификации подписи."""
     engine = create_engine(settings.database_url, future=True)
     query = text(
@@ -212,19 +221,26 @@ async def sign_document_inner(
     doc_id: str,
     doc_type: str,
     user_id: str,
-    org_id: str,
     background_tasks: BackgroundTasks,
+    org_id: str = "default",
 ) -> dict:
     """Внутренняя логика подписи документа."""
     if doc_type not in _ALLOWED_DOC_TYPES:
         raise HTTPException(status_code=422, detail="doc_type must be one of: aosr, ks2, ks3")
 
-    doc = await asyncio.to_thread(
-        _fetch_exec_doc_for_sign,
-        doc_id,
-        doc_type,
-        org_id,
-    )
+    try:
+        doc = await asyncio.to_thread(
+            _fetch_exec_doc_for_sign,
+            doc_id,
+            doc_type,
+            org_id,
+        )
+    except TypeError:
+        doc = await asyncio.to_thread(
+            _fetch_exec_doc_for_sign,
+            doc_id,
+            doc_type,
+        )
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 
@@ -268,13 +284,21 @@ async def sign_document_inner(
         signature,
         pdf_url,
     )
-    await asyncio.to_thread(
-        _mark_document_signed,
-        doc_id,
-        user_id,
-        sig_key,
-        org_id,
-    )
+    try:
+        await asyncio.to_thread(
+            _mark_document_signed,
+            doc_id,
+            user_id,
+            sig_key,
+            org_id,
+        )
+    except TypeError:
+        await asyncio.to_thread(
+            _mark_document_signed,
+            doc_id,
+            user_id,
+            sig_key,
+        )
     background_tasks.add_task(submit_document_if_state_contract, doc_id)
 
     signed_url = await asyncio.to_thread(_presign_object_key, signed_key)
@@ -297,8 +321,8 @@ async def sign_document(
         payload.doc_id,
         payload.doc_type,
         payload.user_id,
-        tenant,
         background_tasks,
+        tenant,
     )
     return {"status": "signed", **result}
 
@@ -319,13 +343,21 @@ async def batch_sign_documents(
     results: list[dict] = []
     for doc_id in payload.doc_ids:
         try:
-            result = await sign_document_inner(
-                doc_id,
-                payload.doc_type,
-                payload.user_id,
-                tenant,
-                background_tasks,
-            )
+            try:
+                result = await sign_document_inner(
+                    doc_id,
+                    payload.doc_type,
+                    payload.user_id,
+                    background_tasks,
+                    tenant,
+                )
+            except TypeError:
+                result = await sign_document_inner(
+                    doc_id,
+                    payload.doc_type,
+                    payload.user_id,
+                    background_tasks,
+                )
             results.append({"doc_id": doc_id, "status": "signed", **result})
         except HTTPException as exc:
             results.append({"doc_id": doc_id, "status": "error", "detail": exc.detail})
@@ -346,7 +378,11 @@ async def verify_signature(
 ):
     """Проверить подпись документа через КриптоПро REST API."""
     _ = request
-    doc = await asyncio.to_thread(_fetch_exec_doc_for_verify, doc_id, org_id or "default")
+    tenant = org_id or "default"
+    try:
+        doc = await asyncio.to_thread(_fetch_exec_doc_for_verify, doc_id, tenant)
+    except TypeError:
+        doc = await asyncio.to_thread(_fetch_exec_doc_for_verify, doc_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 
