@@ -21,14 +21,16 @@ from api.middleware import (
     rate_limit_exceeded_handler,
     setup_rate_limiter,
 )
-from api.routes import auth, chat, generate, health, isup, projects, rag, sign, web
+from api.routes import analytics, auth, chat, generate, health, isup, projects, rag, sign, web
 from api.routes.analyze import router as analyze_router
 from config.settings import settings
+from core.analytics.notifications import AnalyticsNotifier
 from core.database import init_db
 from telegram.bot import create_bot, create_dispatcher
 
 _ = (AGENT_RUNS, PIPELINE_DURATION)
 telegram_router = APIRouter()
+analytics_notifier = AnalyticsNotifier()
 
 
 @asynccontextmanager
@@ -40,12 +42,14 @@ async def lifespan(app: FastAPI):
     app.state.started_at = datetime.now(timezone.utc)  # noqa: UP017
     app.state.telegram_bot = None
     app.state.telegram_dp = None
+    await analytics_notifier.start()
     if settings.telegram_webhook_url and settings.bot_token:
         app.state.telegram_bot = create_bot()
         app.state.telegram_dp = create_dispatcher()
         await app.state.telegram_bot.set_webhook(settings.telegram_webhook_url)
     print("🚀 Construction AI Core запускается...")
     yield
+    await analytics_notifier.stop()
     if app.state.telegram_bot is not None:
         await app.state.telegram_bot.delete_webhook(drop_pending_updates=False)
         await app.state.telegram_bot.session.close()
@@ -95,6 +99,7 @@ app.include_router(isup.router)
 app.include_router(analyze_router, prefix="/api/analyze", tags=["analyze"])
 app.include_router(rag.router, prefix="/api/rag", tags=["rag"])
 app.include_router(projects.router, prefix="/api", tags=["projects"])
+app.include_router(analytics.router, prefix="/api", tags=["analytics"])
 app.include_router(web.router, tags=["web"])
 app.mount("/web", StaticFiles(directory="web", html=True), name="web")
 setup_rate_limiter(app.routes)
