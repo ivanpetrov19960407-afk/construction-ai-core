@@ -24,7 +24,6 @@
   },
   "bundle": {
     "active": true,
-    "identifier": "ru.construction-ai.app",
     "targets": ["dmg", "msi", "deb"],
     "icon": []
   }
