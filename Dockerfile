@@ -36,7 +36,8 @@ RUN pip install --no-cache-dir --prefix=/install \
     "slowapi>=0.1.9" \
     "structlog>=24.0.0" \
     "tqdm>=4.66.0" \
-    "prometheus-fastapi-instrumentator>=7.0.0"
+    "prometheus-fastapi-instrumentator>=7.0.0" \
+    "boto3>=1.34.0"
 
 # Stage 2: runtime
 FROM python:3.11-slim

@@ -88,6 +88,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)
 app.include_router(health.router, tags=["health"])
 app.include_router(auth.router, tags=["auth"])
 app.include_router(chat.router, prefix="/api", tags=["chat"])
+# generate.router содержит /api/generate/* включая /api/generate/exec-album
 app.include_router(generate.router, prefix="/api", tags=["generate"])
 app.include_router(analyze_router, prefix="/api/analyze", tags=["analyze"])
 app.include_router(rag.router, prefix="/api/rag", tags=["rag"])
