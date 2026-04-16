@@ -126,9 +126,13 @@ class GSNReadinessChecker:
     def _ensure_project_exists(self, project_id: str) -> None:
         project_uuid = UUID(project_id)
         with self._sessionmaker() as session:
-            project_exists = session.query(ProjectDocument.project_id).filter(
-                ProjectDocument.project_id == project_uuid,
-            ).first()
+            project_exists = (
+                session.query(ProjectDocument.project_id)
+                .filter(
+                    ProjectDocument.project_id == project_uuid,
+                )
+                .first()
+            )
             if project_exists is not None:
                 return
 
