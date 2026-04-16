@@ -11,13 +11,14 @@ from typing import Literal
 
 import structlog
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import create_engine, text
 
 from agents.calculator import CalculatorAgent
 from config.settings import settings
 from core.cache import RedisCache
+from core.export.onec_exporter import OneCExporter
 from core.llm_router import LLMRouter
 from core.orchestrator import Orchestrator
 from core.pdf_exporter import PDFExporter
@@ -28,6 +29,7 @@ orchestrator = Orchestrator()
 session_memory = orchestrator.session_memory
 pdf_parser = PDFParser()
 pdf_exporter = PDFExporter()
+onec_exporter = OneCExporter()
 redis_cache = RedisCache(settings.redis_url)
 logger = structlog.get_logger("api.generate")
 
@@ -933,6 +935,42 @@ async def download_ks_docx(
             if format == "pdf"
             else (ks_document.get("filename") if ks_document else f"ks_{session_id}.docx")
         ),
+    )
+
+
+@router.get("/generate/ks2/{doc_id}/1c-xml")
+async def export_ks2_1c_xml(doc_id: str, request: Request):
+    """Экспорт КС-2 в XML-формат для импорта в 1С."""
+    _ = request
+    try:
+        xml_bytes = await onec_exporter.export_ks2_to_xml(doc_id=doc_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    return Response(
+        content=xml_bytes,
+        media_type="application/xml",
+        headers={"Content-Disposition": f'attachment; filename="ks2_{doc_id}.xml"'},
+    )
+
+
+@router.get("/generate/m29/{project_id}/1c-xml")
+async def export_m29_1c_xml(
+    project_id: str,
+    request: Request,
+    period: str = Query(..., description="Период в формате YYYY-MM"),
+):
+    """Экспорт М-29 в XML-формат для импорта в 1С."""
+    _ = request
+    try:
+        xml_bytes = await onec_exporter.export_m29_to_xml(project_id=project_id, period=period)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return Response(
+        content=xml_bytes,
+        media_type="application/xml",
+        headers={"Content-Disposition": f'attachment; filename="m29_{project_id}_{period}.xml"'},
     )
 
 
