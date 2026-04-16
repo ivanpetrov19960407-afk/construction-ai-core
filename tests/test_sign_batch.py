@@ -98,7 +98,10 @@ def test_batch_sign_success(monkeypatch):
 
     async def _mock_sign_document_inner(doc_id: str, doc_type: str, user_id: str, background_tasks):
         _ = (doc_type, user_id, background_tasks)
-        return {"signed_url": f"https://storage.local/{doc_id}.pdf", "sig_url": f"https://storage.local/{doc_id}.sig"}
+        return {
+            "signed_url": f"https://storage.local/{doc_id}.pdf",
+            "sig_url": f"https://storage.local/{doc_id}.sig",
+        }
 
     monkeypatch.setattr(sign, "sign_document_inner", _mock_sign_document_inner)
 
@@ -126,7 +129,10 @@ def test_batch_sign_partial_error(monkeypatch):
         _ = (doc_type, user_id, background_tasks)
         if doc_id == "doc-2":
             raise HTTPException(status_code=404, detail="Document not found")
-        return {"signed_url": f"https://storage.local/{doc_id}.pdf", "sig_url": f"https://storage.local/{doc_id}.sig"}
+        return {
+            "signed_url": f"https://storage.local/{doc_id}.pdf",
+            "sig_url": f"https://storage.local/{doc_id}.sig",
+        }
 
     monkeypatch.setattr(sign, "sign_document_inner", _mock_sign_document_inner)
 
@@ -149,3 +155,39 @@ def test_batch_sign_partial_error(monkeypatch):
     assert payload["signed_count"] == 2
     assert payload["results"][1]["status"] == "error"
     assert payload["results"][1]["detail"] == "Document not found"
+
+
+def test_batch_sign_partial_unexpected_error(monkeypatch):
+    old_keys = settings.api_keys
+    settings.api_keys = ["valid-key"]
+
+    async def _mock_sign_document_inner(doc_id: str, doc_type: str, user_id: str, background_tasks):
+        _ = (doc_type, user_id, background_tasks)
+        if doc_id == "doc-2":
+            raise RuntimeError("storage unavailable")
+        return {
+            "signed_url": f"https://storage.local/{doc_id}.pdf",
+            "sig_url": f"https://storage.local/{doc_id}.sig",
+        }
+
+    monkeypatch.setattr(sign, "sign_document_inner", _mock_sign_document_inner)
+
+    try:
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/sign/batch",
+                json={
+                    "doc_ids": ["doc-1", "doc-2", "doc-3"],
+                    "doc_type": "aosr",
+                    "user_id": "user-1",
+                },
+                headers={"X-API-Key": "valid-key"},
+            )
+    finally:
+        settings.api_keys = old_keys
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["signed_count"] == 2
+    assert payload["results"][1]["status"] == "error"
+    assert payload["results"][1]["detail"] == "storage unavailable"

@@ -16,6 +16,7 @@ interface ProjectInfo {
 }
 
 const sectionOrder = ['AR', 'KZH', 'KM', 'OV', 'VK', 'EM'];
+const signableDocTypes = new Set(['aosr', 'ks2', 'ks3']);
 
 function normalizeForecast(payload: Partial<ScheduleForecast>): ScheduleForecast {
   return {
@@ -190,7 +191,14 @@ export default function HandoverPage() {
       return;
     }
 
-    const docsByType = pendingDocuments.reduce<Record<string, string[]>>((acc, doc) => {
+    const signablePendingDocuments = pendingDocuments.filter((doc) => signableDocTypes.has(doc.document_type));
+    if (!signablePendingDocuments.length) {
+      setBatchProgress({ signed: 0, total: 0 });
+      setError('Нет документов поддерживаемых типов для пакетной подписи (aosr, ks2, ks3)');
+      return;
+    }
+
+    const docsByType = signablePendingDocuments.reduce<Record<string, string[]>>((acc, doc) => {
       const type = doc.document_type;
       if (!acc[type]) acc[type] = [];
       acc[type].push(doc.id);
@@ -199,36 +207,46 @@ export default function HandoverPage() {
 
     setError('');
     setBatchLoading(true);
-    setBatchProgress({ signed: 0, total: pendingDocuments.length });
+    setBatchProgress({ signed: 0, total: signablePendingDocuments.length });
 
+    let signedTotal = 0;
+    const newlySignedIds = new Set<string>();
+    const batchErrors: string[] = [];
     try {
-      let signedTotal = 0;
-      const newlySignedIds = new Set<string>();
       for (const [docType, ids] of Object.entries(docsByType)) {
-        const response = await fetchJson<{ results: { doc_id: string; status: SignStatus }[] }>(
-          '/api/sign/batch',
-          {
-            method: 'POST',
-            body: JSON.stringify({
-              doc_ids: ids,
-              doc_type: docType,
-              user_id: userId
-            })
+        for (let start = 0; start < ids.length; start += 20) {
+          const chunkIds = ids.slice(start, start + 20);
+          try {
+            const response = await fetchJson<{ results: { doc_id: string; status: string; detail?: string }[] }>(
+              '/api/sign/batch',
+              {
+                method: 'POST',
+                body: JSON.stringify({
+                  doc_ids: chunkIds,
+                  doc_type: docType,
+                  user_id: userId
+                })
+              }
+            );
+            for (const result of response.results ?? []) {
+              if (result.status === 'signed') {
+                signedTotal += 1;
+                newlySignedIds.add(result.doc_id);
+              }
+            }
+          } catch (batchError) {
+            const message = batchError instanceof Error ? batchError.message : 'Ошибка пакетной подписи';
+            batchErrors.push(`${docType}: ${message}`);
           }
-        );
-        for (const result of response.results ?? []) {
-          if (result.status === 'signed') {
-            signedTotal += 1;
-            newlySignedIds.add(result.doc_id);
-          }
+          setBatchProgress({ signed: signedTotal, total: signablePendingDocuments.length });
         }
-        setBatchProgress({ signed: signedTotal, total: pendingDocuments.length });
       }
       if (newlySignedIds.size > 0) {
         setSignedDocIds((prev) => [...new Set([...prev, ...Array.from(newlySignedIds)])]);
       }
-    } catch (signError) {
-      setError(signError instanceof Error ? signError.message : 'Ошибка пакетной подписи');
+      if (batchErrors.length > 0) {
+        setError(`Часть документов не подписана: ${batchErrors[0]}`);
+      }
     } finally {
       setBatchLoading(false);
     }

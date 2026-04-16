@@ -306,6 +306,9 @@ async def batch_sign_documents(payload: BatchSignRequest, background_tasks: Back
             results.append({"doc_id": doc_id, "status": "signed", **result})
         except HTTPException as exc:
             results.append({"doc_id": doc_id, "status": "error", "detail": exc.detail})
+        except Exception as exc:  # noqa: BLE001
+            detail = str(exc).strip() or "Unexpected signing error"
+            results.append({"doc_id": doc_id, "status": "error", "detail": detail})
     return {
         "results": results,
         "signed_count": sum(1 for item in results if item["status"] == "signed"),
