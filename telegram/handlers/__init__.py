@@ -763,3 +763,8 @@ def _format_analyze_response(data: Mapping) -> str:
         f"✅ Рекомендация: {recommendation}\n"
         f"Уверенность: {confidence_pct}%"
     )
+
+from telegram.handlers.handover import router as handover_router
+
+router.include_router(handover_router)
+
