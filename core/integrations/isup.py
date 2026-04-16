@@ -78,7 +78,6 @@ class ISUPClient:
         return await self.submit_document(payload)
 
 
-
 def _save_isup_submission(
     *,
     project_id: str,
@@ -113,7 +112,6 @@ def _save_isup_submission(
         )
 
 
-
 def _fetch_doc_payload(doc_id: str) -> dict[str, Any] | None:
     engine = create_engine(settings.database_url, future=True)
     query = text(
@@ -137,7 +135,6 @@ def _fetch_doc_payload(doc_id: str) -> dict[str, Any] | None:
         "doc_type": str(row["doc_type"]),
         "file_b64": str(row.get("pdf_url") or ""),
     }
-
 
 
 def _is_project_state_contract(project_id: str) -> bool:
