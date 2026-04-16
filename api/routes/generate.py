@@ -4,7 +4,7 @@ import asyncio
 import re
 import tempfile
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Literal
@@ -30,6 +30,8 @@ pdf_parser = PDFParser()
 pdf_exporter = PDFExporter()
 redis_cache = RedisCache(settings.redis_url)
 logger = structlog.get_logger("api.generate")
+
+UTC = getattr(datetime, "UTC", timezone(timedelta(0)))
 
 ALLOWED_UNITS = ["м³", "м²", "пог.м.", "шт.", "т", "кг"]
 MAX_UPLOAD_SIZE_BYTES = 20 * 1024 * 1024
@@ -213,7 +215,7 @@ def _render_exec_album_pdf(project_id: str, section: str, docs: list[dict]) -> b
 
     template_path = Path("templates/exec_album_cover.html")
     cover_template = template_path.read_text(encoding="utf-8")
-    generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    generated_at = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
     docs_html = "\n".join(
         (
             f"<li><strong>Документ #{index}</strong>: "
@@ -237,9 +239,12 @@ def _upload_album_bytes(project_id: str, section: str, pdf_bytes: bytes) -> str:
     try:
         import boto3
     except ImportError as exc:  # pragma: no cover - runtime dependency
-        raise HTTPException(status_code=500, detail="boto3 is required for S3/MinIO upload") from exc
+        raise HTTPException(
+            status_code=500,
+            detail="boto3 is required for S3/MinIO upload",
+        ) from exc
 
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+    timestamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
     object_key = f"{project_id}/{section}_{timestamp}.pdf"
 
     client = boto3.client(
