@@ -21,7 +21,19 @@ from api.middleware import (
     rate_limit_exceeded_handler,
     setup_rate_limiter,
 )
-from api.routes import analytics, auth, chat, generate, health, isup, projects, rag, sign, web
+from api.routes import (
+    analytics,
+    auth,
+    chat,
+    compliance,
+    generate,
+    health,
+    isup,
+    projects,
+    rag,
+    sign,
+    web,
+)
 from api.routes.analyze import router as analyze_router
 from config.settings import settings
 from core.analytics.notifications import AnalyticsNotifier
@@ -100,6 +112,7 @@ app.include_router(analyze_router, prefix="/api/analyze", tags=["analyze"])
 app.include_router(rag.router, prefix="/api/rag", tags=["rag"])
 app.include_router(projects.router, prefix="/api", tags=["projects"])
 app.include_router(analytics.router, prefix="/api", tags=["analytics"])
+app.include_router(compliance.router, prefix="/api", tags=["compliance"])
 app.include_router(web.router, tags=["web"])
 app.mount("/web", StaticFiles(directory="web", html=True), name="web")
 setup_rate_limiter(app.routes)
