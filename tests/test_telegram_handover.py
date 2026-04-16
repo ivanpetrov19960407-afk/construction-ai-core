@@ -134,7 +134,7 @@ def test_handover_check_command(monkeypatch):
     get_mock = AsyncMock(
         side_effect=[
             {"projects": [{"id": "p-1"}]},
-            {"completion_percent": 87, "missing": ["журнал бетонных работ"]},
+            {"completion_pct": 87, "missing": [{"name": "журнал бетонных работ"}]},
         ]
     )
     monkeypatch.setattr(handover.api_client, "get", get_mock)
@@ -149,7 +149,7 @@ def test_handover_check_command(monkeypatch):
     asyncio.run(handover.handover_section_callback_handler(callback))
 
     get_mock.assert_any_await("/api/projects")
-    get_mock.assert_any_await("/api/compliance/gsn-checklist/p-1/section/кж")
+    get_mock.assert_any_await("/api/compliance/gsn-checklist/p-1/section/KZH")
     callback.message.answer.assert_awaited_once_with(
         "✅ КЖ: 87% готов. Отсутствует: журнал бетонных работ"
     )
@@ -163,9 +163,9 @@ def test_handover_forecast_command(monkeypatch):
         side_effect=[
             {"projects": [{"id": "p-42"}]},
             {
-                "forecast_completion": "15 мая 2025",
-                "average_delay_days": 4.5,
-                "top_risk": "КМ-раздел — отставание 12 дней",
+                "predicted_completion": "2025-05-15",
+                "avg_delay_days": 4.5,
+                "risks": [{"section": "КМ-раздел", "description": "отставание 12 дней"}],
             },
         ]
     )
@@ -178,7 +178,29 @@ def test_handover_forecast_command(monkeypatch):
     get_mock.assert_any_await("/api/projects")
     get_mock.assert_any_await("/api/analytics/schedule/p-42")
     message.answer.assert_awaited_once_with(
-        "📅 Прогноз завершения: 15 мая 2025\n"
+        "📅 Прогноз завершения: 2025-05-15\n"
         "⚠️ Задержка: в среднем 4.5 дня\n"
         "🔴 Риски: КМ-раздел — отставание 12 дней"
+    )
+
+
+def test_sign_doc_callback_uses_required_payload(monkeypatch):
+    _install_aiogram_stubs()
+    handover = _reload_handover_module()
+
+    post_mock = AsyncMock(return_value={"status": "ok"})
+    monkeypatch.setattr(handover.api_client, "post", post_mock)
+
+    callback = SimpleNamespace(
+        data="sign_doc:yes:123",
+        from_user=SimpleNamespace(id=77),
+        message=SimpleNamespace(answer=AsyncMock()),
+        answer=AsyncMock(),
+    )
+
+    asyncio.run(handover.sign_doc_callback_handler(callback))
+
+    post_mock.assert_awaited_once_with(
+        "/api/sign/document",
+        {"doc_id": "123", "doc_type": "aosr", "user_id": "77"},
     )

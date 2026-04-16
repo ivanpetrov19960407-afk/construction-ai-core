@@ -8,11 +8,13 @@ from aiogram.enums import ParseMode
 
 from config.settings import settings
 from telegram.handlers import router
+from telegram.handlers.handover import router as handover_router
 
 
 def create_dispatcher() -> Dispatcher:
     dp = Dispatcher()
     dp.include_router(router)
+    dp.include_router(handover_router)
     return dp
 
 
