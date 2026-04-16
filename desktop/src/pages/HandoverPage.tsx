@@ -15,6 +15,13 @@ interface ProjectInfo {
   is_state_contract?: boolean;
 }
 
+interface ISUPSubmission {
+  submission_id: string;
+  doc_id: string;
+  status: string;
+  submitted_at: string;
+}
+
 const sectionOrder = ['AR', 'KZH', 'KM', 'OV', 'VK', 'EM', 'SS', 'APS', 'PS'];
 const signableDocTypes = new Set(['aosr', 'ks2', 'ks3']);
 
@@ -36,6 +43,7 @@ export default function HandoverPage() {
   const [forecast, setForecast] = useState<ScheduleForecast | null>(null);
   const [project, setProject] = useState<ProjectInfo | null>(null);
   const [documents, setDocuments] = useState<ProjectDocument[]>([]);
+  const [isupSubmissions, setIsupSubmissions] = useState<ISUPSubmission[]>([]);
   const [signedDocIds, setSignedDocIds] = useState<string[]>([]);
   const [ks2DocId, setKs2DocId] = useState('');
   const [m29Period, setM29Period] = useState('');
@@ -74,13 +82,14 @@ export default function HandoverPage() {
     setChecklist(data);
   };
 
-  const loadSigning = async () => {
+  const loadSigning = async (): Promise<ProjectInfo> => {
     const [projectResponse, docsResponse] = await Promise.all([
       fetchJson<ProjectInfo>(`/api/projects/${encodeURIComponent(projectId)}`),
       fetchJson<{ documents: ProjectDocument[] }>(`/api/projects/${encodeURIComponent(projectId)}/documents`)
     ]);
     setProject(projectResponse);
     setDocuments((docsResponse.documents || []).filter((doc) => (doc.status ?? 'approved') === 'approved'));
+    return projectResponse;
   };
 
   const loadForecast = async () => {
@@ -88,6 +97,17 @@ export default function HandoverPage() {
       `/api/analytics/schedule/${encodeURIComponent(projectId)}`
     );
     setForecast(normalizeForecast(data));
+  };
+
+  const loadIsupStatus = async (projectInfo?: ProjectInfo | null) => {
+    if (!projectId.trim() || !projectInfo?.is_state_contract) {
+      setIsupSubmissions([]);
+      return;
+    }
+    const data = await fetchJson<{ submissions: ISUPSubmission[] }>(
+      `/api/isup/submissions/${encodeURIComponent(projectId)}`
+    );
+    setIsupSubmissions(data.submissions);
   };
 
   const loadAll = async () => {
@@ -102,7 +122,8 @@ export default function HandoverPage() {
     window.localStorage.setItem('handover_user_id', userId);
 
     try {
-      await Promise.all([loadReadiness(), loadSigning(), loadForecast()]);
+      const [, loadedProject] = await Promise.all([loadReadiness(), loadSigning(), loadForecast()]);
+      await loadIsupStatus(loadedProject);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Ошибка загрузки данных');
     } finally {
@@ -424,6 +445,60 @@ export default function HandoverPage() {
                   );
                 })}
                 {!documents.length && <p>Нет документов со статусом «утверждён».</p>}
+
+                {project?.is_state_contract && (
+                  <section style={{ display: 'grid', gap: 8 }}>
+                    <h4 style={{ margin: '8px 0 0' }}>Статус ИСУП</h4>
+                    {isupSubmissions.length > 0 ? (
+                      <div style={{ overflowX: 'auto' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                          <thead>
+                            <tr>
+                              <th style={{ textAlign: 'left', borderBottom: '1px solid #33415555', padding: '6px 4px' }}>
+                                Submission ID
+                              </th>
+                              <th style={{ textAlign: 'left', borderBottom: '1px solid #33415555', padding: '6px 4px' }}>
+                                Документ
+                              </th>
+                              <th style={{ textAlign: 'left', borderBottom: '1px solid #33415555', padding: '6px 4px' }}>
+                                Статус
+                              </th>
+                              <th style={{ textAlign: 'left', borderBottom: '1px solid #33415555', padding: '6px 4px' }}>
+                                Отправлено
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {isupSubmissions.map((submission) => {
+                              const statusIcon =
+                                submission.status === 'accepted'
+                                  ? '✅'
+                                  : submission.status === 'rejected'
+                                    ? '❌'
+                                    : '⏳';
+                              return (
+                                <tr key={submission.submission_id}>
+                                  <td style={{ borderBottom: '1px solid #33415522', padding: '6px 4px' }}>
+                                    {submission.submission_id}
+                                  </td>
+                                  <td style={{ borderBottom: '1px solid #33415522', padding: '6px 4px' }}>{submission.doc_id}</td>
+                                  <td style={{ borderBottom: '1px solid #33415522', padding: '6px 4px' }}>
+                                    {statusIcon} {submission.status}
+                                  </td>
+                                  <td style={{ borderBottom: '1px solid #33415522', padding: '6px 4px' }}>
+                                    {new Date(submission.submitted_at).toLocaleString()}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <p style={{ margin: 0 }}>Отправки в ИСУП пока отсутствуют.</p>
+                    )}
+                  </section>
+                )}
               </section>
             )
           },
