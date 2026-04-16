@@ -21,7 +21,7 @@ from api.middleware import (
     rate_limit_exceeded_handler,
     setup_rate_limiter,
 )
-from api.routes import auth, chat, generate, health, projects, rag, web
+from api.routes import auth, chat, generate, health, projects, rag, sign, web
 from api.routes.analyze import router as analyze_router
 from config.settings import settings
 from core.database import init_db
@@ -88,7 +88,9 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)
 app.include_router(health.router, tags=["health"])
 app.include_router(auth.router, tags=["auth"])
 app.include_router(chat.router, prefix="/api", tags=["chat"])
+# generate.router содержит /api/generate/* включая /api/generate/exec-album
 app.include_router(generate.router, prefix="/api", tags=["generate"])
+app.include_router(sign.router, prefix="/api", tags=["sign"])
 app.include_router(analyze_router, prefix="/api/analyze", tags=["analyze"])
 app.include_router(rag.router, prefix="/api/rag", tags=["rag"])
 app.include_router(projects.router, prefix="/api", tags=["projects"])

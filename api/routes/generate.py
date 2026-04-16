@@ -4,6 +4,7 @@ import asyncio
 import re
 import tempfile
 import uuid
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Literal
@@ -12,6 +13,7 @@ import structlog
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, field_validator
+from sqlalchemy import create_engine, text
 
 from agents.calculator import CalculatorAgent
 from config.settings import settings
@@ -29,9 +31,12 @@ pdf_exporter = PDFExporter()
 redis_cache = RedisCache(settings.redis_url)
 logger = structlog.get_logger("api.generate")
 
+UTC = getattr(datetime, "UTC", timezone(timedelta(0)))
+
 ALLOWED_UNITS = ["м³", "м²", "пог.м.", "шт.", "т", "кг"]
 MAX_UPLOAD_SIZE_BYTES = 20 * 1024 * 1024
 ANALYZE_TIMEOUT_SECONDS = 120
+EXEC_ALBUM_SECTIONS = ("AR", "KZH", "KM", "KMD", "OV", "VK", "EM", "TX", "GP")
 
 
 class TKRequest(BaseModel):
@@ -177,6 +182,130 @@ class PPRRequest(BaseModel):
     session_id: str | None = None
     export_format: Literal["docx", "pdf"] = "docx"
     norms: list[str] = []
+
+
+class AlbumRequest(BaseModel):
+    """Запрос на сборку исполнительного альбома."""
+
+    project_id: str
+    section: Literal["AR", "KZH", "KM", "KMD", "OV", "VK", "EM", "TX", "GP"]
+
+
+def _fetch_approved_exec_docs(project_id: str, section: str) -> list[dict]:
+    """Получить утвержденные АОСР по проекту и разделу."""
+    engine = create_engine(settings.database_url, future=True)
+    query = text(
+        """
+        SELECT id, pdf_url, created_at
+        FROM executive_docs
+        WHERE project_id = :project_id
+          AND discipline_section = :section
+          AND status = 'approved'
+        ORDER BY created_at ASC
+        """
+    )
+    with engine.connect() as conn:
+        rows = conn.execute(query, {"project_id": project_id, "section": section}).mappings().all()
+    return [dict(row) for row in rows]
+
+
+def _render_exec_album_pdf(project_id: str, section: str, docs: list[dict]) -> bytes:
+    """Сформировать PDF альбома через WeasyPrint."""
+    from weasyprint import HTML
+
+    template_path = Path("templates/exec_album_cover.html")
+    cover_template = template_path.read_text(encoding="utf-8")
+    generated_at = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
+    docs_html = "\n".join(
+        (
+            f"<li><strong>Документ #{index}</strong>: "
+            f'<a href="{doc["pdf_url"]}">{doc["pdf_url"]}</a>'
+            f" <span>(created_at: {doc.get('created_at', '-')})</span></li>"
+        )
+        for index, doc in enumerate(docs, start=1)
+    )
+    html = (
+        cover_template.replace("{{ project_id }}", project_id)
+        .replace("{{ section }}", section)
+        .replace("{{ generated_at }}", generated_at)
+        .replace("{{ doc_count }}", str(len(docs)))
+        .replace("{{ docs_list }}", docs_html)
+    )
+    return HTML(string=html, base_url=str(Path.cwd())).write_pdf()
+
+
+def _upload_album_bytes(project_id: str, section: str, pdf_bytes: bytes) -> str:
+    """Загрузить PDF альбома в S3/MinIO и вернуть presigned URL."""
+    try:
+        import boto3
+    except ImportError as exc:  # pragma: no cover - runtime dependency
+        raise HTTPException(
+            status_code=500,
+            detail="boto3 is required for S3/MinIO upload",
+        ) from exc
+
+    timestamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
+    object_key = f"{project_id}/{section}_{timestamp}.pdf"
+
+    client = boto3.client(
+        "s3",
+        endpoint_url=settings.s3_endpoint_url or None,
+        aws_access_key_id=settings.s3_access_key or None,
+        aws_secret_access_key=settings.s3_secret_key or None,
+        region_name=settings.s3_region,
+        use_ssl=settings.s3_use_ssl,
+    )
+    client.put_object(
+        Bucket=settings.s3_bucket_albums,
+        Key=object_key,
+        Body=pdf_bytes,
+        ContentType="application/pdf",
+    )
+    return str(
+        client.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": settings.s3_bucket_albums, "Key": object_key},
+            ExpiresIn=3600,
+        )
+    )
+
+
+@router.post(
+    "/generate/exec-album",
+    summary="Сборка исполнительного альбома",
+    description="Собирает PDF-альбом по утвержденным АОСР выбранного раздела.",
+)
+async def generate_exec_album(payload: AlbumRequest, request: Request):
+    """Собрать исполнительный альбом по проекту и разделу."""
+    _ = request
+    if payload.section not in EXEC_ALBUM_SECTIONS:
+        raise HTTPException(status_code=422, detail="Invalid section")
+
+    docs = await asyncio.to_thread(
+        _fetch_approved_exec_docs,
+        project_id=payload.project_id,
+        section=payload.section,
+    )
+    if not docs:
+        raise HTTPException(status_code=404, detail="Approved executive docs not found")
+
+    pdf_bytes = await asyncio.to_thread(
+        _render_exec_album_pdf,
+        project_id=payload.project_id,
+        section=payload.section,
+        docs=docs,
+    )
+    presigned_url = await asyncio.to_thread(
+        _upload_album_bytes,
+        project_id=payload.project_id,
+        section=payload.section,
+        pdf_bytes=pdf_bytes,
+    )
+    return {
+        "url": presigned_url,
+        "doc_count": len(docs),
+        "section": payload.section,
+    }
 
 
 @router.post(
