@@ -51,11 +51,6 @@ class Settings(BaseSettings):
     s3_bucket_albums: str = "albums"
     s3_use_ssl: bool = False
 
-    # ── CryptoPro REST ─────────────────────────
-    CRYPTOPRO_REST_URL: str = ""
-    CRYPTOPRO_API_KEY: str = ""
-    CRYPTOPRO_CERT_THUMBPRINT: str = ""
-
     # ── Telegram ───────────────────────────────
     bot_token: str = ""
     core_api_url: str = "http://api:8000"
