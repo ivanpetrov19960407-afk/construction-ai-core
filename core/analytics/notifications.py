@@ -60,9 +60,13 @@ class AnalyticsNotifier:
         now = dt.datetime.now(self._utc).strftime("%Y-%m-%d %H:%M UTC")
         try:
             for project_id in project_ids:
-                prediction = await self._predictor.predict_completion(project_id)
-                if float(prediction.get("delay_rate", 0.0)) <= 0.3:
+                quick_prediction = await self._predictor.predict_completion(
+                    project_id,
+                    include_llm=False,
+                )
+                if float(quick_prediction.get("delay_rate", 0.0)) <= 0.3:
                     continue
+                prediction = await self._predictor.predict_completion(project_id, include_llm=True)
 
                 message = (
                     "⚠️ Риск срыва сроков\n"

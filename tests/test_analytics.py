@@ -7,6 +7,8 @@ from fastapi.testclient import TestClient
 from api.main import app
 from api.routes import analytics as analytics_routes
 from api.routes.auth import _create_token
+from config.settings import settings
+from core import projects as projects_core
 
 
 def _auth_headers(username: str = "analytics-user") -> dict[str, str]:
@@ -14,9 +16,17 @@ def _auth_headers(username: str = "analytics-user") -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-def test_predict_no_delays(monkeypatch):
+def _with_temp_db(tmp_path):
+    old = settings.sqlite_db_path
+    settings.sqlite_db_path = str(tmp_path / "analytics.db")
+    projects_core._ENGINE_CACHE.clear()
+    projects_core._SESSIONMAKER_CACHE.clear()
+    return old
+
+
+def test_predict_no_delays(monkeypatch, tmp_path):
     async def _mock_predict(project_id: str) -> dict:
-        assert project_id == "project-1"
+        assert project_id
         return {
             "avg_delay_days": 0.0,
             "delay_rate": 0.0,
@@ -35,8 +45,23 @@ def test_predict_no_delays(monkeypatch):
     monkeypatch.setattr(analytics_routes._cache, "get", _cache_miss)
     monkeypatch.setattr(analytics_routes._cache, "set", _cache_set)
 
-    with TestClient(app) as client:
-        response = client.get("/api/analytics/schedule/project-1", headers=_auth_headers())
+    old_db_path = _with_temp_db(tmp_path)
+    try:
+        with TestClient(app) as client:
+            created = client.post(
+                "/api/projects",
+                json={"name": "A", "description": "D", "members": []},
+                headers=_auth_headers(),
+            )
+            project_id = created.json()["id"]
+            response = client.get(
+                f"/api/analytics/schedule/{project_id}",
+                headers=_auth_headers(),
+            )
+    finally:
+        settings.sqlite_db_path = old_db_path
+        projects_core._ENGINE_CACHE.clear()
+        projects_core._SESSIONMAKER_CACHE.clear()
 
     assert response.status_code == 200
     data = response.json()
@@ -45,7 +70,7 @@ def test_predict_no_delays(monkeypatch):
     assert data["risks"] == []
 
 
-def test_predict_with_delays(monkeypatch):
+def test_predict_with_delays(monkeypatch, tmp_path):
     async def _mock_predict(_: str) -> dict:
         return {
             "avg_delay_days": 4.5,
@@ -71,8 +96,23 @@ def test_predict_with_delays(monkeypatch):
     monkeypatch.setattr(analytics_routes._cache, "get", _cache_miss)
     monkeypatch.setattr(analytics_routes._cache, "set", _cache_set)
 
-    with TestClient(app) as client:
-        response = client.get("/api/analytics/schedule/project-42", headers=_auth_headers())
+    old_db_path = _with_temp_db(tmp_path)
+    try:
+        with TestClient(app) as client:
+            created = client.post(
+                "/api/projects",
+                json={"name": "B", "description": "D", "members": []},
+                headers=_auth_headers(),
+            )
+            project_id = created.json()["id"]
+            response = client.get(
+                f"/api/analytics/schedule/{project_id}",
+                headers=_auth_headers(),
+            )
+    finally:
+        settings.sqlite_db_path = old_db_path
+        projects_core._ENGINE_CACHE.clear()
+        projects_core._SESSIONMAKER_CACHE.clear()
 
     assert response.status_code == 200
     data = response.json()
@@ -80,7 +120,7 @@ def test_predict_with_delays(monkeypatch):
     assert data["risks"][0]["severity"] == "high"
 
 
-def test_cache_hit(monkeypatch):
+def test_cache_hit(monkeypatch, tmp_path):
     calls = {"predict": 0}
 
     async def _mock_predict(_: str) -> dict:
@@ -107,9 +147,27 @@ def test_cache_hit(monkeypatch):
     monkeypatch.setattr(analytics_routes, "_cache", fake_cache)
     monkeypatch.setattr(analytics_routes._predictor, "predict_completion", _mock_predict)
 
-    with TestClient(app) as client:
-        first = client.get("/api/analytics/schedule/project-cache", headers=_auth_headers())
-        second = client.get("/api/analytics/schedule/project-cache", headers=_auth_headers())
+    old_db_path = _with_temp_db(tmp_path)
+    try:
+        with TestClient(app) as client:
+            created = client.post(
+                "/api/projects",
+                json={"name": "C", "description": "D", "members": []},
+                headers=_auth_headers(),
+            )
+            project_id = created.json()["id"]
+            first = client.get(
+                f"/api/analytics/schedule/{project_id}",
+                headers=_auth_headers(),
+            )
+            second = client.get(
+                f"/api/analytics/schedule/{project_id}",
+                headers=_auth_headers(),
+            )
+    finally:
+        settings.sqlite_db_path = old_db_path
+        projects_core._ENGINE_CACHE.clear()
+        projects_core._SESSIONMAKER_CACHE.clear()
 
     assert first.status_code == 200
     assert second.status_code == 200

@@ -60,6 +60,7 @@ class SchedulePredictor:
 
     async def calculate_delay_stats(self, history: list) -> dict:
         """Рассчитать статистику задержек по завершённым задачам."""
+
         class CriticalSection(TypedDict):
             section: str
             avg_delay_days: float
@@ -110,7 +111,7 @@ class SchedulePredictor:
             "completed_tasks": len(completed),
         }
 
-    async def predict_completion(self, project_id: str) -> dict:
+    async def predict_completion(self, project_id: str, *, include_llm: bool = True) -> dict:
         """Сформировать прогноз завершения проекта и рисков."""
         history = await self.get_project_history(project_id)
         stats = await self.calculate_delay_stats(history)
@@ -141,7 +142,11 @@ class SchedulePredictor:
         latest_task_date = max(predicted_dates, default=None)
         predicted_completion = latest_task_date or dt.date.today()
 
-        llm_result = await self._llm_assessment(project_name, stats, adjusted_tasks)
+        llm_result = (
+            await self._llm_assessment(project_name, stats, adjusted_tasks)
+            if include_llm
+            else {"risks": [], "recommendations": []}
+        )
         return {
             "avg_delay_days": float(stats["avg_delay_days"]),
             "delay_rate": float(stats["delay_rate"]),
