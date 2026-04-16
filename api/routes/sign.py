@@ -26,6 +26,14 @@ class SignDocumentRequest(BaseModel):
     user_id: str
 
 
+class BatchSignRequest(BaseModel):
+    """Запрос пакетной подписи документов."""
+
+    doc_ids: list[str]
+    doc_type: str
+    user_id: str
+
+
 _ALLOWED_DOC_TYPES = {"aosr", "ks2", "ks3"}
 
 
@@ -189,21 +197,20 @@ def _resolve_download_url(locator: str) -> str:
     return _presign_object_key(locator)
 
 
-@router.post("/sign/document")
-async def sign_document(
-    payload: SignDocumentRequest,
-    request: Request,
+async def sign_document_inner(
+    doc_id: str,
+    doc_type: str,
+    user_id: str,
     background_tasks: BackgroundTasks,
-):
-    """Подписать PDF документа через КриптоПро REST API."""
-    _ = request
-    if payload.doc_type not in _ALLOWED_DOC_TYPES:
+) -> dict:
+    """Внутренняя логика подписи документа."""
+    if doc_type not in _ALLOWED_DOC_TYPES:
         raise HTTPException(status_code=422, detail="doc_type must be one of: aosr, ks2, ks3")
 
     doc = await asyncio.to_thread(
         _fetch_exec_doc_for_sign,
-        payload.doc_id,
-        payload.doc_type,
+        doc_id,
+        doc_type,
     )
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
@@ -214,7 +221,7 @@ async def sign_document(
 
     cert_thumbprint = await asyncio.to_thread(
         _fetch_user_cert_thumbprint,
-        payload.user_id,
+        user_id,
     )
     cert_thumbprint = cert_thumbprint or _cryptopro_cert_thumbprint()
     if not cert_thumbprint:
@@ -250,16 +257,59 @@ async def sign_document(
     )
     await asyncio.to_thread(
         _mark_document_signed,
-        payload.doc_id,
-        payload.user_id,
+        doc_id,
+        user_id,
         sig_key,
     )
-    background_tasks.add_task(submit_document_if_state_contract, payload.doc_id)
+    background_tasks.add_task(submit_document_if_state_contract, doc_id)
 
     signed_url = await asyncio.to_thread(_presign_object_key, signed_key)
     sig_url = await asyncio.to_thread(_presign_object_key, sig_key)
 
-    return {"signed_url": signed_url, "sig_url": sig_url, "status": "signed"}
+    return {"signed_url": signed_url, "sig_url": sig_url}
+
+
+@router.post("/sign/document")
+async def sign_document(
+    payload: SignDocumentRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
+):
+    """Подписать PDF документа через КриптоПро REST API."""
+    _ = request
+    result = await sign_document_inner(
+        payload.doc_id,
+        payload.doc_type,
+        payload.user_id,
+        background_tasks,
+    )
+    return {"status": "signed", **result}
+
+
+@router.post("/sign/batch")
+async def batch_sign_documents(payload: BatchSignRequest, background_tasks: BackgroundTasks):
+    """Подписать список документов одним запросом. Возвращает список результатов."""
+    if len(payload.doc_ids) > 20:
+        raise HTTPException(status_code=422, detail="Max 20 documents per batch")
+    if payload.doc_type not in _ALLOWED_DOC_TYPES:
+        raise HTTPException(status_code=422, detail="doc_type must be one of: aosr, ks2, ks3")
+
+    results: list[dict] = []
+    for doc_id in payload.doc_ids:
+        try:
+            result = await sign_document_inner(
+                doc_id,
+                payload.doc_type,
+                payload.user_id,
+                background_tasks,
+            )
+            results.append({"doc_id": doc_id, "status": "signed", **result})
+        except HTTPException as exc:
+            results.append({"doc_id": doc_id, "status": "error", "detail": exc.detail})
+    return {
+        "results": results,
+        "signed_count": sum(1 for item in results if item["status"] == "signed"),
+    }
 
 
 @router.get("/sign/verify/{doc_id}")

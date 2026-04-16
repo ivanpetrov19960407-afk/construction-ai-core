@@ -36,6 +36,8 @@ export default function HandoverPage() {
   const [project, setProject] = useState<ProjectInfo | null>(null);
   const [documents, setDocuments] = useState<ProjectDocument[]>([]);
   const [signedDocIds, setSignedDocIds] = useState<string[]>([]);
+  const [batchProgress, setBatchProgress] = useState<{ signed: number; total: number } | null>(null);
+  const [batchLoading, setBatchLoading] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -172,6 +174,66 @@ export default function HandoverPage() {
     }
   };
 
+  const handleBatchSign = async () => {
+    if (!userId.trim()) {
+      setError('Укажите userId для ЭЦП');
+      return;
+    }
+
+    const pendingDocuments = documents.filter((doc) => {
+      const status: SignStatus = signedDocIds.includes(doc.id) ? 'signed' : doc.status ?? 'approved';
+      return status !== 'signed';
+    });
+
+    if (!pendingDocuments.length) {
+      setBatchProgress({ signed: 0, total: 0 });
+      return;
+    }
+
+    const docsByType = pendingDocuments.reduce<Record<string, string[]>>((acc, doc) => {
+      const type = doc.document_type;
+      if (!acc[type]) acc[type] = [];
+      acc[type].push(doc.id);
+      return acc;
+    }, {});
+
+    setError('');
+    setBatchLoading(true);
+    setBatchProgress({ signed: 0, total: pendingDocuments.length });
+
+    try {
+      let signedTotal = 0;
+      const newlySignedIds = new Set<string>();
+      for (const [docType, ids] of Object.entries(docsByType)) {
+        const response = await fetchJson<{ results: { doc_id: string; status: SignStatus }[] }>(
+          '/api/sign/batch',
+          {
+            method: 'POST',
+            body: JSON.stringify({
+              doc_ids: ids,
+              doc_type: docType,
+              user_id: userId
+            })
+          }
+        );
+        for (const result of response.results ?? []) {
+          if (result.status === 'signed') {
+            signedTotal += 1;
+            newlySignedIds.add(result.doc_id);
+          }
+        }
+        setBatchProgress({ signed: signedTotal, total: pendingDocuments.length });
+      }
+      if (newlySignedIds.size > 0) {
+        setSignedDocIds((prev) => [...new Set([...prev, ...Array.from(newlySignedIds)])]);
+      }
+    } catch (signError) {
+      setError(signError instanceof Error ? signError.message : 'Ошибка пакетной подписи');
+    } finally {
+      setBatchLoading(false);
+    }
+  };
+
   const checklistSections = useMemo<GSNSectionStatus[]>(() => {
     if (!checklist) {
       return [];
@@ -201,9 +263,14 @@ export default function HandoverPage() {
           <input value={userId} onChange={(event) => setUserId(event.target.value)} placeholder="Идентификатор пользователя" />
         </label>
       </div>
-      <button type="button" onClick={loadAll} disabled={loading}>
-        {loading ? 'Загрузка...' : 'Загрузить данные'}
-      </button>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <button type="button" onClick={loadAll} disabled={loading}>
+          {loading ? 'Загрузка...' : 'Загрузить данные'}
+        </button>
+        <button type="button" onClick={handleBatchSign} disabled={batchLoading || !documents.length}>
+          {batchLoading ? 'Подписание...' : 'Подписать все (batch)'}
+        </button>
+      </div>
       {error && <p style={{ color: 'crimson', margin: 0 }}>{error}</p>}
 
       <TabLayout
@@ -263,6 +330,7 @@ export default function HandoverPage() {
             title: 'Подписание документов',
             content: (
               <section style={{ display: 'grid', gap: 10 }}>
+                {batchProgress && <p style={{ margin: 0 }}>Подписано {batchProgress.signed} / {batchProgress.total}</p>}
                 {documents.map((doc) => {
                   const status: SignStatus = signedDocIds.includes(doc.id) ? 'signed' : doc.status ?? 'approved';
                   const icon = status === 'signed' ? '✅' : status === 'approved' ? '🟡' : '📝';

@@ -41,6 +41,25 @@ def _sign_confirm_keyboard(doc_id: str) -> InlineKeyboardMarkup:
     )
 
 
+def _sign_all_keyboard(documents: list[Mapping]) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    for doc in documents:
+        doc_id = str(doc.get("id", "")).strip()
+        if not doc_id:
+            continue
+        title = str(doc.get("title", "Документ")).strip()[:30]
+        doc_type = str(doc.get("document_type", "aosr")).strip() or "aosr"
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"Подписать: {title}",
+                    callback_data=f"sign_all:{doc_id}:{doc_type}",
+                )
+            ]
+        )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
 async def _get_default_project_id() -> str | None:
     data = await api_client.get("/api/projects")
     projects = data.get("projects", [])
@@ -181,6 +200,60 @@ async def sign_doc_callback_handler(callback: CallbackQuery) -> None:
     payload = {
         "doc_id": doc_id,
         "doc_type": "aosr",
+        "user_id": str(callback.from_user.id),
+    }
+    await api_client.post("/api/sign/document", payload)
+    await callback.message.answer(f"Документ {doc_id} отправлен на подпись.")
+    await callback.answer("Подписано")
+
+
+@router.message(Command("sign_all"))
+async def sign_all_handler(message: Message) -> None:
+    project_id = await _get_default_project_id()
+    if not project_id:
+        await message.answer("Проект не найден.")
+        return
+
+    data = await api_client.get(f"/api/projects/{project_id}/documents")
+    raw_docs = data.get("documents", [])
+    if not isinstance(raw_docs, list):
+        await message.answer("Список документов недоступен.")
+        return
+
+    documents: list[Mapping] = []
+    for doc in raw_docs:
+        if not isinstance(doc, Mapping):
+            continue
+        status = str(doc.get("status", "approved")).strip().lower()
+        if status == "signed":
+            continue
+        documents.append(doc)
+
+    if not documents:
+        await message.answer("Нет документов для подписи.")
+        return
+
+    await message.answer(
+        "Выберите документ для подписи:",
+        reply_markup=_sign_all_keyboard(documents),
+    )
+
+
+@router.callback_query(F.data.startswith("sign_all:"))
+async def sign_all_callback_handler(callback: CallbackQuery) -> None:
+    data = (callback.data or "").split(":", maxsplit=2)
+    if len(data) != 3:
+        await callback.answer("Некорректная команда")
+        return
+
+    _, doc_id, doc_type = data
+    if callback.message is None:
+        await callback.answer()
+        return
+
+    payload = {
+        "doc_id": doc_id,
+        "doc_type": doc_type,
         "user_id": str(callback.from_user.id),
     }
     await api_client.post("/api/sign/document", payload)
