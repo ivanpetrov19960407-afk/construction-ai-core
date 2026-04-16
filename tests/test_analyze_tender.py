@@ -34,8 +34,6 @@ PDF_BYTES = (
 
 def test_analyze_tender_contains_44fz_reference():
     """POST /api/analyze/tender возвращает ссылки на 44-ФЗ."""
-    client = TestClient(app)
-
     analyze.pdf_parser.parse = lambda file_bytes, filename: ParsedDocument(
         filename=filename,
         total_pages=1,
@@ -59,12 +57,13 @@ def test_analyze_tender_contains_44fz_reference():
     old_keys = settings.api_keys
     settings.api_keys = ["valid-key"]
     try:
-        response = client.post(
-            "/api/analyze/tender",
-            files={"file": ("tender.pdf", PDF_BYTES, "application/pdf")},
-            data={"role": "tender_specialist"},
-            headers={"X-API-Key": "valid-key"},
-        )
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/analyze/tender",
+                files={"file": ("tender.pdf", PDF_BYTES, "application/pdf")},
+                data={"role": "tender_specialist"},
+                headers={"X-API-Key": "valid-key"},
+            )
     finally:
         settings.api_keys = old_keys
 

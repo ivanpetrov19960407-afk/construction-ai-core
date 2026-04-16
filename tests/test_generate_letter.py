@@ -11,7 +11,6 @@ from config.settings import settings
 
 def test_generate_letter_with_npa_pipeline():
     """POST /api/generate/letter с include_npa=True использует Legal Expert."""
-    client = TestClient(app)
     old_keys = settings.api_keys
     settings.api_keys = ["valid-key"]
     mocked_process = AsyncMock(
@@ -42,20 +41,21 @@ def test_generate_letter_with_npa_pipeline():
     generate.orchestrator.process = mocked_process
 
     try:
-        response = client.post(
-            "/api/generate/letter",
-            json={
-                "letter_type": "запрос",
-                "addressee": "ООО Ромашка",
-                "subject": "Предоставление графика работ",
-                "body_points": ["Просим прислать график", "Срок до 15.05.2026"],
-                "contract_number": "Д-123",
-                "include_npa": True,
-                "role": "foreman",
-                "session_id": "session-legal",
-            },
-            headers={"X-API-Key": "valid-key"},
-        )
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/generate/letter",
+                json={
+                    "letter_type": "запрос",
+                    "addressee": "ООО Ромашка",
+                    "subject": "Предоставление графика работ",
+                    "body_points": ["Просим прислать график", "Срок до 15.05.2026"],
+                    "contract_number": "Д-123",
+                    "include_npa": True,
+                    "role": "foreman",
+                    "session_id": "session-legal",
+                },
+                headers={"X-API-Key": "valid-key"},
+            )
     finally:
         settings.api_keys = old_keys
 
@@ -74,7 +74,6 @@ def test_generate_letter_with_npa_pipeline():
 
 def test_generate_letter_without_npa_pipeline():
     """POST /api/generate/letter с include_npa=False отключает Legal Expert."""
-    client = TestClient(app)
     old_keys = settings.api_keys
     settings.api_keys = ["valid-key"]
     mocked_process = AsyncMock(
@@ -93,17 +92,18 @@ def test_generate_letter_without_npa_pipeline():
     generate.orchestrator.process = mocked_process
 
     try:
-        response = client.post(
-            "/api/generate/letter",
-            json={
-                "letter_type": "ответ",
-                "addressee": "АО Заказчик",
-                "subject": "Ответ по замечаниям",
-                "body_points": ["Замечания устранены"],
-                "include_npa": False,
-            },
-            headers={"X-API-Key": "valid-key"},
-        )
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/generate/letter",
+                json={
+                    "letter_type": "ответ",
+                    "addressee": "АО Заказчик",
+                    "subject": "Ответ по замечаниям",
+                    "body_points": ["Замечания устранены"],
+                    "include_npa": False,
+                },
+                headers={"X-API-Key": "valid-key"},
+            )
     finally:
         settings.api_keys = old_keys
 
