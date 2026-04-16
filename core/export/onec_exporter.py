@@ -32,7 +32,12 @@ class OneCExporter:
             work_node = ET.SubElement(works_node, "ВидРаботы")
             quantity = self._to_decimal(item.get("quantity"))
             price = self._to_decimal(item.get("price"))
-            amount = self._to_decimal(item.get("amount")) or (quantity * price)
+            amount_value = item.get("amount")
+            amount = (
+                quantity * price
+                if amount_value is None or amount_value == ""
+                else self._to_decimal(amount_value)
+            )
             total_sum += amount
 
             ET.SubElement(work_node, "Наименование").text = str(item.get("name") or "")

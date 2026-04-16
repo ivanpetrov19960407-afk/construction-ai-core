@@ -44,6 +44,38 @@ def test_ks2_xml_structure(monkeypatch):
     assert root.findtext("Итого") == "15000.00"
 
 
+def test_ks2_xml_keeps_explicit_zero_amount(monkeypatch):
+    """Если amount=0 указан явно, он не должен заменяться quantity*price."""
+
+    async def _mock_fetch_generated_doc(doc_id: str, doc_type: str) -> dict:
+        assert doc_id == "doc-zero"
+        assert doc_type == "ks2"
+        return {
+            "number": "КС2-0",
+            "date": "2026-04-01",
+            "organization": "ООО Строймонтаж",
+            "object": "ЖК Север",
+            "work_items": [
+                {
+                    "name": "Корректировка",
+                    "unit": "шт",
+                    "quantity": 2,
+                    "price": 100,
+                    "amount": 0,
+                }
+            ],
+        }
+
+    exporter = OneCExporter()
+    monkeypatch.setattr(exporter, "_fetch_generated_doc", _mock_fetch_generated_doc)
+
+    xml_bytes = asyncio.run(exporter.export_ks2_to_xml(doc_id="doc-zero"))
+    root = ET.fromstring(xml_bytes)
+
+    assert root.findtext("ВидыРабот/ВидРаботы/Сумма") == "0.00"
+    assert root.findtext("Итого") == "0.00"
+
+
 def test_m29_xml_period_filter(monkeypatch):
     """Экспорт М-29 использует период YYYY-MM при выборке KG записей."""
     requested_periods: list[str] = []

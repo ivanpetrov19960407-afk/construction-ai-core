@@ -1,6 +1,7 @@
 """Generate endpoints — генерация документов."""
 
 import asyncio
+import json
 import re
 import tempfile
 import uuid
@@ -270,6 +271,42 @@ def _upload_album_bytes(project_id: str, section: str, pdf_bytes: bytes) -> str:
             ExpiresIn=3600,
         )
     )
+
+
+def _upsert_generated_doc(doc_id: str, doc_type: str, payload: dict) -> None:
+    """Сохранить структурированные данные документа в generated_docs."""
+    engine = create_engine(settings.database_url, future=True)
+    create_table_query = text(
+        """
+        CREATE TABLE IF NOT EXISTS generated_docs (
+            id TEXT NOT NULL,
+            type TEXT NOT NULL,
+            payload TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id, type)
+        )
+        """
+    )
+    upsert_query = text(
+        """
+        INSERT INTO generated_docs (id, type, payload, created_at, updated_at)
+        VALUES (:id, :type, :payload, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ON CONFLICT(id, type) DO UPDATE SET
+            payload = excluded.payload,
+            updated_at = CURRENT_TIMESTAMP
+        """
+    )
+    with engine.begin() as conn:
+        conn.execute(create_table_query)
+        conn.execute(
+            upsert_query,
+            {
+                "id": doc_id,
+                "type": doc_type,
+                "payload": json.dumps(payload, ensure_ascii=False),
+            },
+        )
 
 
 @router.post(
@@ -724,6 +761,12 @@ async def generate_ks(payload: KSRequest, request: Request):
             docx_bytes=docx_bytes,
             sha256=sha256,
         )
+    await asyncio.to_thread(
+        _upsert_generated_doc,
+        doc_id=docx_bytes_key,
+        doc_type="ks2",
+        payload=ks2 if isinstance(ks2, dict) else {},
+    )
 
     return KSResponse(
         session_id=result["session_id"],
