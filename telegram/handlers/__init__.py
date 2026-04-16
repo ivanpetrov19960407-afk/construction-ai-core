@@ -575,9 +575,34 @@ async def confirm_no_handler(callback: CallbackQuery, state: FSMContext) -> None
 
 @router.message(Command("analyze"))
 @router.message(F.text == "📋 Анализ тендера")
+@router.message(F.text == "📋 АОСР")
 async def analyze_start_handler(message: Message, state: FSMContext) -> None:
     await state.set_state(AnalyzeForm.document)
     await message.answer("Отправь PDF-документ для анализа", reply_markup=cancel_keyboard())
+
+
+@router.message(F.text == "📊 КГ")
+async def kg_menu_handler(message: Message) -> None:
+    from telegram.handlers.handover import handover_forecast_handler
+
+    await handover_forecast_handler(message)
+
+
+@router.message(F.text == "✅ Сдача объекта")
+async def handover_menu_handler(message: Message) -> None:
+    from telegram.handlers.handover import handover_check_handler
+
+    await handover_check_handler(message)
+
+
+@router.message(F.text == "❓ Помощь")
+async def help_menu_handler(message: Message) -> None:
+    await message.answer(
+        "Доступные команды:\n"
+        "/handover_check — проверка готовности разделов\n"
+        "/handover_forecast — прогноз завершения\n"
+        "/sign_doc {doc_id} — подпись документа"
+    )
 
 
 @router.message(AnalyzeForm.document, F.document)
