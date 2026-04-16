@@ -61,6 +61,7 @@ class Settings(BaseSettings):
     isup_client_id: str = ""
     isup_client_secret: str = ""
     isup_enabled: bool = False
+    isup_webhook_secret: str = ""
 
     # ── Telegram ───────────────────────────────
     bot_token: str = ""
