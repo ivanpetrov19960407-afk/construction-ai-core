@@ -7,11 +7,12 @@ import datetime as dt
 from pathlib import Path
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
 
 from config.settings import settings
 from core.compliance.gsn_checklist import GSNReadinessChecker
+from core.multitenancy import get_tenant_id
 from core.projects import Project, get_projects_sessionmaker
 
 router = APIRouter(prefix="/compliance", tags=["compliance"])
@@ -55,7 +56,7 @@ def _render_pdf_from_html(html: str) -> bytes:
     return HTML(string=html, base_url=str(Path.cwd())).write_pdf()
 
 
-def _require_project_member(request: Request, project_id: UUID) -> None:
+def _require_project_member(request: Request, project_id: UUID, org_id: str) -> None:
     username = getattr(request.state, "username", None)
     if not username:
         raise HTTPException(status_code=401, detail="Authentication required")
@@ -63,7 +64,7 @@ def _require_project_member(request: Request, project_id: UUID) -> None:
     session_local = get_projects_sessionmaker(settings.sqlite_db_path)
     with session_local() as session:
         project = session.get(Project, project_id)
-        if project is None:
+        if project is None or project.org_id != org_id:
             raise HTTPException(status_code=404, detail="Project not found")
 
         members = project.members or []
@@ -72,14 +73,23 @@ def _require_project_member(request: Request, project_id: UUID) -> None:
 
 
 @router.get("/gsn-checklist/{project_id}")
-async def get_gsn_checklist(project_id: UUID, request: Request) -> dict:
-    _require_project_member(request=request, project_id=project_id)
+async def get_gsn_checklist(
+    project_id: UUID,
+    request: Request,
+    org_id: str | None = Depends(get_tenant_id),
+) -> dict:
+    _require_project_member(request=request, project_id=project_id, org_id=org_id or "default")
     return await checker.check_full_project(project_id=str(project_id))
 
 
 @router.get("/gsn-checklist/{project_id}/section/{section}")
-async def get_gsn_checklist_section(project_id: UUID, section: str, request: Request) -> dict:
-    _require_project_member(request=request, project_id=project_id)
+async def get_gsn_checklist_section(
+    project_id: UUID,
+    section: str,
+    request: Request,
+    org_id: str | None = Depends(get_tenant_id),
+) -> dict:
+    _require_project_member(request=request, project_id=project_id, org_id=org_id or "default")
     try:
         return await checker.check_section(project_id=str(project_id), section=section)
     except ValueError as exc:
@@ -87,8 +97,12 @@ async def get_gsn_checklist_section(project_id: UUID, section: str, request: Req
 
 
 @router.post("/gsn-report/{project_id}")
-async def generate_gsn_report(project_id: UUID, request: Request) -> Response:
-    _require_project_member(request=request, project_id=project_id)
+async def generate_gsn_report(
+    project_id: UUID,
+    request: Request,
+    org_id: str | None = Depends(get_tenant_id),
+) -> Response:
+    _require_project_member(request=request, project_id=project_id, org_id=org_id or "default")
     checklist = await checker.check_full_project(project_id=str(project_id))
     html = _render_gsn_report_html(project_id=str(project_id), checklist=checklist)
     try:

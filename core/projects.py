@@ -31,6 +31,7 @@ class Project(Base):
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(String(2000), default="", nullable=False)
+    org_id: Mapped[str] = mapped_column(String(255), nullable=False, default="default", index=True)
     owner_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True),

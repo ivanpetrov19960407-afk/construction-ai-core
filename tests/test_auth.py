@@ -33,7 +33,11 @@ def test_register_with_valid_invite_code(tmp_path: Path):
             settings.invite_codes = old_invite_codes
 
         assert response.status_code == 200
-        assert response.json() == {"username": "ivan", "role": "pto_engineer"}
+        assert response.json() == {
+            "username": "ivan",
+            "role": "pto_engineer",
+            "org_id": "default",
+        }
 
     asyncio.run(_run())
 

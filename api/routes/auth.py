@@ -27,31 +27,41 @@ def _ensure_users_table() -> None:
                 username TEXT PRIMARY KEY,
                 password_hash TEXT NOT NULL,
                 role TEXT NOT NULL,
+                org_id TEXT NOT NULL DEFAULT 'default',
                 created_at TEXT NOT NULL
             )
             """
         )
+        columns = {str(row[1]) for row in connection.execute("PRAGMA table_info(users)").fetchall()}
+        if "org_id" not in columns:
+            connection.execute(
+                "ALTER TABLE users ADD COLUMN org_id TEXT NOT NULL DEFAULT 'default'"
+            )
         connection.commit()
 
 
-def _get_user(username: str) -> tuple[str, str, str, str] | None:
+def _get_user(username: str) -> tuple[str, str, str, str, str] | None:
     _ensure_users_table()
     with sqlite3.connect(settings.users_db_path) as connection:
         cursor = connection.execute(
-            "SELECT username, password_hash, role, created_at FROM users WHERE username = ?",
+            (
+                "SELECT username, password_hash, role, org_id, created_at "
+                "FROM users WHERE username = ?"
+            ),
             (username,),
         )
         row = cursor.fetchone()
     if row is None:
         return None
-    return (str(row[0]), str(row[1]), str(row[2]), str(row[3]))
+    return (str(row[0]), str(row[1]), str(row[2]), str(row[3]), str(row[4]))
 
 
-def _create_token(username: str, role: str) -> str:
+def _create_token(username: str, role: str, org_id: str = "default") -> str:
     expire_at = dt.datetime.now(UTC) + dt.timedelta(minutes=settings.jwt_expire_minutes)
     payload = {
         "sub": username,
         "role": role,
+        "org_id": org_id or "default",
         "exp": int(expire_at.timestamp()),
     }
     return encode_jwt(payload, settings.jwt_secret, algorithm=ALGORITHM)
@@ -73,13 +83,13 @@ async def register_user(payload: UserCreate) -> dict[str, str]:
     with sqlite3.connect(settings.users_db_path) as connection:
         connection.execute(
             """
-            INSERT INTO users (username, password_hash, role, created_at)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO users (username, password_hash, role, org_id, created_at)
+            VALUES (?, ?, ?, ?, ?)
             """,
-            (payload.username, password_hash, role, created_at),
+            (payload.username, password_hash, role, payload.org_id or "default", created_at),
         )
         connection.commit()
-    return {"username": payload.username, "role": role}
+    return {"username": payload.username, "role": role, "org_id": payload.org_id or "default"}
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -89,12 +99,12 @@ async def login_user(payload: UserLogin) -> TokenResponse:
     if user is None:
         raise HTTPException(status_code=401, detail="Invalid username or password")
 
-    username, password_hash, role, _created_at = user
+    username, password_hash, role, org_id, _created_at = user
     if not verify_password(payload.password, password_hash):
         raise HTTPException(status_code=401, detail="Invalid username or password")
 
     return TokenResponse(
-        access_token=_create_token(username, role),
+        access_token=_create_token(username, role, org_id),
         token_type="bearer",
         expires_in=settings.jwt_expire_minutes * 60,
         role=role,
@@ -113,8 +123,8 @@ async def me(request: Request) -> dict[str, str]:
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
 
-    _username, _password_hash, role, created_at = user
-    return {"username": username, "role": role, "created_at": created_at}
+    _username, _password_hash, role, org_id, created_at = user
+    return {"username": username, "role": role, "org_id": org_id, "created_at": created_at}
 
 
 def decode_jwt_token(token: str) -> dict[str, str]:
@@ -126,6 +136,7 @@ def decode_jwt_token(token: str) -> dict[str, str]:
 
     username = payload.get("sub")
     role = payload.get("role")
+    org_id = payload.get("org_id")
     if not username or not role:
         raise HTTPException(status_code=401, detail="Invalid token payload")
-    return {"username": str(username), "role": str(role)}
+    return {"username": str(username), "role": str(role), "org_id": str(org_id or "default")}
