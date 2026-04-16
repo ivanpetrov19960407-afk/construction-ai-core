@@ -36,6 +36,7 @@ dependencies = [
     "bcrypt>=4.1.0",
     "redis[hiredis]>=5.0",
     "sqlalchemy>=2.0.0",
+    "boto3>=1.34.0",
 ]
 
 [project.optional-dependencies]
