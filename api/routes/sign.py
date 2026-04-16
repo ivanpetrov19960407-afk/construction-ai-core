@@ -8,12 +8,13 @@ from datetime import datetime
 from urllib.parse import urlparse
 
 import httpx
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import create_engine, text
 
 from config.settings import settings
 from core.integrations.isup import submit_document_if_state_contract
+from core.multitenancy import get_tenant_id
 
 router = APIRouter()
 
@@ -49,19 +50,22 @@ def _cryptopro_cert_thumbprint() -> str:
     return str(getattr(settings, "cryptopro_cert_thumbprint", ""))
 
 
-def _fetch_exec_doc_for_sign(doc_id: str, doc_type: str) -> dict | None:
+def _fetch_exec_doc_for_sign(doc_id: str, doc_type: str, org_id: str) -> dict | None:
     """Прочитать метаданные документа для подписи."""
     engine = create_engine(settings.database_url, future=True)
     query = text(
         """
         SELECT id, pdf_url, status
         FROM executive_docs
-        WHERE id = :doc_id AND doc_type = :doc_type
+        WHERE id = :doc_id AND doc_type = :doc_type AND org_id = :org_id
         LIMIT 1
         """
     )
     with engine.connect() as conn:
-        row = conn.execute(query, {"doc_id": doc_id, "doc_type": doc_type}).mappings().first()
+        row = conn.execute(
+            query,
+            {"doc_id": doc_id, "doc_type": doc_type, "org_id": org_id},
+        ).mappings().first()
     return dict(row) if row else None
 
 
@@ -83,7 +87,7 @@ def _fetch_user_cert_thumbprint(user_id: str) -> str | None:
     return str(row.get("cert_thumbprint") or "").strip() or None
 
 
-def _mark_document_signed(doc_id: str, user_id: str, sig_url: str) -> None:
+def _mark_document_signed(doc_id: str, user_id: str, sig_url: str, org_id: str) -> None:
     """Обновить статус подписания документа."""
     engine = create_engine(settings.database_url, future=True)
     query = text(
@@ -93,26 +97,29 @@ def _mark_document_signed(doc_id: str, user_id: str, sig_url: str) -> None:
             signed_at = CURRENT_TIMESTAMP,
             signed_by = :user_id,
             sig_url = :sig_url
-        WHERE id = :doc_id
+        WHERE id = :doc_id AND org_id = :org_id
         """
     )
     with engine.begin() as conn:
-        conn.execute(query, {"doc_id": doc_id, "user_id": user_id, "sig_url": sig_url})
+        conn.execute(
+            query,
+            {"doc_id": doc_id, "user_id": user_id, "sig_url": sig_url, "org_id": org_id},
+        )
 
 
-def _fetch_exec_doc_for_verify(doc_id: str) -> dict | None:
+def _fetch_exec_doc_for_verify(doc_id: str, org_id: str) -> dict | None:
     """Прочитать метаданные документа для верификации подписи."""
     engine = create_engine(settings.database_url, future=True)
     query = text(
         """
         SELECT id, pdf_url, sig_url, signed_at
         FROM executive_docs
-        WHERE id = :doc_id
+        WHERE id = :doc_id AND org_id = :org_id
         LIMIT 1
         """
     )
     with engine.connect() as conn:
-        row = conn.execute(query, {"doc_id": doc_id}).mappings().first()
+        row = conn.execute(query, {"doc_id": doc_id, "org_id": org_id}).mappings().first()
     return dict(row) if row else None
 
 
@@ -201,6 +208,7 @@ async def sign_document_inner(
     doc_id: str,
     doc_type: str,
     user_id: str,
+    org_id: str,
     background_tasks: BackgroundTasks,
 ) -> dict:
     """Внутренняя логика подписи документа."""
@@ -211,6 +219,7 @@ async def sign_document_inner(
         _fetch_exec_doc_for_sign,
         doc_id,
         doc_type,
+        org_id,
     )
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
@@ -260,6 +269,7 @@ async def sign_document_inner(
         doc_id,
         user_id,
         sig_key,
+        org_id,
     )
     background_tasks.add_task(submit_document_if_state_contract, doc_id)
 
@@ -274,26 +284,34 @@ async def sign_document(
     payload: SignDocumentRequest,
     request: Request,
     background_tasks: BackgroundTasks,
+    org_id: str | None = Depends(get_tenant_id),
 ):
     """Подписать PDF документа через КриптоПро REST API."""
     _ = request
+    tenant = org_id or "default"
     result = await sign_document_inner(
         payload.doc_id,
         payload.doc_type,
         payload.user_id,
+        tenant,
         background_tasks,
     )
     return {"status": "signed", **result}
 
 
 @router.post("/sign/batch")
-async def batch_sign_documents(payload: BatchSignRequest, background_tasks: BackgroundTasks):
+async def batch_sign_documents(
+    payload: BatchSignRequest,
+    background_tasks: BackgroundTasks,
+    org_id: str | None = Depends(get_tenant_id),
+):
     """Подписать список документов одним запросом. Возвращает список результатов."""
     if len(payload.doc_ids) > 20:
         raise HTTPException(status_code=422, detail="Max 20 documents per batch")
     if payload.doc_type not in _ALLOWED_DOC_TYPES:
         raise HTTPException(status_code=422, detail="doc_type must be one of: aosr, ks2, ks3")
 
+    tenant = org_id or "default"
     results: list[dict] = []
     for doc_id in payload.doc_ids:
         try:
@@ -301,6 +319,7 @@ async def batch_sign_documents(payload: BatchSignRequest, background_tasks: Back
                 doc_id,
                 payload.doc_type,
                 payload.user_id,
+                tenant,
                 background_tasks,
             )
             results.append({"doc_id": doc_id, "status": "signed", **result})
@@ -316,10 +335,14 @@ async def batch_sign_documents(payload: BatchSignRequest, background_tasks: Back
 
 
 @router.get("/sign/verify/{doc_id}")
-async def verify_signature(doc_id: str, request: Request):
+async def verify_signature(
+    doc_id: str,
+    request: Request,
+    org_id: str | None = Depends(get_tenant_id),
+):
     """Проверить подпись документа через КриптоПро REST API."""
     _ = request
-    doc = await asyncio.to_thread(_fetch_exec_doc_for_verify, doc_id)
+    doc = await asyncio.to_thread(_fetch_exec_doc_for_verify, doc_id, org_id or "default")
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 

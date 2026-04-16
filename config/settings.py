@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     admin_api_keys: list[str] = []
     jwt_secret: str = "changeme"
     jwt_expire_minutes: int = 60
+    multitenancy_enabled: bool = False
     users_db_path: str = "data/users.db"
     invite_codes: dict[str, str] = {
         "ADMIN-XXX": "admin",

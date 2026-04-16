@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Literal
 
 import structlog
-from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import create_engine, text
@@ -21,6 +21,7 @@ from config.settings import settings
 from core.cache import RedisCache
 from core.export.onec_exporter import OneCExporter
 from core.llm_router import LLMRouter
+from core.multitenancy import get_tenant_id
 from core.orchestrator import Orchestrator
 from core.pdf_exporter import PDFExporter
 from core.pdf_parser import PDFParser
@@ -194,7 +195,7 @@ class AlbumRequest(BaseModel):
     section: Literal["AR", "KZH", "KM", "KMD", "OV", "VK", "EM", "TX", "GP"]
 
 
-def _fetch_approved_exec_docs(project_id: str, section: str) -> list[dict]:
+def _fetch_approved_exec_docs(project_id: str, section: str, org_id: str) -> list[dict]:
     """Получить утвержденные АОСР по проекту и разделу."""
     engine = create_engine(settings.database_url, future=True)
     query = text(
@@ -202,13 +203,17 @@ def _fetch_approved_exec_docs(project_id: str, section: str) -> list[dict]:
         SELECT id, pdf_url, created_at
         FROM executive_docs
         WHERE project_id = :project_id
+          AND org_id = :org_id
           AND discipline_section = :section
           AND status = 'approved'
         ORDER BY created_at ASC
         """
     )
     with engine.connect() as conn:
-        rows = conn.execute(query, {"project_id": project_id, "section": section}).mappings().all()
+        rows = conn.execute(
+            query,
+            {"project_id": project_id, "section": section, "org_id": org_id},
+        ).mappings().all()
     return [dict(row) for row in rows]
 
 
@@ -273,7 +278,7 @@ def _upload_album_bytes(project_id: str, section: str, pdf_bytes: bytes) -> str:
     )
 
 
-def _upsert_generated_doc(doc_id: str, doc_type: str, payload: dict) -> None:
+def _upsert_generated_doc(doc_id: str, doc_type: str, payload: dict, org_id: str) -> None:
     """Сохранить структурированные данные документа в generated_docs."""
     engine = create_engine(settings.database_url, future=True)
     create_table_query = text(
@@ -281,18 +286,19 @@ def _upsert_generated_doc(doc_id: str, doc_type: str, payload: dict) -> None:
         CREATE TABLE IF NOT EXISTS generated_docs (
             id TEXT NOT NULL,
             type TEXT NOT NULL,
+            org_id TEXT NOT NULL DEFAULT 'default',
             payload TEXT NOT NULL,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (id, type)
+            PRIMARY KEY (id, type, org_id)
         )
         """
     )
     upsert_query = text(
         """
-        INSERT INTO generated_docs (id, type, payload, created_at, updated_at)
-        VALUES (:id, :type, :payload, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-        ON CONFLICT(id, type) DO UPDATE SET
+        INSERT INTO generated_docs (id, type, org_id, payload, created_at, updated_at)
+        VALUES (:id, :type, :org_id, :payload, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ON CONFLICT(id, type, org_id) DO UPDATE SET
             payload = excluded.payload,
             updated_at = CURRENT_TIMESTAMP
         """
@@ -304,6 +310,7 @@ def _upsert_generated_doc(doc_id: str, doc_type: str, payload: dict) -> None:
             {
                 "id": doc_id,
                 "type": doc_type,
+                "org_id": org_id,
                 "payload": json.dumps(payload, ensure_ascii=False),
             },
         )
@@ -314,7 +321,11 @@ def _upsert_generated_doc(doc_id: str, doc_type: str, payload: dict) -> None:
     summary="Сборка исполнительного альбома",
     description="Собирает PDF-альбом по утвержденным АОСР выбранного раздела.",
 )
-async def generate_exec_album(payload: AlbumRequest, request: Request):
+async def generate_exec_album(
+    payload: AlbumRequest,
+    request: Request,
+    org_id: str | None = Depends(get_tenant_id),
+):
     """Собрать исполнительный альбом по проекту и разделу."""
     _ = request
     if payload.section not in EXEC_ALBUM_SECTIONS:
@@ -324,6 +335,7 @@ async def generate_exec_album(payload: AlbumRequest, request: Request):
         _fetch_approved_exec_docs,
         project_id=payload.project_id,
         section=payload.section,
+        org_id=org_id or "default",
     )
     if not docs:
         raise HTTPException(status_code=404, detail="Approved executive docs not found")
@@ -371,9 +383,13 @@ async def generate_exec_album(payload: AlbumRequest, request: Request):
         }
     },
 )
-async def generate_tk(payload: TKRequest, request: Request):
+async def generate_tk(
+    payload: TKRequest,
+    request: Request,
+    org_id: str | None = Depends(get_tenant_id),
+):
     """Генерация технологической карты (ТК) через orchestrator."""
-    _ = request
+    _ = (request, org_id)
     session_id = payload.session_id or str(uuid.uuid4())
     norms_text = ", ".join(payload.norms) if payload.norms else "не указаны"
     message = (
@@ -491,9 +507,13 @@ def _extract_legal_references(history: list[dict]) -> list[str]:
         }
     },
 )
-async def generate_letter_v2(payload: LetterRequest, request: Request):
+async def generate_letter_v2(
+    payload: LetterRequest,
+    request: Request,
+    org_id: str | None = Depends(get_tenant_id),
+):
     """Генерация делового письма через orchestrator."""
-    _ = request
+    _ = (request, org_id)
     session_id = payload.session_id or str(uuid.uuid4())
     body_points_text = "; ".join(payload.body_points)
     contract_number = payload.contract_number or "не указан"
@@ -568,9 +588,13 @@ async def generate_letter_v2(payload: LetterRequest, request: Request):
         }
     },
 )
-async def generate_ppr(payload: PPRRequest, request: Request):
+async def generate_ppr(
+    payload: PPRRequest,
+    request: Request,
+    org_id: str | None = Depends(get_tenant_id),
+):
     """Генерация ППР в DOCX/PDF."""
-    _ = request
+    _ = (request, org_id)
     session_id = payload.session_id or str(uuid.uuid4())
     message = (
         "Сформируй проект производства работ (ППР) на русском языке. "
@@ -710,9 +734,14 @@ async def generate_ppr(payload: PPRRequest, request: Request):
         }
     },
 )
-async def generate_ks(payload: KSRequest, request: Request):
+async def generate_ks(
+    payload: KSRequest,
+    request: Request,
+    org_id: str | None = Depends(get_tenant_id),
+):
     """Генерация КС-2/КС-3 через orchestrator pipeline."""
     _ = request
+    tenant = org_id or "default"
     session_id = payload.session_id or str(uuid.uuid4())
     work_names = ", ".join(item.name for item in payload.work_items)
     message = (
@@ -766,6 +795,7 @@ async def generate_ks(payload: KSRequest, request: Request):
         doc_id=docx_bytes_key,
         doc_type="ks2",
         payload=ks2 if isinstance(ks2, dict) else {},
+        org_id=tenant,
     )
 
     return KSResponse(
@@ -785,9 +815,13 @@ async def generate_ks(payload: KSRequest, request: Request):
     summary="Сметный расчёт по ТСН/ГЭСН",
     description="Выполняет ориентировочный расчёт стоимости и трудозатрат по каталогу расценок.",
 )
-async def generate_estimate(payload: EstimateRequest, request: Request):
+async def generate_estimate(
+    payload: EstimateRequest,
+    request: Request,
+    org_id: str | None = Depends(get_tenant_id),
+):
     """Сметный калькулятор по справочнику расценок с региональным индексом."""
-    _ = request
+    _ = (request, org_id)
     calculator = CalculatorAgent(LLMRouter())
     estimate = calculator._calculate_estimate([item.model_dump() for item in payload.work_items])
     indexed_total_cost = calculator._apply_index(
@@ -854,12 +888,13 @@ def _extract_risks(analysis: str) -> list[str]:
 )
 async def analyze_document(
     request: Request,
+    org_id: str | None = Depends(get_tenant_id),
     file: UploadFile = File(...),
     role: str = Form("tender_specialist"),
     session_id: str | None = Form(None),
 ):
     """Анализ загруженного PDF-документа через orchestrator."""
-    _ = request
+    _ = (request, org_id)
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Supported format: PDF only")
 
@@ -911,10 +946,11 @@ async def analyze_document(
 async def download_tk_docx(
     session_id: str,
     request: Request,
+    org_id: str | None = Depends(get_tenant_id),
     format: Literal["docx", "pdf"] = Query(default="docx"),
 ):
     """Скачать ранее сгенерированный DOCX/PDF по session_id."""
-    _ = request
+    _ = (request, org_id)
     documents = await session_memory.get_session_documents(session_id)
     tk_document = next((doc for doc in documents if doc.get("doc_type") == "tk"), None)
     docx_bytes = tk_document.get("docx_bytes") if tk_document else None
@@ -948,10 +984,11 @@ async def download_tk_docx(
 async def download_ks_docx(
     session_id: str,
     request: Request,
+    org_id: str | None = Depends(get_tenant_id),
     format: Literal["docx", "pdf"] = Query(default="docx"),
 ):
     """Скачать ранее сгенерированный DOCX/PDF КС-2/КС-3 по session_id."""
-    _ = request
+    _ = (request, org_id)
     documents = await session_memory.get_session_documents(session_id)
     ks_document = next((doc for doc in documents if doc.get("doc_type") == "ks"), None)
     docx_bytes = ks_document.get("docx_bytes") if ks_document else None
@@ -982,9 +1019,13 @@ async def download_ks_docx(
 
 
 @router.get("/generate/ks2/{doc_id}/1c-xml")
-async def export_ks2_1c_xml(doc_id: str, request: Request):
+async def export_ks2_1c_xml(
+    doc_id: str,
+    request: Request,
+    org_id: str | None = Depends(get_tenant_id),
+):
     """Экспорт КС-2 в XML-формат для импорта в 1С."""
-    _ = request
+    _ = (request, org_id)
     try:
         xml_bytes = await onec_exporter.export_ks2_to_xml(doc_id=doc_id)
     except ValueError as exc:
@@ -1001,10 +1042,11 @@ async def export_ks2_1c_xml(doc_id: str, request: Request):
 async def export_m29_1c_xml(
     project_id: str,
     request: Request,
+    org_id: str | None = Depends(get_tenant_id),
     period: str = Query(..., description="Период в формате YYYY-MM"),
 ):
     """Экспорт М-29 в XML-формат для импорта в 1С."""
-    _ = request
+    _ = (request, org_id)
     try:
         xml_bytes = await onec_exporter.export_m29_to_xml(project_id=project_id, period=period)
     except ValueError as exc:
@@ -1021,10 +1063,11 @@ async def export_m29_1c_xml(
 async def download_letter_docx(
     session_id: str,
     request: Request,
+    org_id: str | None = Depends(get_tenant_id),
     format: Literal["docx", "pdf"] = Query(default="docx"),
 ):
     """Скачать ранее сгенерированный DOCX/PDF письма по session_id."""
-    _ = request
+    _ = (request, org_id)
     documents = await session_memory.get_session_documents(session_id)
     letter_document = next((doc for doc in documents if doc.get("doc_type") == "letter"), None)
     docx_bytes = letter_document.get("docx_bytes") if letter_document else None
@@ -1060,10 +1103,11 @@ async def download_letter_docx(
 async def download_ppr_docx(
     session_id: str,
     request: Request,
+    org_id: str | None = Depends(get_tenant_id),
     format: Literal["docx", "pdf"] = Query(default="docx"),
 ):
     """Скачать ранее сгенерированный DOCX/PDF ППР по session_id."""
-    _ = request
+    _ = (request, org_id)
     documents = await session_memory.get_session_documents(session_id)
     ppr_document = next((doc for doc in documents if doc.get("doc_type") == "ppr"), None)
     docx_bytes = ppr_document.get("docx_bytes") if ppr_document else None

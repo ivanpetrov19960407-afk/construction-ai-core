@@ -6,12 +6,13 @@ import json
 from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from config.settings import settings
 from core.analytics.schedule_predictor import SchedulePredictor
 from core.cache import RedisCache
+from core.multitenancy import get_tenant_id
 from core.projects import Project, get_projects_sessionmaker
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
@@ -41,7 +42,7 @@ class AnalyticsDashboardResponse(BaseModel):
     forecast: ScheduleAnalyticsResponse
 
 
-def _require_project_access(request: Request, project_id: str) -> None:
+def _require_project_access(request: Request, project_id: str, org_id: str) -> None:
     username = getattr(request.state, "username", None)
     if not username:
         raise HTTPException(status_code=401, detail="Authentication required")
@@ -53,7 +54,7 @@ def _require_project_access(request: Request, project_id: str) -> None:
         raise HTTPException(status_code=404, detail="Project not found") from exc
     with session_local() as session:
         project = session.get(Project, project_uuid)
-        if project is None:
+        if project is None or project.org_id != org_id:
             raise HTTPException(status_code=404, detail="Project not found")
         members = project.members or []
         if username != project.owner_id and username not in members:
@@ -61,9 +62,14 @@ def _require_project_access(request: Request, project_id: str) -> None:
 
 
 @router.get("/schedule/{project_id}", response_model=ScheduleAnalyticsResponse)
-async def get_schedule_analytics(project_id: str, request: Request) -> dict:
+async def get_schedule_analytics(
+    project_id: str,
+    request: Request,
+    org_id: str | None = Depends(get_tenant_id),
+) -> dict:
     """Return project delay stats and completion forecast."""
-    _require_project_access(request, project_id)
+    tenant = org_id or "default"
+    _require_project_access(request, project_id, tenant)
     key = f"analytics:schedule:{project_id}"
     cached = await _cache.get(key)
     if cached is not None:
@@ -79,9 +85,14 @@ async def get_schedule_analytics(project_id: str, request: Request) -> dict:
 
 
 @router.get("/dashboard/{project_id}", response_model=AnalyticsDashboardResponse)
-async def get_analytics_dashboard(project_id: str, request: Request) -> dict:
+async def get_analytics_dashboard(
+    project_id: str,
+    request: Request,
+    org_id: str | None = Depends(get_tenant_id),
+) -> dict:
     """Return dashboard summary by KG sections with schedule forecast."""
-    _require_project_access(request, project_id)
+    tenant = org_id or "default"
+    _require_project_access(request, project_id, tenant)
     key = f"analytics:schedule:{project_id}"
     cached = await _cache.get(key)
     if cached is not None:

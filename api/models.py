@@ -9,6 +9,7 @@ class UserCreate(BaseModel):
     username: str
     password: str
     invite_code: str
+    org_id: str | None = None
 
 
 class UserLogin(BaseModel):

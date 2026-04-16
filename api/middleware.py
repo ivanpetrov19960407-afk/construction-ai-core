@@ -51,6 +51,7 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
             payload = decode_jwt_token(token)
             request.state.username = payload["username"]
             request.state.user_role = payload["role"]
+            request.state.org_id = payload.get("org_id", "default")
             return await call_next(request)
 
         provided_key = request.headers.get("X-API-Key")
