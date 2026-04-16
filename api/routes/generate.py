@@ -210,10 +210,14 @@ def _fetch_approved_exec_docs(project_id: str, section: str, org_id: str) -> lis
         """
     )
     with engine.connect() as conn:
-        rows = conn.execute(
-            query,
-            {"project_id": project_id, "section": section, "org_id": org_id},
-        ).mappings().all()
+        rows = (
+            conn.execute(
+                query,
+                {"project_id": project_id, "section": section, "org_id": org_id},
+            )
+            .mappings()
+            .all()
+        )
     return [dict(row) for row in rows]
 
 

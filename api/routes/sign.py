@@ -62,10 +62,14 @@ def _fetch_exec_doc_for_sign(doc_id: str, doc_type: str, org_id: str) -> dict | 
         """
     )
     with engine.connect() as conn:
-        row = conn.execute(
-            query,
-            {"doc_id": doc_id, "doc_type": doc_type, "org_id": org_id},
-        ).mappings().first()
+        row = (
+            conn.execute(
+                query,
+                {"doc_id": doc_id, "doc_type": doc_type, "org_id": org_id},
+            )
+            .mappings()
+            .first()
+        )
     return dict(row) if row else None
 
 

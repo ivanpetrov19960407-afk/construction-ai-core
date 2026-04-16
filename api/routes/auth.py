@@ -32,9 +32,7 @@ def _ensure_users_table() -> None:
             )
             """
         )
-        columns = {
-            str(row[1]) for row in connection.execute("PRAGMA table_info(users)").fetchall()
-        }
+        columns = {str(row[1]) for row in connection.execute("PRAGMA table_info(users)").fetchall()}
         if "org_id" not in columns:
             connection.execute(
                 "ALTER TABLE users ADD COLUMN org_id TEXT NOT NULL DEFAULT 'default'"
