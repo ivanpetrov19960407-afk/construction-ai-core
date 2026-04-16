@@ -788,4 +788,3 @@ def _format_analyze_response(data: Mapping) -> str:
         f"✅ Рекомендация: {recommendation}\n"
         f"Уверенность: {confidence_pct}%"
     )
-
