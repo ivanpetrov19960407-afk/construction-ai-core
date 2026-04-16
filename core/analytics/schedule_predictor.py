@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+from typing import TypedDict
 
 import aiosqlite
 import structlog
@@ -59,6 +60,11 @@ class SchedulePredictor:
 
     async def calculate_delay_stats(self, history: list) -> dict:
         """Рассчитать статистику задержек по завершённым задачам."""
+        class CriticalSection(TypedDict):
+            section: str
+            avg_delay_days: float
+            delayed_tasks: int
+
         completed = [row for row in history if self._is_closed(row)]
         if not completed:
             return {
@@ -83,15 +89,16 @@ class SchedulePredictor:
         avg_delay = sum(delay_days_list) / len(delay_days_list)
         delay_rate = delayed_count / len(completed)
 
+        critical_sections_unsorted: list[CriticalSection] = [
+            {
+                "section": section,
+                "avg_delay_days": round(sum(values) / len(values), 2),
+                "delayed_tasks": sum(1 for value in values if value > 0),
+            }
+            for section, values in delays_by_section.items()
+        ]
         critical_sections = sorted(
-            (
-                {
-                    "section": section,
-                    "avg_delay_days": round(sum(values) / len(values), 2),
-                    "delayed_tasks": sum(1 for value in values if value > 0),
-                }
-                for section, values in delays_by_section.items()
-            ),
+            critical_sections_unsorted,
             key=lambda item: item["avg_delay_days"],
             reverse=True,
         )[:3]
@@ -126,14 +133,12 @@ class SchedulePredictor:
                 }
             )
 
-        latest_task_date = max(
-            (
-                self._parse_date(task.get("predicted_finish"))
-                for task in adjusted_tasks
-                if task.get("predicted_finish")
-            ),
-            default=None,
-        )
+        predicted_dates: list[dt.date] = []
+        for task in adjusted_tasks:
+            parsed = self._parse_date(task.get("predicted_finish"))
+            if parsed is not None:
+                predicted_dates.append(parsed)
+        latest_task_date = max(predicted_dates, default=None)
         predicted_completion = latest_task_date or dt.date.today()
 
         llm_result = await self._llm_assessment(project_name, stats, adjusted_tasks)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
+from typing import Any
 
 import aiosqlite
 import structlog
@@ -26,7 +27,7 @@ class AnalyticsNotifier:
     def __init__(self) -> None:
         self._logger = structlog.get_logger("core.analytics.notifications")
         self._predictor = SchedulePredictor()
-        self._scheduler = None
+        self._scheduler: Any | None = None
         self._utc = getattr(dt, "UTC", dt.timezone.utc)  # noqa: UP017
 
     async def start(self) -> None:
@@ -35,14 +36,15 @@ class AnalyticsNotifier:
             self._logger.warning("apscheduler_unavailable")
             return
 
-        self._scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
-        self._scheduler.add_job(
+        scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
+        scheduler.add_job(
             self.check_and_notify_projects,
             trigger=CronTrigger(hour=9, minute=0),
             id="analytics_daily_delay_check",
             replace_existing=True,
         )
-        self._scheduler.start()
+        scheduler.start()
+        self._scheduler = scheduler
 
     async def stop(self) -> None:
         if self._scheduler is not None:
