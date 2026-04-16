@@ -26,12 +26,12 @@ def _with_temp_db(tmp_path):
 def test_create_project(tmp_path):
     old_db_path = _with_temp_db(tmp_path)
     try:
-        client = TestClient(app)
-        response = client.post(
-            "/api/projects",
-            json={"name": "ЖК Север", "description": "Фасадные работы", "members": ["petr"]},
-            headers=_auth_headers("ivan"),
-        )
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/projects",
+                json={"name": "ЖК Север", "description": "Фасадные работы", "members": ["petr"]},
+                headers=_auth_headers("ivan"),
+            )
     finally:
         settings.sqlite_db_path = old_db_path
         projects_core._ENGINE_CACHE.clear()
@@ -46,18 +46,18 @@ def test_create_project(tmp_path):
 def test_add_member(tmp_path):
     old_db_path = _with_temp_db(tmp_path)
     try:
-        client = TestClient(app)
-        create = client.post(
-            "/api/projects",
-            json={"name": "Мост", "description": "Бетон", "members": []},
-            headers=_auth_headers("owner"),
-        )
-        project_id = create.json()["id"]
-        add_member = client.post(
-            f"/api/projects/{project_id}/members",
-            json={"member_id": "worker"},
-            headers=_auth_headers("owner"),
-        )
+        with TestClient(app) as client:
+            create = client.post(
+                "/api/projects",
+                json={"name": "Мост", "description": "Бетон", "members": []},
+                headers=_auth_headers("owner"),
+            )
+            project_id = create.json()["id"]
+            add_member = client.post(
+                f"/api/projects/{project_id}/members",
+                json={"member_id": "worker"},
+                headers=_auth_headers("owner"),
+            )
     finally:
         settings.sqlite_db_path = old_db_path
         projects_core._ENGINE_CACHE.clear()
@@ -70,27 +70,27 @@ def test_add_member(tmp_path):
 def test_add_document_to_project(tmp_path):
     old_db_path = _with_temp_db(tmp_path)
     try:
-        client = TestClient(app)
-        create = client.post(
-            "/api/projects",
-            json={"name": "Школа", "description": "Раздел АР", "members": ["member"]},
-            headers=_auth_headers("owner"),
-        )
-        project_id = create.json()["id"]
-        response = client.post(
-            f"/api/projects/{project_id}/documents",
-            json={
-                "document_type": "tk",
-                "session_id": "sess-1",
-                "title": "Технологическая карта",
-                "version": 2,
-            },
-            headers=_auth_headers("member"),
-        )
-        documents = client.get(
-            f"/api/projects/{project_id}/documents",
-            headers=_auth_headers("owner"),
-        )
+        with TestClient(app) as client:
+            create = client.post(
+                "/api/projects",
+                json={"name": "Школа", "description": "Раздел АР", "members": ["member"]},
+                headers=_auth_headers("owner"),
+            )
+            project_id = create.json()["id"]
+            response = client.post(
+                f"/api/projects/{project_id}/documents",
+                json={
+                    "document_type": "tk",
+                    "session_id": "sess-1",
+                    "title": "Технологическая карта",
+                    "version": 2,
+                },
+                headers=_auth_headers("member"),
+            )
+            documents = client.get(
+                f"/api/projects/{project_id}/documents",
+                headers=_auth_headers("owner"),
+            )
     finally:
         settings.sqlite_db_path = old_db_path
         projects_core._ENGINE_CACHE.clear()
@@ -105,33 +105,33 @@ def test_add_document_to_project(tmp_path):
 def test_get_history(tmp_path):
     old_db_path = _with_temp_db(tmp_path)
     try:
-        client = TestClient(app)
-        create = client.post(
-            "/api/projects",
-            json={"name": "БЦ", "description": "Документы", "members": ["member"]},
-            headers=_auth_headers("owner"),
-        )
-        project_id = create.json()["id"]
-        doc = client.post(
-            f"/api/projects/{project_id}/documents",
-            json={
-                "document_type": "letter",
-                "session_id": "sess-history",
-                "title": "Письмо заказчику",
-                "version": 1,
-            },
-            headers=_auth_headers("owner"),
-        )
-        doc_id = doc.json()["id"]
-        comment = client.post(
-            f"/api/projects/{project_id}/documents/{doc_id}/comments",
-            json={"text": "Нужно обновить реквизиты"},
-            headers=_auth_headers("member"),
-        )
-        history = client.get(
-            f"/api/projects/{project_id}/history",
-            headers=_auth_headers("owner"),
-        )
+        with TestClient(app) as client:
+            create = client.post(
+                "/api/projects",
+                json={"name": "БЦ", "description": "Документы", "members": ["member"]},
+                headers=_auth_headers("owner"),
+            )
+            project_id = create.json()["id"]
+            doc = client.post(
+                f"/api/projects/{project_id}/documents",
+                json={
+                    "document_type": "letter",
+                    "session_id": "sess-history",
+                    "title": "Письмо заказчику",
+                    "version": 1,
+                },
+                headers=_auth_headers("owner"),
+            )
+            doc_id = doc.json()["id"]
+            comment = client.post(
+                f"/api/projects/{project_id}/documents/{doc_id}/comments",
+                json={"text": "Нужно обновить реквизиты"},
+                headers=_auth_headers("member"),
+            )
+            history = client.get(
+                f"/api/projects/{project_id}/history",
+                headers=_auth_headers("owner"),
+            )
     finally:
         settings.sqlite_db_path = old_db_path
         projects_core._ENGINE_CACHE.clear()
@@ -151,18 +151,18 @@ def test_query_param_user_id_does_not_authorize(tmp_path):
     old_api_keys = settings.api_keys
     settings.api_keys = ["test-key"]
     try:
-        client = TestClient(app)
-        create = client.post(
-            "/api/projects",
-            json={"name": "Secure", "description": "Auth only", "members": []},
-            headers=_auth_headers("owner"),
-        )
-        project_id = create.json()["id"]
+        with TestClient(app) as client:
+            create = client.post(
+                "/api/projects",
+                json={"name": "Secure", "description": "Auth only", "members": []},
+                headers=_auth_headers("owner"),
+            )
+            project_id = create.json()["id"]
 
-        response = client.get(
-            f"/api/projects/{project_id}?user_id=owner",
-            headers={"X-API-Key": "test-key"},
-        )
+            response = client.get(
+                f"/api/projects/{project_id}?user_id=owner",
+                headers={"X-API-Key": "test-key"},
+            )
     finally:
         settings.sqlite_db_path = old_db_path
         settings.api_keys = old_api_keys

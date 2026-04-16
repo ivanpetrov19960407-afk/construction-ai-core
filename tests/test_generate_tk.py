@@ -11,7 +11,6 @@ from config.settings import settings
 
 def test_generate_tk_happy_path():
     """POST /api/generate/tk возвращает TKResponse при успешной обработке."""
-    client = TestClient(app)
     old_keys = settings.api_keys
     settings.api_keys = ["valid-key"]
     mocked_process = AsyncMock(
@@ -27,18 +26,19 @@ def test_generate_tk_happy_path():
     generate.orchestrator.process = mocked_process
 
     try:
-        response = client.post(
-            "/api/generate/tk",
-            json={
-                "work_type": "бетонирование монолитных конструкций",
-                "object_name": "ЖК Север",
-                "volume": 120.5,
-                "unit": "м³",
-                "norms": ["СП 70.13330", "ГОСТ 7473"],
-                "role": "pto_engineer",
-            },
-            headers={"X-API-Key": "valid-key"},
-        )
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/generate/tk",
+                json={
+                    "work_type": "бетонирование монолитных конструкций",
+                    "object_name": "ЖК Север",
+                    "volume": 120.5,
+                    "unit": "м³",
+                    "norms": ["СП 70.13330", "ГОСТ 7473"],
+                    "role": "pto_engineer",
+                },
+                headers={"X-API-Key": "valid-key"},
+            )
     finally:
         settings.api_keys = old_keys
 
@@ -56,21 +56,21 @@ def test_generate_tk_happy_path():
 
 def test_generate_tk_validation_error():
     """POST /api/generate/tk должен вернуть 422 при невалидных данных."""
-    client = TestClient(app)
     old_keys = settings.api_keys
     settings.api_keys = ["valid-key"]
 
     try:
-        response = client.post(
-            "/api/generate/tk",
-            json={
-                "work_type": "бетон",
-                "object_name": "ЖК Север",
-                "volume": 0,
-                "unit": "литр",
-            },
-            headers={"X-API-Key": "valid-key"},
-        )
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/generate/tk",
+                json={
+                    "work_type": "бетон",
+                    "object_name": "ЖК Север",
+                    "volume": 0,
+                    "unit": "литр",
+                },
+                headers={"X-API-Key": "valid-key"},
+            )
     finally:
         settings.api_keys = old_keys
 

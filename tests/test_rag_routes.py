@@ -53,15 +53,15 @@ def test_rag_ingest_pdf_success(monkeypatch):
     monkeypatch.setattr(rag_routes.pdf_parser, "parse", _fake_parse)
 
     try:
-        client = TestClient(app)
-        response = client.post(
-            "/api/rag/ingest",
-            files={
-                "file": ("sp_48.pdf", b"%PDF-1.4 fake", "application/pdf"),
-                "source_name": (None, "sp_48.pdf"),
-            },
-            headers={"X-API-Key": "admin-key"},
-        )
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/rag/ingest",
+                files={
+                    "file": ("sp_48.pdf", b"%PDF-1.4 fake", "application/pdf"),
+                    "source_name": (None, "sp_48.pdf"),
+                },
+                headers={"X-API-Key": "admin-key"},
+            )
     finally:
         settings.api_keys = old_api_keys
         settings.admin_api_keys = old_admin_keys
@@ -80,15 +80,15 @@ def test_rag_sources_requires_admin_and_returns_counts(monkeypatch):
     monkeypatch.setattr(rag_routes, "get_rag_engine", lambda: _DummyRAGEngine())
 
     try:
-        client = TestClient(app)
-        forbidden = client.get(
-            "/api/rag/sources",
-            headers={"X-API-Key": "valid-key"},
-        )
-        ok = client.get(
-            "/api/rag/sources",
-            headers={"X-API-Key": "admin-key"},
-        )
+        with TestClient(app) as client:
+            forbidden = client.get(
+                "/api/rag/sources",
+                headers={"X-API-Key": "valid-key"},
+            )
+            ok = client.get(
+                "/api/rag/sources",
+                headers={"X-API-Key": "admin-key"},
+            )
     finally:
         settings.api_keys = old_api_keys
         settings.admin_api_keys = old_admin_keys
@@ -115,11 +115,11 @@ def test_rag_sources_allows_admin_jwt(monkeypatch):
 
     admin_token = _create_token("admin-user", "admin")
     try:
-        client = TestClient(app)
-        response = client.get(
-            "/api/rag/sources",
-            headers={"Authorization": f"Bearer {admin_token}"},
-        )
+        with TestClient(app) as client:
+            response = client.get(
+                "/api/rag/sources",
+                headers={"Authorization": f"Bearer {admin_token}"},
+            )
     finally:
         settings.api_keys = old_api_keys
         settings.admin_api_keys = old_admin_keys
