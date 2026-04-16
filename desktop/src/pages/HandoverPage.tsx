@@ -15,7 +15,7 @@ interface ProjectInfo {
   is_state_contract?: boolean;
 }
 
-const sectionOrder = ['AR', 'KZH', 'KM', 'OV', 'VK', 'EM'];
+const sectionOrder = ['AR', 'KZH', 'KM', 'OV', 'VK', 'EM', 'SS', 'APS', 'PS'];
 const signableDocTypes = new Set(['aosr', 'ks2', 'ks3']);
 
 function normalizeForecast(payload: Partial<ScheduleForecast>): ScheduleForecast {
@@ -37,6 +37,8 @@ export default function HandoverPage() {
   const [project, setProject] = useState<ProjectInfo | null>(null);
   const [documents, setDocuments] = useState<ProjectDocument[]>([]);
   const [signedDocIds, setSignedDocIds] = useState<string[]>([]);
+  const [ks2DocId, setKs2DocId] = useState('');
+  const [m29Period, setM29Period] = useState('');
   const [batchProgress, setBatchProgress] = useState<{ signed: number; total: number } | null>(null);
   const [batchLoading, setBatchLoading] = useState(false);
   const [error, setError] = useState('');
@@ -252,6 +254,44 @@ export default function HandoverPage() {
     }
   };
 
+  const handleExportKs2Xml = async () => {
+    const { apiUrl, apiKey } = await getApiConfig();
+    const response = await fetch(
+      `${apiUrl.replace(/\/$/, '')}/api/generate/ks2/${encodeURIComponent(ks2DocId)}/1c-xml`,
+      { headers: { 'X-API-Key': apiKey } }
+    );
+    if (!response.ok) {
+      setError(`Ошибка экспорта КС-2: ${response.status}`);
+      return;
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `ks2_${ks2DocId}.xml`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportM29Xml = async () => {
+    const { apiUrl, apiKey } = await getApiConfig();
+    const response = await fetch(
+      `${apiUrl.replace(/\/$/, '')}/api/generate/m29/${encodeURIComponent(projectId)}/1c-xml?period=${encodeURIComponent(m29Period)}`,
+      { headers: { 'X-API-Key': apiKey } }
+    );
+    if (!response.ok) {
+      setError(`Ошибка экспорта М-29: ${response.status}`);
+      return;
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `m29_${projectId}_${m29Period}.xml`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   const checklistSections = useMemo<GSNSectionStatus[]>(() => {
     if (!checklist) {
       return [];
@@ -266,6 +306,8 @@ export default function HandoverPage() {
     if (level === 'medium') return { text: 'средний', color: '#d97706' };
     return { text: 'низкий', color: '#16a34a' };
   };
+
+  const signedCount = documents.filter((doc) => signedDocIds.includes(doc.id) || doc.status === 'signed').length;
 
   return (
     <section style={{ display: 'grid', gap: 12 }}>
@@ -349,6 +391,9 @@ export default function HandoverPage() {
             content: (
               <section style={{ display: 'grid', gap: 10 }}>
                 {batchProgress && <p style={{ margin: 0 }}>Подписано {batchProgress.signed} / {batchProgress.total}</p>}
+                <p style={{ margin: 0 }}>
+                  Подписано: <strong>{signedCount} / {documents.length}</strong>
+                </p>
                 {documents.map((doc) => {
                   const status: SignStatus = signedDocIds.includes(doc.id) ? 'signed' : doc.status ?? 'approved';
                   const icon = status === 'signed' ? '✅' : status === 'approved' ? '🟡' : '📝';
@@ -379,6 +424,44 @@ export default function HandoverPage() {
                   );
                 })}
                 {!documents.length && <p>Нет документов со статусом «утверждён».</p>}
+              </section>
+            )
+          },
+          {
+            key: 'export1c',
+            title: 'Экспорт в 1С',
+            content: (
+              <section style={{ display: 'grid', gap: 12 }}>
+                <article style={{ border: '1px solid #33415555', borderRadius: 12, padding: 12 }}>
+                  <strong>КС-2 в XML для 1С</strong>
+                  <p style={{ margin: '8px 0' }}>Экспорт акта выполненных работ в формат 1С</p>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <input
+                      placeholder="ID документа КС-2"
+                      value={ks2DocId}
+                      onChange={(event) => setKs2DocId(event.target.value)}
+                      style={{ flex: 1, minWidth: 200 }}
+                    />
+                    <button type="button" onClick={handleExportKs2Xml}>
+                      Скачать КС-2 XML
+                    </button>
+                  </div>
+                </article>
+                <article style={{ border: '1px solid #33415555', borderRadius: 12, padding: 12 }}>
+                  <strong>М-29 в XML для 1С</strong>
+                  <p style={{ margin: '8px 0' }}>Ведомость списания материалов</p>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <input
+                      placeholder="Период (YYYY-MM)"
+                      value={m29Period}
+                      onChange={(event) => setM29Period(event.target.value)}
+                      style={{ flex: 1, minWidth: 140 }}
+                    />
+                    <button type="button" onClick={handleExportM29Xml}>
+                      Скачать М-29 XML
+                    </button>
+                  </div>
+                </article>
               </section>
             )
           },
