@@ -115,10 +115,14 @@ class OneCExporter:
         )
         engine = create_engine(settings.database_url, future=True)
         with engine.connect() as conn:
-            rows = conn.execute(
-                query,
-                {"project_id": project_id, "period": period},
-            ).mappings().all()
+            rows = (
+                conn.execute(
+                    query,
+                    {"project_id": project_id, "period": period},
+                )
+                .mappings()
+                .all()
+            )
         return [dict(row) for row in rows]
 
     async def _fetch_material_passports(self, project_id: str) -> list[dict]:
