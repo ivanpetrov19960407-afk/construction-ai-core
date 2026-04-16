@@ -1,10 +1,6 @@
 import { useEffect, useState } from 'react';
 import Sidebar from './components/Sidebar';
-import ChatPage from './pages/ChatPage';
-import GenerateKSPage from './pages/GenerateKSPage';
-import GenerateLetterPage from './pages/GenerateLetterPage';
-import GenerateTKPage from './pages/GenerateTKPage';
-import SettingsPage from './pages/SettingsPage';
+import { resolveRoute } from './router';
 
 const normalizePath = (path: string) => path.replace(/\/$/, '') || '/';
 
@@ -27,28 +23,6 @@ export default function App() {
     setCurrentPath(nextPath);
   };
 
-  const renderPage = () => {
-    switch (currentPath) {
-      case '/':
-        return <ChatPage />;
-      case '/settings':
-        return <SettingsPage />;
-      case '/generate/tk':
-        return <GenerateTKPage />;
-      case '/generate/letter':
-        return <GenerateLetterPage />;
-      case '/generate/ks':
-        return <GenerateKSPage />;
-      default:
-        return (
-          <section>
-            <h2>Страница не найдена</h2>
-            <button onClick={() => navigate('/')}>На главную</button>
-          </section>
-        );
-    }
-  };
-
   return (
     <main
       style={{
@@ -60,7 +34,7 @@ export default function App() {
       }}
     >
       <Sidebar currentPath={currentPath} onNavigate={navigate} />
-      <section style={{ flex: 1 }}>{renderPage()}</section>
+      <section style={{ flex: 1 }}>{resolveRoute(currentPath, () => navigate('/'))}</section>
     </main>
   );
 }
