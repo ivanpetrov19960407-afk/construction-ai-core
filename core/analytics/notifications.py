@@ -53,7 +53,8 @@ class AnalyticsNotifier:
     async def check_and_notify_projects(self) -> None:
         """Check projects with high delay_rate and send Telegram notifications."""
         project_ids = await self._get_all_project_ids()
-        if not project_ids or not settings.bot_token or not settings.admin_telegram_ids:
+        target_chat_ids = settings.pto_engineer_telegram_ids or settings.admin_telegram_ids
+        if not project_ids or not settings.bot_token or not target_chat_ids:
             return
 
         bot = Bot(token=settings.bot_token)
@@ -75,7 +76,7 @@ class AnalyticsNotifier:
                     f"Прогноз завершения: {prediction.get('predicted_completion')}\n"
                     f"Проверка: {now}"
                 )
-                for chat_id in settings.admin_telegram_ids:
+                for chat_id in target_chat_ids:
                     await bot.send_message(chat_id=chat_id, text=message)
         finally:
             await bot.session.close()
