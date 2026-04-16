@@ -103,15 +103,19 @@ async def list_isup_submissions(project_id: str) -> dict:
     """Список отправок в ИСУП по проекту для polling из фронтенда."""
     engine = create_engine(settings.database_url, future=True)
     with engine.connect() as conn:
-        rows = conn.execute(
-            text(
-                """
+        rows = (
+            conn.execute(
+                text(
+                    """
                 SELECT submission_id, doc_id, status, submitted_at
                 FROM isup_submissions
                 WHERE project_id = :pid
                 ORDER BY submitted_at DESC
                 """
-            ),
-            {"pid": project_id},
-        ).mappings().all()
+                ),
+                {"pid": project_id},
+            )
+            .mappings()
+            .all()
+        )
     return {"submissions": [dict(row) for row in rows]}
