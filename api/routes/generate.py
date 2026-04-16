@@ -219,7 +219,7 @@ def _render_exec_album_pdf(project_id: str, section: str, docs: list[dict]) -> b
     docs_html = "\n".join(
         (
             f"<li><strong>Документ #{index}</strong>: "
-            f"<a href=\"{doc['pdf_url']}\">{doc['pdf_url']}</a>"
+            f'<a href="{doc["pdf_url"]}">{doc["pdf_url"]}</a>'
             f" <span>(created_at: {doc.get('created_at', '-')})</span></li>"
         )
         for index, doc in enumerate(docs, start=1)
@@ -281,16 +281,22 @@ async def generate_exec_album(payload: AlbumRequest, request: Request):
     if payload.section not in EXEC_ALBUM_SECTIONS:
         raise HTTPException(status_code=422, detail="Invalid section")
 
-    docs = _fetch_approved_exec_docs(project_id=payload.project_id, section=payload.section)
+    docs = await asyncio.to_thread(
+        _fetch_approved_exec_docs,
+        project_id=payload.project_id,
+        section=payload.section,
+    )
     if not docs:
         raise HTTPException(status_code=404, detail="Approved executive docs not found")
 
-    pdf_bytes = _render_exec_album_pdf(
+    pdf_bytes = await asyncio.to_thread(
+        _render_exec_album_pdf,
         project_id=payload.project_id,
         section=payload.section,
         docs=docs,
     )
-    presigned_url = _upload_album_bytes(
+    presigned_url = await asyncio.to_thread(
+        _upload_album_bytes,
         project_id=payload.project_id,
         section=payload.section,
         pdf_bytes=pdf_bytes,
