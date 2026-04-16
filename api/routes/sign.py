@@ -8,11 +8,12 @@ from datetime import datetime
 from urllib.parse import urlparse
 
 import httpx
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import create_engine, text
 
 from config.settings import settings
+from core.integrations.isup import submit_document_if_state_contract
 
 router = APIRouter()
 
@@ -189,7 +190,11 @@ def _resolve_download_url(locator: str) -> str:
 
 
 @router.post("/sign/document")
-async def sign_document(payload: SignDocumentRequest, request: Request):
+async def sign_document(
+    payload: SignDocumentRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
+):
     """Подписать PDF документа через КриптоПро REST API."""
     _ = request
     if payload.doc_type not in _ALLOWED_DOC_TYPES:
@@ -249,6 +254,7 @@ async def sign_document(payload: SignDocumentRequest, request: Request):
         payload.user_id,
         sig_key,
     )
+    background_tasks.add_task(submit_document_if_state_contract, payload.doc_id)
 
     signed_url = await asyncio.to_thread(_presign_object_key, signed_key)
     sig_url = await asyncio.to_thread(_presign_object_key, sig_key)

@@ -56,6 +56,12 @@ class Settings(BaseSettings):
     cryptopro_api_key: str = ""
     cryptopro_cert_thumbprint: str = ""
 
+    # ── ISUP Минстроя ─────────────────────────
+    isup_api_url: str = ""
+    isup_client_id: str = ""
+    isup_client_secret: str = ""
+    isup_enabled: bool = False
+
     # ── Telegram ───────────────────────────────
     bot_token: str = ""
     core_api_url: str = "http://api:8000"
