@@ -234,14 +234,10 @@ class SchedulePredictor:
                 return fallback
             fallback_risks_candidate = fallback.get("risks")
             fallback_risks_raw = (
-                fallback_risks_candidate
-                if isinstance(fallback_risks_candidate, list)
-                else []
+                fallback_risks_candidate if isinstance(fallback_risks_candidate, list) else []
             )
             fallback_risks: list[dict[str, str]] = [
-                risk
-                for risk in fallback_risks_raw
-                if isinstance(risk, dict)
+                risk for risk in fallback_risks_raw if isinstance(risk, dict)
             ]
             raw_risks = parsed.get("risks", fallback_risks)
             normalized_risks: list[dict[str, str]] = []
