@@ -145,12 +145,14 @@ class SchedulePredictor:
         llm_result = (
             await self._llm_assessment(project_name, stats, adjusted_tasks)
             if include_llm
-            else {"risks": [], "recommendations": []}
+            else {"risks": [], "recommendations": [], "predicted_completion": None}
         )
+        llm_predicted_completion = self._parse_date(llm_result.get("predicted_completion"))
+        final_predicted_completion = llm_predicted_completion or predicted_completion
         return {
             "avg_delay_days": float(stats["avg_delay_days"]),
             "delay_rate": float(stats["delay_rate"]),
-            "predicted_completion": predicted_completion.isoformat(),
+            "predicted_completion": final_predicted_completion.isoformat(),
             "risks": llm_result.get("risks", []),
             "recommendations": llm_result.get("recommendations", []),
             "critical_sections": stats["critical_sections"],
@@ -206,6 +208,7 @@ class SchedulePredictor:
             "Дай прогноз завершения, топ-3 риска, рекомендации. Ответ JSON."
         )
         fallback = {
+            "predicted_completion": None,
             "risks": [
                 {
                     "section": "general",
@@ -229,8 +232,33 @@ class SchedulePredictor:
             parsed = self._parse_json_object(response.text)
             if parsed is None:
                 return fallback
+            fallback_risks_candidate = fallback.get("risks")
+            fallback_risks_raw = (
+                fallback_risks_candidate if isinstance(fallback_risks_candidate, list) else []
+            )
+            fallback_risks: list[dict[str, str]] = [
+                risk for risk in fallback_risks_raw if isinstance(risk, dict)
+            ]
+            raw_risks = parsed.get("risks", fallback_risks)
+            normalized_risks: list[dict[str, str]] = []
+            for risk in raw_risks if isinstance(raw_risks, list) else []:
+                if not isinstance(risk, dict):
+                    continue
+                severity = str(risk.get("severity", "medium")).lower()
+                if severity not in {"high", "medium", "low"}:
+                    severity = "medium"
+                normalized_risks.append(
+                    {
+                        "section": str(risk.get("section", "general")),
+                        "description": str(risk.get("description", "")),
+                        "severity": severity,
+                    },
+                )
+            if not normalized_risks:
+                normalized_risks = fallback_risks
             return {
-                "risks": parsed.get("risks", fallback["risks"]),
+                "predicted_completion": parsed.get("predicted_completion"),
+                "risks": normalized_risks,
                 "recommendations": parsed.get("recommendations", fallback["recommendations"]),
             }
         except Exception as exc:  # noqa: BLE001
