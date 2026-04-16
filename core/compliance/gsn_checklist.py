@@ -6,7 +6,7 @@ from collections.abc import Iterable
 from uuid import UUID
 
 from config.settings import settings
-from core.projects import ProjectDocument, get_projects_sessionmaker
+from core.projects import Project, ProjectDocument, get_projects_sessionmaker
 
 # Требования Приказа №522-пр по каждому разделу
 GSN_REQUIREMENTS = {
@@ -81,13 +81,15 @@ class GSNReadinessChecker:
     """Check project document readiness for GSN handover checklist."""
 
     def __init__(self) -> None:
-        self._sessionmaker = get_projects_sessionmaker(settings.sqlite_db_path)
+        self.db_path = settings.sqlite_db_path
+        self._sessionmaker = get_projects_sessionmaker(self.db_path)
 
     def _list_section_documents(self, project_id: str, section: str) -> list[ProjectDocument]:
+        project_uuid = UUID(project_id)
         with self._sessionmaker() as session:
             project_docs = (
                 session.query(ProjectDocument)
-                .filter(ProjectDocument.project_id == UUID(project_id))
+                .filter(ProjectDocument.project_id == project_uuid)
                 .order_by(ProjectDocument.created_at.asc())
                 .all()
             )
@@ -121,6 +123,19 @@ class GSNReadinessChecker:
         ready_count = len(list(present))
         return round((ready_count / total_required) * 100, 2)
 
+    def _ensure_project_exists(self, project_id: str) -> None:
+        project_uuid = UUID(project_id)
+        with self._sessionmaker() as session:
+            project_exists = session.query(ProjectDocument.project_id).filter(
+                ProjectDocument.project_id == project_uuid,
+            ).first()
+            if project_exists is not None:
+                return
+
+            project = session.get(Project, project_uuid)
+            if project is None:
+                raise LookupError("Project not found")
+
     async def check_section(self, project_id: str, section: str) -> dict:
         """
         Сверить наличие АОСР, журналов, исп. схем, паспортов с GSN_REQUIREMENTS.
@@ -130,6 +145,7 @@ class GSNReadinessChecker:
         if requirements is None:
             raise ValueError(f"Unsupported section: {section}")
 
+        self._ensure_project_exists(project_id=project_id)
         docs = self._list_section_documents(project_id=project_id, section=normalized_section)
 
         missing: list[dict[str, str]] = []

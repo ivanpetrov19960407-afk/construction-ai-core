@@ -3,16 +3,20 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
+import datetime as dt
 from pathlib import Path
+from uuid import UUID
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
 
+from config.settings import settings
 from core.compliance.gsn_checklist import GSNReadinessChecker
+from core.projects import Project, get_projects_sessionmaker
 
 router = APIRouter(prefix="/compliance", tags=["compliance"])
 checker = GSNReadinessChecker()
+UTC = getattr(dt, "UTC", dt.timezone(dt.timedelta(0)))
 
 
 def _build_section_row(section_result: dict) -> str:
@@ -34,9 +38,10 @@ def _build_section_row(section_result: dict) -> str:
 def _render_gsn_report_html(project_id: str, checklist: dict) -> str:
     template = Path("templates/gsn_checklist.html").read_text(encoding="utf-8")
     rows = "\n".join(_build_section_row(item) for item in checklist["sections"])
+    generated_at = dt.datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
     return (
         template.replace("{{ project_id }}", project_id)
-        .replace("{{ generated_at }}", datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC"))
+        .replace("{{ generated_at }}", generated_at)
         .replace("{{ total_completion_pct }}", str(checklist["completion_pct"]))
         .replace("{{ section_rows }}", rows)
     )
@@ -50,23 +55,42 @@ def _render_pdf_from_html(html: str) -> bytes:
     return HTML(string=html, base_url=str(Path.cwd())).write_pdf()
 
 
+def _require_project_member(request: Request, project_id: UUID) -> None:
+    username = getattr(request.state, "username", None)
+    if not username:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    session_local = get_projects_sessionmaker(settings.sqlite_db_path)
+    with session_local() as session:
+        project = session.get(Project, project_id)
+        if project is None:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        members = project.members or []
+        if username != project.owner_id and username not in members:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+
 @router.get("/gsn-checklist/{project_id}")
-async def get_gsn_checklist(project_id: str) -> dict:
-    return await checker.check_full_project(project_id=project_id)
+async def get_gsn_checklist(project_id: UUID, request: Request) -> dict:
+    _require_project_member(request=request, project_id=project_id)
+    return await checker.check_full_project(project_id=str(project_id))
 
 
 @router.get("/gsn-checklist/{project_id}/section/{section}")
-async def get_gsn_checklist_section(project_id: str, section: str) -> dict:
+async def get_gsn_checklist_section(project_id: UUID, section: str, request: Request) -> dict:
+    _require_project_member(request=request, project_id=project_id)
     try:
-        return await checker.check_section(project_id=project_id, section=section)
+        return await checker.check_section(project_id=str(project_id), section=section)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post("/gsn-report/{project_id}")
-async def generate_gsn_report(project_id: str) -> Response:
-    checklist = await checker.check_full_project(project_id=project_id)
-    html = _render_gsn_report_html(project_id=project_id, checklist=checklist)
+async def generate_gsn_report(project_id: UUID, request: Request) -> Response:
+    _require_project_member(request=request, project_id=project_id)
+    checklist = await checker.check_full_project(project_id=str(project_id))
+    html = _render_gsn_report_html(project_id=str(project_id), checklist=checklist)
     try:
         pdf_bytes = await asyncio.to_thread(_render_pdf_from_html, html)
     except RuntimeError as exc:
