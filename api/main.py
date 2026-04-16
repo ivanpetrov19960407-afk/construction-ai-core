@@ -21,7 +21,19 @@ from api.middleware import (
     rate_limit_exceeded_handler,
     setup_rate_limiter,
 )
-from api.routes import analytics, auth, chat, compliance, generate, health, isup, projects, rag, sign, web
+from api.routes import (
+    analytics,
+    auth,
+    chat,
+    compliance,
+    generate,
+    health,
+    isup,
+    projects,
+    rag,
+    sign,
+    web,
+)
 from api.routes.analyze import router as analyze_router
 from config.settings import settings
 from core.analytics.notifications import AnalyticsNotifier

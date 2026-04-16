@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from api.main import app
 from api.routes import compliance
 from config.settings import settings
-from core.compliance.gsn_checklist import GSNReadinessChecker, GSN_REQUIREMENTS
+from core.compliance.gsn_checklist import GSN_REQUIREMENTS, GSNReadinessChecker
 from core.projects import Project, ProjectDocument, get_projects_sessionmaker
 
 
@@ -65,7 +65,11 @@ def test_gsn_checklist_complete(tmp_path):
     old_db_path = settings.sqlite_db_path
     settings.sqlite_db_path = str(tmp_path / "compliance_complete.db")
     try:
-        project_id = _seed_project_docs(settings.sqlite_db_path, section="KZH", include_journals=True)
+        project_id = _seed_project_docs(
+            settings.sqlite_db_path,
+            section="KZH",
+            include_journals=True,
+        )
         checker = GSNReadinessChecker()
         result = asyncio.run(checker.check_section(project_id=project_id, section="KZH"))
     finally:
@@ -80,14 +84,20 @@ def test_gsn_checklist_missing(tmp_path):
     old_db_path = settings.sqlite_db_path
     settings.sqlite_db_path = str(tmp_path / "compliance_missing.db")
     try:
-        project_id = _seed_project_docs(settings.sqlite_db_path, section="KZH", include_journals=False)
+        project_id = _seed_project_docs(
+            settings.sqlite_db_path,
+            section="KZH",
+            include_journals=False,
+        )
         checker = GSNReadinessChecker()
         result = asyncio.run(checker.check_section(project_id=project_id, section="KZH"))
     finally:
         settings.sqlite_db_path = old_db_path
 
     assert result["ready"] is False
-    missing_journal_names = {item["name"] for item in result["missing"] if item["type"] == "journal"}
+    missing_journal_names = {
+        item["name"] for item in result["missing"] if item["type"] == "journal"
+    }
     assert missing_journal_names == set(GSN_REQUIREMENTS["KZH"]["required_journals"])
 
 
@@ -97,7 +107,11 @@ def test_gsn_report_pdf(tmp_path, monkeypatch):
     settings.sqlite_db_path = str(tmp_path / "compliance_api.db")
     settings.api_keys = ["valid-key"]
 
-    project_id = _seed_project_docs(settings.sqlite_db_path, section="KZH", include_journals=True)
+    project_id = _seed_project_docs(
+        settings.sqlite_db_path,
+        section="KZH",
+        include_journals=True,
+    )
 
     monkeypatch.setattr(compliance, "checker", GSNReadinessChecker())
     monkeypatch.setattr(compliance, "_render_pdf_from_html", lambda _html: b"%PDF-1.4\nmock")

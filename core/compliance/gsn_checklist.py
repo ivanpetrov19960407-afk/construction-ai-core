@@ -32,13 +32,21 @@ GSN_REQUIREMENTS = {
         "required_acts": ["прокладка кабельных линий", "монтаж щитов", "пусконаладка"],
         "required_journals": ["журнал электромонтажных работ", "журнал испытаний ЭМ"],
         "required_schemes": ["исполнительные схемы кабельных трасс", "однолинейные схемы"],
-        "required_passports": ["кабельная продукция", "щитовое оборудование", "протоколы измерений"],
+        "required_passports": [
+            "кабельная продукция",
+            "щитовое оборудование",
+            "протоколы измерений",
+        ],
     },
     "AR": {
         "required_acts": ["кирпичная кладка", "монтаж перегородок", "отделочные работы"],
         "required_journals": ["общий журнал работ", "журнал отделочных работ"],
         "required_schemes": ["исполнительные схемы этажей", "планы фактических отметок"],
-        "required_passports": ["строительные смеси", "листовые материалы", "сертификаты соответствия"],
+        "required_passports": [
+            "строительные смеси",
+            "листовые материалы",
+            "сертификаты соответствия",
+        ],
     },
     "SS": {
         "required_acts": ["монтаж кабельных линий", "монтаж оборудования", "пусконаладка"],
@@ -155,7 +163,10 @@ class GSNReadinessChecker:
 
         avg_completion = 0.0
         if sections:
-            avg_completion = round(sum(item["completion_pct"] for item in sections) / len(sections), 2)
+            avg_completion = round(
+                sum(item["completion_pct"] for item in sections) / len(sections),
+                2,
+            )
 
         return {
             "project_id": project_id,
