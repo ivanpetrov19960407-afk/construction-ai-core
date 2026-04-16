@@ -1,6 +1,7 @@
 """Generate endpoints — генерация документов."""
 
 import asyncio
+import json
 import re
 import tempfile
 import uuid
@@ -11,13 +12,14 @@ from typing import Literal
 
 import structlog
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import create_engine, text
 
 from agents.calculator import CalculatorAgent
 from config.settings import settings
 from core.cache import RedisCache
+from core.export.onec_exporter import OneCExporter
 from core.llm_router import LLMRouter
 from core.orchestrator import Orchestrator
 from core.pdf_exporter import PDFExporter
@@ -28,6 +30,7 @@ orchestrator = Orchestrator()
 session_memory = orchestrator.session_memory
 pdf_parser = PDFParser()
 pdf_exporter = PDFExporter()
+onec_exporter = OneCExporter()
 redis_cache = RedisCache(settings.redis_url)
 logger = structlog.get_logger("api.generate")
 
@@ -268,6 +271,42 @@ def _upload_album_bytes(project_id: str, section: str, pdf_bytes: bytes) -> str:
             ExpiresIn=3600,
         )
     )
+
+
+def _upsert_generated_doc(doc_id: str, doc_type: str, payload: dict) -> None:
+    """Сохранить структурированные данные документа в generated_docs."""
+    engine = create_engine(settings.database_url, future=True)
+    create_table_query = text(
+        """
+        CREATE TABLE IF NOT EXISTS generated_docs (
+            id TEXT NOT NULL,
+            type TEXT NOT NULL,
+            payload TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id, type)
+        )
+        """
+    )
+    upsert_query = text(
+        """
+        INSERT INTO generated_docs (id, type, payload, created_at, updated_at)
+        VALUES (:id, :type, :payload, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ON CONFLICT(id, type) DO UPDATE SET
+            payload = excluded.payload,
+            updated_at = CURRENT_TIMESTAMP
+        """
+    )
+    with engine.begin() as conn:
+        conn.execute(create_table_query)
+        conn.execute(
+            upsert_query,
+            {
+                "id": doc_id,
+                "type": doc_type,
+                "payload": json.dumps(payload, ensure_ascii=False),
+            },
+        )
 
 
 @router.post(
@@ -722,6 +761,12 @@ async def generate_ks(payload: KSRequest, request: Request):
             docx_bytes=docx_bytes,
             sha256=sha256,
         )
+    await asyncio.to_thread(
+        _upsert_generated_doc,
+        doc_id=docx_bytes_key,
+        doc_type="ks2",
+        payload=ks2 if isinstance(ks2, dict) else {},
+    )
 
     return KSResponse(
         session_id=result["session_id"],
@@ -933,6 +978,42 @@ async def download_ks_docx(
             if format == "pdf"
             else (ks_document.get("filename") if ks_document else f"ks_{session_id}.docx")
         ),
+    )
+
+
+@router.get("/generate/ks2/{doc_id}/1c-xml")
+async def export_ks2_1c_xml(doc_id: str, request: Request):
+    """Экспорт КС-2 в XML-формат для импорта в 1С."""
+    _ = request
+    try:
+        xml_bytes = await onec_exporter.export_ks2_to_xml(doc_id=doc_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    return Response(
+        content=xml_bytes,
+        media_type="application/xml",
+        headers={"Content-Disposition": f'attachment; filename="ks2_{doc_id}.xml"'},
+    )
+
+
+@router.get("/generate/m29/{project_id}/1c-xml")
+async def export_m29_1c_xml(
+    project_id: str,
+    request: Request,
+    period: str = Query(..., description="Период в формате YYYY-MM"),
+):
+    """Экспорт М-29 в XML-формат для импорта в 1С."""
+    _ = request
+    try:
+        xml_bytes = await onec_exporter.export_m29_to_xml(project_id=project_id, period=period)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return Response(
+        content=xml_bytes,
+        media_type="application/xml",
+        headers={"Content-Disposition": f'attachment; filename="m29_{project_id}_{period}.xml"'},
     )
 
 

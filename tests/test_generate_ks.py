@@ -86,6 +86,15 @@ def test_generate_ks_endpoint_forces_intent_generate_ks():
         }
     )
     generate.orchestrator.process = mocked_process
+    captured_upsert: dict[str, object] = {}
+
+    def _mock_upsert_generated_doc(doc_id: str, doc_type: str, payload: dict) -> None:
+        captured_upsert["doc_id"] = doc_id
+        captured_upsert["doc_type"] = doc_type
+        captured_upsert["payload"] = payload
+
+    original_upsert = generate._upsert_generated_doc
+    generate._upsert_generated_doc = _mock_upsert_generated_doc
 
     try:
         with TestClient(app) as client:
@@ -109,6 +118,7 @@ def test_generate_ks_endpoint_forces_intent_generate_ks():
                 headers={"X-API-Key": "valid-key"},
             )
     finally:
+        generate._upsert_generated_doc = original_upsert
         settings.api_keys = old_keys
 
     assert response.status_code == 200
@@ -118,3 +128,6 @@ def test_generate_ks_endpoint_forces_intent_generate_ks():
 
     mocked_process.assert_awaited_once()
     assert mocked_process.await_args.kwargs["intent"] == "generate_ks"
+    assert captured_upsert["doc_id"] == mocked_process.await_args.kwargs["session_id"]
+    assert captured_upsert["doc_type"] == "ks2"
+    assert captured_upsert["payload"]["total_cost"] == 60.0
