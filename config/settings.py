@@ -43,6 +43,19 @@ class Settings(BaseSettings):
     # ── Redis (серверный деплой) ────────────────
     redis_url: str = "redis://redis:6379"
 
+    # ── S3 / MinIO ─────────────────────────────
+    s3_endpoint_url: str = ""
+    s3_access_key: str = ""
+    s3_secret_key: str = ""
+    s3_region: str = "us-east-1"
+    s3_bucket_albums: str = "albums"
+    s3_use_ssl: bool = False
+
+    # ── CryptoPro REST ─────────────────────────
+    cryptopro_rest_url: str = ""
+    cryptopro_api_key: str = ""
+    cryptopro_cert_thumbprint: str = ""
+
     # ── Telegram ───────────────────────────────
     bot_token: str = ""
     core_api_url: str = "http://api:8000"

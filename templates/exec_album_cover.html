@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <title>Исполнительный альбом</title>
+    <style>
+      @page { size: A4; margin: 20mm; }
+      body { font-family: Arial, sans-serif; color: #111; font-size: 12pt; }
+      h1, h2 { margin: 0 0 12px; }
+      .meta { margin-bottom: 16px; }
+      .meta p { margin: 4px 0; }
+      .docs li { margin-bottom: 8px; line-height: 1.4; }
+    </style>
+  </head>
+  <body>
+    <h1>Исполнительный альбом</h1>
+    <div class="meta">
+      <p><strong>Проект:</strong> {{ project_id }}</p>
+      <p><strong>Раздел:</strong> {{ section }}</p>
+      <p><strong>Дата сборки:</strong> {{ generated_at }}</p>
+      <p><strong>Количество АОСР:</strong> {{ doc_count }}</p>
+    </div>
+
+    <h2>Состав альбома</h2>
+    <ol class="docs">
+      {{ docs_list }}
+    </ol>
+  </body>
+</html>
