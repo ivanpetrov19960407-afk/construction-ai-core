@@ -69,6 +69,7 @@ class Settings(BaseSettings):
     telegram_bot_token: str = ""
     telegram_webhook_url: str = ""
     admin_telegram_ids: list[int] = []
+    pto_engineer_telegram_ids: list[int] = []
     domain: str = "localhost"
 
     # ── tk-generator ───────────────────────────
