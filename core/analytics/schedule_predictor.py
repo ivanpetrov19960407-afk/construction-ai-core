@@ -232,8 +232,19 @@ class SchedulePredictor:
             parsed = self._parse_json_object(response.text)
             if parsed is None:
                 return fallback
-            raw_risks = parsed.get("risks", fallback["risks"])
-            normalized_risks: list[dict] = []
+            fallback_risks_candidate = fallback.get("risks")
+            fallback_risks_raw = (
+                fallback_risks_candidate
+                if isinstance(fallback_risks_candidate, list)
+                else []
+            )
+            fallback_risks: list[dict[str, str]] = [
+                risk
+                for risk in fallback_risks_raw
+                if isinstance(risk, dict)
+            ]
+            raw_risks = parsed.get("risks", fallback_risks)
+            normalized_risks: list[dict[str, str]] = []
             for risk in raw_risks if isinstance(raw_risks, list) else []:
                 if not isinstance(risk, dict):
                     continue
@@ -248,7 +259,7 @@ class SchedulePredictor:
                     },
                 )
             if not normalized_risks:
-                normalized_risks = fallback["risks"]
+                normalized_risks = fallback_risks
             return {
                 "predicted_completion": parsed.get("predicted_completion"),
                 "risks": normalized_risks,
