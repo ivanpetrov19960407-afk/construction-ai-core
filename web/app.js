@@ -32,6 +32,30 @@ if ("serviceWorker" in navigator) {
   });
 }
 
+async function initBranding() {
+  try {
+    const response = await fetch("/api/branding", {
+      method: "GET",
+      headers: buildAuthHeaders(),
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const branding = await response.json();
+    document.documentElement.style.setProperty("--color-primary", branding.primary_color);
+    document.documentElement.style.setProperty("--color-accent", branding.accent_color);
+
+    const titleNode = document.getElementById("app-title");
+    if (titleNode) {
+      titleNode.textContent = branding.company_name || "Construction AI";
+    }
+    document.title = branding.company_name || "Construction AI";
+  } catch (error) {
+    console.warn("Branding fetch failed", error);
+  }
+}
+
 async function initChatProbe() {
   try {
     await fetch("/api/chat", {
@@ -43,6 +67,7 @@ async function initChatProbe() {
   }
 }
 
+initBranding();
 initChatProbe();
 
 const tabButtons = document.querySelectorAll(".tab-btn");

@@ -25,6 +25,7 @@ from api.routes import (
     analytics,
     auth,
     billing,
+    branding,
     chat,
     compliance,
     generate,
@@ -105,6 +106,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)
 app.include_router(health.router, tags=["health"])
 app.include_router(auth.router, tags=["auth"])
 app.include_router(billing.router, prefix="/api", tags=["billing"])
+app.include_router(branding.router, prefix="/api", tags=["branding"])
 app.include_router(chat.router, prefix="/api", tags=["chat"])
 # generate.router содержит /api/generate/* включая /api/generate/exec-album
 app.include_router(generate.router, prefix="/api", tags=["generate"])

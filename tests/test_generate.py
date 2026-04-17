@@ -28,10 +28,16 @@ def test_exec_album_endpoint(monkeypatch):
             },
         ]
 
-    def _mock_render_exec_album_pdf(project_id: str, section: str, docs: list[dict]) -> bytes:
+    def _mock_render_exec_album_pdf(
+        project_id: str,
+        section: str,
+        docs: list[dict],
+        branding,
+    ) -> bytes:
         assert project_id == "project-1"
         assert section == "AR"
         assert len(docs) == 2
+        assert branding.org_id == "default"
         return b"%PDF-1.4\nmock"
 
     def _mock_upload_album_bytes(project_id: str, section: str, pdf_bytes: bytes) -> str:
