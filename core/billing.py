@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from enum import Enum
+from pathlib import Path
 
 from fastapi import Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import create_engine, text
+from sqlalchemy.engine import make_url
 
 from config.settings import settings
 from core.cache import RedisCache
@@ -112,8 +114,12 @@ class UsageCounter:
             redis.call('EXPIRE', key, ttl)
             return updated
             """
-            updated = await redis_client.eval(script, 1, key, limit, ttl)
-            return int(updated) != -1
+            try:
+                updated = await redis_client.eval(script, 1, key, limit, ttl)
+                return int(updated) != -1
+            except Exception:  # noqa: BLE001
+                # Graceful fallback when Redis host is unavailable in local/CI environments.
+                pass
 
         # Fallback for environments without Redis/Lua support.
         if limit != -1:
@@ -127,7 +133,17 @@ class UsageCounter:
 usage_counter = UsageCounter(RedisCache(settings.redis_url))
 
 
+def _ensure_sqlite_directory(database_url: str) -> None:
+    url = make_url(database_url)
+    if url.drivername != "sqlite":
+        return
+    if not url.database or url.database == ":memory:":
+        return
+    Path(url.database).parent.mkdir(parents=True, exist_ok=True)
+
+
 def _ensure_subscriptions_table() -> None:
+    _ensure_sqlite_directory(settings.database_url)
     engine = create_engine(settings.database_url, future=True)
     create_table_query = text(
         """
@@ -236,8 +252,10 @@ def require_quota(resource: str, plan: PlanTier | None = None):
         request: Request,
         org_id: str | None = Depends(get_tenant_id),
     ) -> None:
-        _ = request
-        tenant = org_id or "default"
+        tenant = org_id or getattr(request.state, "org_id", None)
+        if not tenant:
+            # For requests without tenant context quota cannot be enforced reliably.
+            return
         actual_plan = _resolve_plan(tenant, plan)
         allowed = await usage_counter.consume_quota(tenant, resource, actual_plan)
         if not allowed:

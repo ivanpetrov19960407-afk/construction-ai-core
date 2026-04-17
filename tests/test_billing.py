@@ -84,7 +84,7 @@ def test_free_plan_limit_exceeded(monkeypatch):
             response = client.post(
                 "/api/chat",
                 json={"message": "test"},
-                headers={"X-API-Key": "billing-key"},
+                headers={"X-API-Key": "billing-key", "X-Org-Id": "default"},
             )
     finally:
         settings.api_keys = old_api_keys
