@@ -40,6 +40,9 @@ def upgrade() -> None:
     bind = op.get_bind()
     inspector = sa.inspect(bind)
     if "generated_docs" in inspector.get_table_names():
+        generated_docs_columns = {
+            column["name"] for column in inspector.get_columns("generated_docs")
+        }
         op.execute(
             """
             CREATE TABLE generated_docs_new (
@@ -53,19 +56,34 @@ def upgrade() -> None:
             )
             """
         )
-        op.execute(
-            """
-            INSERT INTO generated_docs_new (id, type, org_id, payload, created_at, updated_at)
-            SELECT
-                id,
-                type,
-                COALESCE(org_id, 'default') AS org_id,
-                payload,
-                created_at,
-                updated_at
-            FROM generated_docs
-            """
-        )
+        if "org_id" in generated_docs_columns:
+            op.execute(
+                """
+                INSERT INTO generated_docs_new (id, type, org_id, payload, created_at, updated_at)
+                SELECT
+                    id,
+                    type,
+                    COALESCE(org_id, 'default') AS org_id,
+                    payload,
+                    created_at,
+                    updated_at
+                FROM generated_docs
+                """
+            )
+        else:
+            op.execute(
+                """
+                INSERT INTO generated_docs_new (id, type, org_id, payload, created_at, updated_at)
+                SELECT
+                    id,
+                    type,
+                    'default' AS org_id,
+                    payload,
+                    created_at,
+                    updated_at
+                FROM generated_docs
+                """
+            )
         op.drop_table("generated_docs")
         op.rename_table("generated_docs_new", "generated_docs")
         op.create_index("ix_generated_docs_org_id", "generated_docs", ["org_id"], unique=False)
@@ -90,8 +108,22 @@ def downgrade() -> None:
         op.execute(
             """
             INSERT INTO generated_docs_old (id, type, payload, created_at, updated_at)
+            WITH ranked AS (
+                SELECT
+                    id,
+                    type,
+                    payload,
+                    created_at,
+                    updated_at,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY id, type
+                        ORDER BY updated_at DESC, created_at DESC, org_id ASC
+                    ) AS rn
+                FROM generated_docs
+            )
             SELECT id, type, payload, created_at, updated_at
-            FROM generated_docs
+            FROM ranked
+            WHERE rn = 1
             """
         )
         op.drop_table("generated_docs")

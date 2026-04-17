@@ -103,10 +103,14 @@ class OneCExporter:
         )
         engine = create_engine(settings.database_url, future=True)
         with engine.connect() as conn:
-            row = conn.execute(
-                query,
-                {"doc_id": doc_id, "doc_type": doc_type, "org_id": org_id},
-            ).mappings().first()
+            row = (
+                conn.execute(
+                    query,
+                    {"doc_id": doc_id, "doc_type": doc_type, "org_id": org_id},
+                )
+                .mappings()
+                .first()
+            )
         if row is None:
             return None
         payload = row.get("payload")
