@@ -64,6 +64,10 @@ class Settings(BaseSettings):
     isup_enabled: bool = False
     isup_webhook_secret: str = ""
 
+    # ── YooKassa ──────────────────────────────
+    yookassa_shop_id: str = ""
+    yookassa_secret_key: str = ""
+
     # ── Telegram ───────────────────────────────
     bot_token: str = ""
     core_api_url: str = "http://api:8000"
