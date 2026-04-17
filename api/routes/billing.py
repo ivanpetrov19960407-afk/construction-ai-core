@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
+from config.settings import settings
 from core.billing import (
     PLAN_LIMITS,
     BillingPlanResponse,
@@ -77,7 +78,15 @@ async def get_usage(org_id: str | None = Depends(get_tenant_id)) -> BillingUsage
 
 
 @router.post("/webhook/yookassa")
-async def yookassa_webhook(payload: YooKassaWebhookRequest) -> dict[str, bool]:
+async def yookassa_webhook(request: Request, payload: YooKassaWebhookRequest) -> dict[str, bool]:
+    configured_secret = settings.yookassa_secret_key.strip()
+    if configured_secret:
+        signature = request.headers.get("X-YooKassa-Signature", "").strip()
+        auth_header = request.headers.get("Authorization", "").strip()
+        bearer = auth_header.removeprefix("Bearer ").strip() if auth_header else ""
+        if signature != configured_secret and bearer != configured_secret:
+            raise HTTPException(status_code=401, detail="Invalid YooKassa webhook signature")
+
     obj = payload.object
     metadata = obj.get("metadata") if isinstance(obj, dict) else None
     if not isinstance(metadata, dict):

@@ -14,7 +14,7 @@ from core.cache import RedisCache
 from core.multitenancy import get_tenant_id
 
 
-class PlanTier(str, Enum):
+class PlanTier(str, Enum):  # noqa: UP042
     FREE = "free"
     STARTER = "starter"
     PRO = "pro"
@@ -85,6 +85,44 @@ class UsageCounter:
         usage = await self.get_usage(org_id, resource)
         return usage < limit
 
+    async def consume_quota(self, org_id: str, resource: str, plan: PlanTier) -> bool:
+        """Atomically check + consume quota for a resource."""
+        limit = PLAN_LIMITS[plan].get(resource)
+        if limit is None:
+            return True
+
+        key = self._usage_key(org_id, resource)
+        ttl = 60 * 60 * 24 * 35
+        redis_client = getattr(self._cache, "_redis", None)
+        if redis_client is not None and hasattr(redis_client, "eval"):
+            script = """
+            local key = KEYS[1]
+            local limit = tonumber(ARGV[1])
+            local ttl = tonumber(ARGV[2])
+            local current = redis.call('GET', key)
+            if current == false then
+                current = 0
+            else
+                current = tonumber(current)
+            end
+            if limit ~= -1 and current >= limit then
+                return -1
+            end
+            local updated = redis.call('INCR', key)
+            redis.call('EXPIRE', key, ttl)
+            return updated
+            """
+            updated = await redis_client.eval(script, 1, key, limit, ttl)
+            return int(updated) != -1
+
+        # Fallback for environments without Redis/Lua support.
+        if limit != -1:
+            usage = await self.get_usage(org_id, resource)
+            if usage >= limit:
+                return False
+        await self.increment(org_id, resource)
+        return True
+
 
 usage_counter = UsageCounter(RedisCache(settings.redis_url))
 
@@ -107,6 +145,30 @@ def _ensure_subscriptions_table() -> None:
         conn.execute(create_table_query)
 
 
+def _parse_valid_until(raw: str | None) -> datetime | None:
+    if raw is None:
+        return None
+    value = raw.strip()
+    if not value:
+        return None
+    if value.endswith("Z"):
+        value = value[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
+def _is_subscription_active(valid_until: str | None) -> bool:
+    parsed = _parse_valid_until(valid_until)
+    if parsed is None:
+        return True
+    return parsed >= datetime.now(UTC)
+
+
 def get_current_plan(org_id: str) -> tuple[PlanTier, str | None]:
     _ensure_subscriptions_table()
     engine = create_engine(settings.database_url, future=True)
@@ -116,19 +178,20 @@ def get_current_plan(org_id: str) -> tuple[PlanTier, str | None]:
         FROM org_subscriptions
         WHERE org_id = :org_id
         ORDER BY created_at DESC
-        LIMIT 1
         """
     )
     with engine.connect() as conn:
-        row = conn.execute(query, {"org_id": org_id}).mappings().first()
+        rows = conn.execute(query, {"org_id": org_id}).mappings().all()
 
-    if row is None:
-        return PlanTier.FREE, None
-
-    try:
-        return PlanTier(str(row["plan"])), row["valid_until"]
-    except ValueError:
-        return PlanTier.FREE, row["valid_until"]
+    for row in rows:
+        valid_until = row["valid_until"]
+        if not _is_subscription_active(valid_until):
+            continue
+        try:
+            return PlanTier(str(row["plan"])), valid_until
+        except ValueError:
+            continue
+    return PlanTier.FREE, None
 
 
 def set_plan(
@@ -176,13 +239,11 @@ def require_quota(resource: str, plan: PlanTier | None = None):
         _ = request
         tenant = org_id or "default"
         actual_plan = _resolve_plan(tenant, plan)
-        allowed = await usage_counter.check_limit(tenant, resource, actual_plan)
+        allowed = await usage_counter.consume_quota(tenant, resource, actual_plan)
         if not allowed:
             raise HTTPException(
                 status_code=429,
                 detail=f"Quota exceeded for resource '{resource}' on plan '{actual_plan.value}'",
             )
-        await usage_counter.increment(tenant, resource)
 
     return _dependency
-

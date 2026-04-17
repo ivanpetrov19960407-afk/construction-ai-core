@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from api.main import app
 from config.settings import settings
-from core.billing import PLAN_LIMITS, PlanTier, UsageCounter
+from core.billing import PLAN_LIMITS, PlanTier, UsageCounter, get_current_plan, set_plan
 
 
 class _MockRedis:
@@ -91,3 +91,55 @@ def test_free_plan_limit_exceeded(monkeypatch):
 
     assert response.status_code == 429
     assert "Quota exceeded" in response.json()["detail"]
+
+
+def test_expired_subscription_falls_back_to_free(tmp_path):
+    old_database_url = settings.database_url
+    settings.database_url = f"sqlite:///{tmp_path / 'billing.db'}"
+    try:
+        set_plan("org-expired", PlanTier.PRO, valid_until="2000-01-01T00:00:00+00:00")
+        plan, _valid_until = get_current_plan("org-expired")
+    finally:
+        settings.database_url = old_database_url
+
+    assert plan == PlanTier.FREE
+
+
+def test_yookassa_webhook_requires_signature(tmp_path):
+    old_database_url = settings.database_url
+    old_api_keys = settings.api_keys
+    old_secret = settings.yookassa_secret_key
+    settings.database_url = f"sqlite:///{tmp_path / 'billing-webhook.db'}"
+    settings.api_keys = ["billing-key"]
+    settings.yookassa_secret_key = "super-secret"
+    payload = {
+        "event": "payment.succeeded",
+        "object": {
+            "id": "payment-1",
+            "metadata": {"org_id": "org-1", "plan": "pro"},
+        },
+    }
+    try:
+        with TestClient(app) as client:
+            unauthorized = client.post(
+                "/api/billing/webhook/yookassa",
+                json=payload,
+                headers={"X-API-Key": "billing-key"},
+            )
+            authorized = client.post(
+                "/api/billing/webhook/yookassa",
+                json=payload,
+                headers={
+                    "X-API-Key": "billing-key",
+                    "X-YooKassa-Signature": "super-secret",
+                },
+            )
+            plan, _valid_until = get_current_plan("org-1")
+    finally:
+        settings.database_url = old_database_url
+        settings.api_keys = old_api_keys
+        settings.yookassa_secret_key = old_secret
+
+    assert unauthorized.status_code == 401
+    assert authorized.status_code == 200
+    assert plan == PlanTier.PRO
