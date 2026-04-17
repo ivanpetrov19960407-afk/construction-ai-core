@@ -368,21 +368,13 @@ async def generate_exec_album(
         raise HTTPException(status_code=404, detail="Approved executive docs not found")
 
     branding = await get_branding(tenant)
-    try:
-        pdf_bytes = await asyncio.to_thread(
-            _render_exec_album_pdf,
-            project_id=payload.project_id,
-            section=payload.section,
-            docs=docs,
-            branding=branding,
-        )
-    except TypeError:
-        pdf_bytes = await asyncio.to_thread(
-            _render_exec_album_pdf,
-            project_id=payload.project_id,
-            section=payload.section,
-            docs=docs,
-        )
+    pdf_bytes = await asyncio.to_thread(
+        _render_exec_album_pdf,
+        project_id=payload.project_id,
+        section=payload.section,
+        docs=docs,
+        branding=branding,
+    )
     presigned_url = await asyncio.to_thread(
         _upload_album_bytes,
         project_id=payload.project_id,
