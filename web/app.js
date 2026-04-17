@@ -2,6 +2,13 @@ const tg = window.Telegram?.WebApp;
 const queryParams = new URLSearchParams(window.location.search);
 const webApiKey = queryParams.get("api_key") || "";
 const authToken = window.localStorage.getItem("auth_token") || "";
+const apiKey = webApiKey || window.localStorage.getItem("api_key") || "";
+const currentOrgId =
+  queryParams.get("org_id") || window.localStorage.getItem("org_id") || "default";
+const VAPID_PUBLIC_KEY =
+  window.__VAPID_PUBLIC_KEY__ ||
+  document.querySelector('meta[name="vapid-public-key"]')?.getAttribute("content") ||
+  "";
 
 function buildAuthHeaders(extraHeaders = {}) {
   const headers = { ...extraHeaders };
@@ -11,6 +18,27 @@ function buildAuthHeaders(extraHeaders = {}) {
     headers["X-API-Key"] = webApiKey;
   }
   return headers;
+}
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = atob(base64);
+  return Uint8Array.from([...rawData].map((char) => char.charCodeAt(0)));
+}
+
+async function subscribeToPush() {
+  if (!("PushManager" in window) || !VAPID_PUBLIC_KEY || !apiKey) return;
+  const reg = await navigator.serviceWorker.ready;
+  const sub = await reg.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+  });
+  await fetch("/api/push/subscribe", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-API-Key": apiKey },
+    body: JSON.stringify({ subscription: sub.toJSON(), org_id: currentOrgId }),
+  });
 }
 
 if (tg) {
@@ -26,9 +54,12 @@ if (themeIndicator) {
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/web/sw.js").catch((error) => {
-      console.error("Service Worker registration failed:", error);
-    });
+    navigator.serviceWorker
+      .register("/web/sw.js")
+      .then(() => subscribeToPush().catch((error) => console.warn("Push subscription failed", error)))
+      .catch((error) => {
+        console.error("Service Worker registration failed:", error);
+      });
   });
 }
 

@@ -77,6 +77,11 @@ class Settings(BaseSettings):
     pto_engineer_telegram_ids: list[int] = []
     domain: str = "localhost"
 
+    # ── Web Push (VAPID) ─────────────────────
+    vapid_public_key: str = ""
+    vapid_private_key: str = ""
+    vapid_claims_email: str = "admin@construction-ai.ru"
+
     # ── tk-generator ───────────────────────────
     tk_generator_path: str = "../tk-generator"
 

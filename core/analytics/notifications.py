@@ -10,6 +10,7 @@ import aiosqlite
 import structlog
 from aiogram import Bot
 
+from api.routes.web_push import send_push_to_org
 from config.settings import settings
 from core.analytics.schedule_predictor import SchedulePredictor
 
@@ -78,6 +79,18 @@ class AnalyticsNotifier:
                 )
                 for chat_id in target_chat_ids:
                     await bot.send_message(chat_id=chat_id, text=message)
+
+                await send_push_to_org(
+                    "default",
+                    {
+                        "title": "⚠️ Риск срыва сроков",
+                        "body": (
+                            f"Проект {project_id}: delay rate {prediction['delay_rate']:.0%}, "
+                            f"прогноз {prediction.get('predicted_completion')}"
+                        ),
+                        "url": "/web",
+                    },
+                )
         finally:
             await bot.session.close()
 
