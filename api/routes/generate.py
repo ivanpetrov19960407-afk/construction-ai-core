@@ -18,6 +18,7 @@ from sqlalchemy import create_engine, text
 
 from agents.calculator import CalculatorAgent
 from config.settings import settings
+from core.billing import require_quota
 from core.cache import RedisCache
 from core.export.onec_exporter import OneCExporter
 from core.llm_router import LLMRouter
@@ -334,9 +335,10 @@ async def generate_exec_album(
     payload: AlbumRequest,
     request: Request,
     org_id: str | None = Depends(get_tenant_id),
+    _quota: None = Depends(require_quota("exec_albums")),
 ):
     """Собрать исполнительный альбом по проекту и разделу."""
-    _ = request
+    _ = (request, _quota)
     if payload.section not in EXEC_ALBUM_SECTIONS:
         raise HTTPException(status_code=422, detail="Invalid section")
 

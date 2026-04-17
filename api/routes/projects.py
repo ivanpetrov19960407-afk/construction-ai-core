@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import desc
 
 from config.settings import settings
+from core.billing import require_quota
 from core.multitenancy import get_tenant_id
 from core.projects import Project, ProjectComment, ProjectDocument, get_projects_sessionmaker
 
@@ -78,7 +79,9 @@ async def create_project(
     payload: CreateProjectRequest,
     request: Request,
     org_id: str | None = Depends(get_tenant_id),
+    _quota: None = Depends(require_quota("projects")),
 ) -> dict:
+    _ = _quota
     owner = _require_username(request)
     tenant = org_id or "default"
     session_local = get_projects_sessionmaker(settings.sqlite_db_path)
