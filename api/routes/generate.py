@@ -19,6 +19,7 @@ from sqlalchemy import create_engine, text
 from agents.calculator import CalculatorAgent
 from config.settings import settings
 from core.billing import require_quota
+from core.branding import BrandingConfig, get_branding
 from core.cache import RedisCache
 from core.export.onec_exporter import OneCExporter
 from core.llm_router import LLMRouter
@@ -222,7 +223,12 @@ def _fetch_approved_exec_docs(project_id: str, section: str, org_id: str = "defa
     return [dict(row) for row in rows]
 
 
-def _render_exec_album_pdf(project_id: str, section: str, docs: list[dict]) -> bytes:
+def _render_exec_album_pdf(
+    project_id: str,
+    section: str,
+    docs: list[dict],
+    branding: BrandingConfig,
+) -> bytes:
     """Сформировать PDF альбома через WeasyPrint."""
     from weasyprint import HTML
 
@@ -243,6 +249,8 @@ def _render_exec_album_pdf(project_id: str, section: str, docs: list[dict]) -> b
         .replace("{{ generated_at }}", generated_at)
         .replace("{{ doc_count }}", str(len(docs)))
         .replace("{{ docs_list }}", docs_html)
+        .replace("{{ company_name }}", branding.company_name)
+        .replace("{{ logo_url }}", branding.logo_url)
     )
     return HTML(string=html, base_url=str(Path.cwd())).write_pdf()
 
@@ -359,12 +367,22 @@ async def generate_exec_album(
     if not docs:
         raise HTTPException(status_code=404, detail="Approved executive docs not found")
 
-    pdf_bytes = await asyncio.to_thread(
-        _render_exec_album_pdf,
-        project_id=payload.project_id,
-        section=payload.section,
-        docs=docs,
-    )
+    branding = await get_branding(tenant)
+    try:
+        pdf_bytes = await asyncio.to_thread(
+            _render_exec_album_pdf,
+            project_id=payload.project_id,
+            section=payload.section,
+            docs=docs,
+            branding=branding,
+        )
+    except TypeError:
+        pdf_bytes = await asyncio.to_thread(
+            _render_exec_album_pdf,
+            project_id=payload.project_id,
+            section=payload.section,
+            docs=docs,
+        )
     presigned_url = await asyncio.to_thread(
         _upload_album_bytes,
         project_id=payload.project_id,

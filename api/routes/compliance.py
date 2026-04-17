@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
 
 from config.settings import settings
+from core.branding import BrandingConfig, get_branding
 from core.compliance.gsn_checklist import GSNReadinessChecker
 from core.multitenancy import get_tenant_id
 from core.projects import Project, get_projects_sessionmaker
@@ -36,7 +37,7 @@ def _build_section_row(section_result: dict) -> str:
     )
 
 
-def _render_gsn_report_html(project_id: str, checklist: dict) -> str:
+def _render_gsn_report_html(project_id: str, checklist: dict, branding: BrandingConfig) -> str:
     template = Path("templates/gsn_checklist.html").read_text(encoding="utf-8")
     rows = "\n".join(_build_section_row(item) for item in checklist["sections"])
     generated_at = dt.datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
@@ -44,6 +45,8 @@ def _render_gsn_report_html(project_id: str, checklist: dict) -> str:
         template.replace("{{ project_id }}", project_id)
         .replace("{{ generated_at }}", generated_at)
         .replace("{{ total_completion_pct }}", str(checklist["completion_pct"]))
+        .replace("{{ company_name }}", branding.company_name)
+        .replace("{{ logo_url }}", branding.logo_url)
         .replace("{{ section_rows }}", rows)
     )
 
@@ -104,7 +107,12 @@ async def generate_gsn_report(
 ) -> Response:
     _require_project_member(request=request, project_id=project_id, org_id=org_id or "default")
     checklist = await checker.check_full_project(project_id=str(project_id))
-    html = _render_gsn_report_html(project_id=str(project_id), checklist=checklist)
+    branding = await get_branding(org_id or "default")
+    html = _render_gsn_report_html(
+        project_id=str(project_id),
+        checklist=checklist,
+        branding=branding,
+    )
     try:
         pdf_bytes = await asyncio.to_thread(_render_pdf_from_html, html)
     except RuntimeError as exc:
