@@ -14,11 +14,11 @@ from config.settings import settings
 class OneCExporter:
     """Экспортёр КС-2 и М-29 в XML, совместимый с 1С."""
 
-    async def export_ks2_to_xml(self, doc_id: str) -> bytes:
+    async def export_ks2_to_xml(self, doc_id: str, org_id: str = "default") -> bytes:
         """Выгрузить КС-2 из generated_docs в XML-формат 1С."""
-        document = await self._fetch_generated_doc(doc_id=doc_id, doc_type="ks2")
+        document = await self._fetch_generated_doc(doc_id=doc_id, doc_type="ks2", org_id=org_id)
         if document is None:
-            raise ValueError(f"KS2 document not found for doc_id={doc_id}")
+            raise ValueError(f"KS2 document not found for doc_id={doc_id} and org_id={org_id}")
 
         root = ET.Element("КС2")
         ET.SubElement(root, "Номер").text = str(document.get("number") or doc_id)
@@ -90,19 +90,23 @@ class OneCExporter:
         ET.SubElement(root, "Итого").text = self._decimal_to_str(total_amount)
         return self._to_xml_bytes(root)
 
-    async def _fetch_generated_doc(self, doc_id: str, doc_type: str) -> dict | None:
+    async def _fetch_generated_doc(self, doc_id: str, doc_type: str, org_id: str) -> dict | None:
         query = text(
             """
             SELECT payload
             FROM generated_docs
             WHERE id = :doc_id
               AND type = :doc_type
+              AND org_id = :org_id
             LIMIT 1
             """
         )
         engine = create_engine(settings.database_url, future=True)
         with engine.connect() as conn:
-            row = conn.execute(query, {"doc_id": doc_id, "doc_type": doc_type}).mappings().first()
+            row = conn.execute(
+                query,
+                {"doc_id": doc_id, "doc_type": doc_type, "org_id": org_id},
+            ).mappings().first()
         if row is None:
             return None
         payload = row.get("payload")

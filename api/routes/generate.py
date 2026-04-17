@@ -1050,9 +1050,10 @@ async def export_ks2_1c_xml(
     org_id: str | None = Depends(get_tenant_id),
 ):
     """Экспорт КС-2 в XML-формат для импорта в 1С."""
-    _ = (request, org_id)
+    _ = request
+    tenant = org_id or "default"
     try:
-        xml_bytes = await onec_exporter.export_ks2_to_xml(doc_id=doc_id)
+        xml_bytes = await onec_exporter.export_ks2_to_xml(doc_id=doc_id, org_id=tenant)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

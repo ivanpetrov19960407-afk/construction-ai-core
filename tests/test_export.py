@@ -11,9 +11,10 @@ from core.export.onec_exporter import OneCExporter
 def test_ks2_xml_structure(monkeypatch):
     """КС-2 экспортируется с ключевыми тегами 1С."""
 
-    async def _mock_fetch_generated_doc(doc_id: str, doc_type: str) -> dict:
+    async def _mock_fetch_generated_doc(doc_id: str, doc_type: str, org_id: str) -> dict:
         assert doc_id == "doc-001"
         assert doc_type == "ks2"
+        assert org_id == "default"
         return {
             "number": "КС2-77",
             "date": "2026-04-01",
@@ -47,9 +48,10 @@ def test_ks2_xml_structure(monkeypatch):
 def test_ks2_xml_keeps_explicit_zero_amount(monkeypatch):
     """Если amount=0 указан явно, он не должен заменяться quantity*price."""
 
-    async def _mock_fetch_generated_doc(doc_id: str, doc_type: str) -> dict:
+    async def _mock_fetch_generated_doc(doc_id: str, doc_type: str, org_id: str) -> dict:
         assert doc_id == "doc-zero"
         assert doc_type == "ks2"
+        assert org_id == "default"
         return {
             "number": "КС2-0",
             "date": "2026-04-01",
