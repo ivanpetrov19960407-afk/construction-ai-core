@@ -38,3 +38,16 @@ jobs:
         with:
           name: test-results
           path: .pytest_cache/
+
+  helm:
+    runs-on: ubuntu-latest
+    needs: lint
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+      - name: Helm lint
+        run: helm lint helm/construction-ai/
+      - name: Helm template validation
+        run: helm template helm/construction-ai/ > /dev/null

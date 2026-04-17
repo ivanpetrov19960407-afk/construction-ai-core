@@ -1,0 +1,63 @@
+replicaCount: 2
+
+image:
+  repository: ghcr.io/ivanpetrov19960407-afk/construction-ai-core
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+api:
+  port: 8000
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "512Mi"
+    limits:
+      cpu: "1000m"
+      memory: "2Gi"
+
+bot:
+  enabled: true
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "1Gi"
+
+service:
+  type: ClusterIP
+
+hpa:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+ingress:
+  enabled: true
+  className: nginx
+  host: construction-ai.example.com
+  tls: true
+  tlsSecretName: construction-ai-tls
+
+redis:
+  enabled: true
+  image: redis:7-alpine
+  port: 6379
+
+env:
+  LOG_LEVEL: "INFO"
+  DEBUG: "false"
+
+secrets:
+  API_KEY: ""
+  OPENAI_API_KEY: ""
+
+persistence:
+  enabled: false
+  accessMode: ReadWriteOnce
+  size: 5Gi
+  mountPath: /app/data
