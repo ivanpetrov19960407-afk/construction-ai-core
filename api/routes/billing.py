@@ -65,10 +65,7 @@ async def get_usage(org_id: str | None = Depends(get_tenant_id)) -> BillingUsage
     tenant = org_id or "default"
     plan, _valid_until = get_current_plan(tenant)
     resources = ["projects", "ai_requests", "exec_albums"]
-    usage = {
-        resource: await usage_counter.get_usage(tenant, resource)
-        for resource in resources
-    }
+    usage = {resource: await usage_counter.get_usage(tenant, resource) for resource in resources}
     return BillingUsageResponse(
         org_id=tenant,
         plan=plan,
