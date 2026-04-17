@@ -22,6 +22,14 @@ interface ISUPSubmission {
   submitted_at: string;
 }
 
+interface AllProjectsRiskItem {
+  project_id: string;
+  project_name: string;
+  delay_rate: number;
+  avg_delay_days: number;
+  predicted_completion: string;
+}
+
 const sectionOrder = ['AR', 'KZH', 'KM', 'OV', 'VK', 'EM', 'SS', 'APS', 'PS'];
 const signableDocTypes = new Set(['aosr', 'ks2', 'ks3']);
 
@@ -45,6 +53,7 @@ export default function HandoverPage() {
   const [documents, setDocuments] = useState<ProjectDocument[]>([]);
   const [isupSubmissions, setIsupSubmissions] = useState<ISUPSubmission[]>([]);
   const [signedDocIds, setSignedDocIds] = useState<string[]>([]);
+  const [allRiskProjects, setAllRiskProjects] = useState<AllProjectsRiskItem[]>([]);
   const [ks2DocId, setKs2DocId] = useState('');
   const [m29Period, setM29Period] = useState('');
   const [batchProgress, setBatchProgress] = useState<{ signed: number; total: number } | null>(null);
@@ -99,6 +108,24 @@ export default function HandoverPage() {
     setForecast(normalizeForecast(data));
   };
 
+  const loadAllProjectsRisk = async () => {
+    const { apiUrl, apiKey } = await getApiConfig();
+    try {
+      const response = await fetch(
+        `${apiUrl.replace(/\/$/, '')}/api/analytics/dashboard/all?threshold=0.3`,
+        { headers: { 'X-API-Key': apiKey } }
+      );
+      if (!response.ok) return;
+      const data = (await response.json()) as {
+        high_risk_projects: AllProjectsRiskItem[];
+        total_checked: number;
+      };
+      setAllRiskProjects(data.high_risk_projects);
+    } catch {
+      // ignore
+    }
+  };
+
   const loadIsupStatus = async (projectInfo?: ProjectInfo | null) => {
     if (!projectId.trim() || !projectInfo?.is_state_contract) {
       setIsupSubmissions([]);
@@ -122,7 +149,12 @@ export default function HandoverPage() {
     window.localStorage.setItem('handover_user_id', userId);
 
     try {
-      const [, loadedProject] = await Promise.all([loadReadiness(), loadSigning(), loadForecast()]);
+      const [, loadedProject] = await Promise.all([
+        loadReadiness(),
+        loadSigning(),
+        loadForecast(),
+        loadAllProjectsRisk()
+      ]);
       await loadIsupStatus(loadedProject);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Ошибка загрузки данных');
@@ -550,6 +582,19 @@ export default function HandoverPage() {
                   <p style={{ marginBottom: 6 }}>Средняя задержка: {forecast?.avg_delay_days ?? 0} дн.</p>
                   <p style={{ marginTop: 0 }}>Вероятность задержки: {((forecast?.delay_rate ?? 0) * 100).toFixed(1)}%</p>
                 </article>
+                {allRiskProjects.length > 0 && (
+                  <article style={{ border: '1px solid #dc262655', borderRadius: 12, padding: 12 }}>
+                    <strong>🔴 Высокий риск задержки: {allRiskProjects.length} проект(ов)</strong>
+                    <ul>
+                      {allRiskProjects.slice(0, 5).map((projectRisk) => (
+                        <li key={projectRisk.project_id}>
+                          {projectRisk.project_name} — {Math.round(projectRisk.delay_rate * 100)}% вероятность,
+                          прогноз: {projectRisk.predicted_completion}
+                        </li>
+                      ))}
+                    </ul>
+                  </article>
+                )}
                 <article style={{ border: '1px solid #33415555', borderRadius: 12, padding: 12 }}>
                   <strong>Риски</strong>
                   <ul>

@@ -39,7 +39,7 @@ class AnalyticsNotifier:
 
         scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
         scheduler.add_job(
-            self.check_and_notify_projects,
+            self.send_daily_alerts,
             trigger=CronTrigger(hour=9, minute=0),
             id="analytics_daily_delay_check",
             replace_existing=True,
@@ -51,7 +51,7 @@ class AnalyticsNotifier:
         if self._scheduler is not None:
             self._scheduler.shutdown(wait=False)
 
-    async def check_and_notify_projects(self) -> None:
+    async def send_daily_alerts(self) -> None:
         """Check projects with high delay_rate and send Telegram notifications."""
         project_ids = await self._get_all_project_ids()
         target_chat_ids = settings.pto_engineer_telegram_ids or settings.admin_telegram_ids
@@ -62,18 +62,18 @@ class AnalyticsNotifier:
         now = dt.datetime.now(self._utc).strftime("%Y-%m-%d %H:%M UTC")
         try:
             for project_id in project_ids:
-                quick_prediction = await self._predictor.predict_completion(
+                prediction = await self._predictor.predict_completion(
                     project_id,
                     include_llm=False,
                 )
-                if float(quick_prediction.get("delay_rate", 0.0)) <= 0.3:
+                delay_rate = float(prediction.get("delay_rate", 0.0))
+                if delay_rate < 0.3:
                     continue
-                prediction = await self._predictor.predict_completion(project_id, include_llm=True)
 
                 message = (
                     "⚠️ Риск срыва сроков\n"
                     f"Проект: {project_id}\n"
-                    f"Delay rate: {prediction['delay_rate']:.0%}\n"
+                    f"Delay rate: {delay_rate:.0%}\n"
                     f"Прогноз завершения: {prediction.get('predicted_completion')}\n"
                     f"Проверка: {now}"
                 )
@@ -85,7 +85,7 @@ class AnalyticsNotifier:
                     {
                         "title": "⚠️ Риск срыва сроков",
                         "body": (
-                            f"Проект {project_id}: delay rate {prediction['delay_rate']:.0%}, "
+                            f"Проект {project_id}: delay rate {delay_rate:.0%}, "
                             f"прогноз {prediction.get('predicted_completion')}"
                         ),
                         "url": "/web",
@@ -93,6 +93,10 @@ class AnalyticsNotifier:
                 )
         finally:
             await bot.session.close()
+
+    async def check_and_notify_projects(self) -> None:
+        """Backward-compatible wrapper for legacy callers."""
+        await self.send_daily_alerts()
 
     async def _get_all_project_ids(self) -> list[str]:
         query = "SELECT id FROM projects"
@@ -108,7 +112,7 @@ class AnalyticsNotifier:
 
 async def run_daily_delay_check() -> None:
     """Standalone entrypoint for external schedulers/celery beat."""
-    await AnalyticsNotifier().check_and_notify_projects()
+    await AnalyticsNotifier().send_daily_alerts()
 
 
 def run_daily_delay_check_sync() -> None:
