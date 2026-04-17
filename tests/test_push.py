@@ -39,13 +39,17 @@ def test_subscribe_stores_subscription(tmp_path):
 
         engine = create_engine(settings.database_url, future=True)
         with engine.connect() as conn:
-            row = conn.execute(
-                text(
-                    "SELECT org_id, endpoint, p256dh, auth FROM push_subscriptions "
-                    "WHERE endpoint = :endpoint"
-                ),
-                {"endpoint": payload["subscription"]["endpoint"]},
-            ).mappings().one()
+            row = (
+                conn.execute(
+                    text(
+                        "SELECT org_id, endpoint, p256dh, auth FROM push_subscriptions "
+                        "WHERE endpoint = :endpoint"
+                    ),
+                    {"endpoint": payload["subscription"]["endpoint"]},
+                )
+                .mappings()
+                .one()
+            )
     finally:
         settings.database_url = old_database_url
         settings.api_keys = old_api_keys
@@ -126,7 +130,7 @@ def test_sw_cache_strategy():
     source = open(sw_path, encoding="utf-8").read()
 
     assert 'const CACHE_NAME = "construction-ai-v2"' in source
-    assert 'fetch(event.request).catch(() => caches.match(event.request))' in source
+    assert "fetch(event.request).catch(() => caches.match(event.request))" in source
     assert 'self.addEventListener("push"' in source
 
     node_bin = shutil.which("node")
