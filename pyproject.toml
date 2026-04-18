@@ -1,6 +1,6 @@
 [project]
 name = "construction-ai-core"
-version = "0.1.0"
+version = "0.5.0"
 description = "Универсальный ИИ-помощник для строительной отрасли: инженер ПТО, прораб, тендерный специалист"
 readme = "README.md"
 requires-python = ">=3.11"
