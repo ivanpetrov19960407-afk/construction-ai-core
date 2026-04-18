@@ -63,7 +63,11 @@ const LEGACY_DEFAULT_API_URL = 'http://vanekpetrov1997.fvds.ru';
 export const normalizeApiUrl = (apiUrl: string) => {
   const trimmedUrl = apiUrl.trim().replace(/\/+$/, '');
 
-  if (!trimmedUrl || trimmedUrl === LEGACY_DEFAULT_API_URL) {
+  if (
+    !trimmedUrl ||
+    trimmedUrl === LEGACY_DEFAULT_API_URL ||
+    trimmedUrl === 'http://vanekpetrov1997.fvds.ru'
+  ) {
     return DEFAULT_API_URL;
   }
 
@@ -120,13 +124,21 @@ async function postJson<TRequest>(
   endpoint: string,
   payload: TRequest
 ): Promise<GenerateDocumentResponse> {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => {
+    controller.abort();
+  }, 30_000);
+
   const response = await apiFetch(apiUrl, endpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'X-API-Key': apiKey.trim()
     },
-    body: JSON.stringify(payload)
+    body: JSON.stringify(payload),
+    signal: controller.signal
+  }).finally(() => {
+    window.clearTimeout(timeoutId);
   });
 
   await assertOk(response, endpoint);
@@ -137,8 +149,15 @@ async function postJson<TRequest>(
 export async function getApiConfig(): Promise<ApiConfig> {
   const store = await Store.load('settings.json');
   const savedUrl = await store.get<string>('api_url');
-  const apiUrl = normalizeApiUrl(savedUrl || (await invoke<string>('get_api_url')) || DEFAULT_API_URL);
+  const fallbackUrl = (await invoke<string>('get_api_url')) || DEFAULT_API_URL;
+  const apiUrl = normalizeApiUrl(savedUrl || fallbackUrl || DEFAULT_API_URL);
   const apiKey = ((await store.get<string>('api_key')) || '').trim();
+
+  const isDev = Boolean((import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV);
+  if (isDev) {
+    console.debug('[API] url=', apiUrl, 'keyLen=', apiKey.length);
+  }
+
   return { apiUrl, apiKey };
 }
 
@@ -176,6 +195,38 @@ export function generateKS(apiUrl: string, apiKey: string, payload: KSRequest) {
 
 export async function downloadTKDocx(apiUrl: string, apiKey: string, sessionId: string): Promise<Blob> {
   const endpoint = `/api/generate/tk/${encodeURIComponent(sessionId)}/download`;
+  const response = await apiFetch(apiUrl, endpoint, {
+    method: 'GET',
+    headers: {
+      'X-API-Key': apiKey.trim()
+    }
+  });
+
+  await assertOk(response, endpoint);
+
+  return await response.blob();
+}
+
+export async function downloadLetterDocx(
+  apiUrl: string,
+  apiKey: string,
+  sessionId: string
+): Promise<Blob> {
+  const endpoint = `/api/generate/letter/${encodeURIComponent(sessionId)}/download`;
+  const response = await apiFetch(apiUrl, endpoint, {
+    method: 'GET',
+    headers: {
+      'X-API-Key': apiKey.trim()
+    }
+  });
+
+  await assertOk(response, endpoint);
+
+  return await response.blob();
+}
+
+export async function downloadKSDocx(apiUrl: string, apiKey: string, sessionId: string): Promise<Blob> {
+  const endpoint = `/api/generate/ks/${encodeURIComponent(sessionId)}/download`;
   const response = await apiFetch(apiUrl, endpoint, {
     method: 'GET',
     headers: {

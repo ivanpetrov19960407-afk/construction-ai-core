@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import DocumentForm, { type DocumentField } from '../components/DocumentForm';
-import { generateLetter, getApiConfig } from '../api/coreClient';
+import { downloadLetterDocx, generateLetter, getApiConfig } from '../api/coreClient';
 
 
 const letterTypeMap: Record<string, 'запрос' | 'претензия' | 'уведомление' | 'ответ'> = {
@@ -25,11 +25,15 @@ const fields: DocumentField[] = [
 export default function GenerateLetterPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState('');
+  const [sessionId, setSessionId] = useState('');
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState(false);
+  const [downloadLoading, setDownloadLoading] = useState(false);
 
   const handleSubmit = async (data: Record<string, string>) => {
     setIsLoading(true);
     setError('');
+    setSuccess(false);
 
     try {
       const { apiUrl, apiKey } = await getApiConfig();
@@ -52,6 +56,8 @@ export default function GenerateLetterPage() {
           ? normalizedResult
           : JSON.stringify(normalizedResult, null, 2)
       );
+      setSessionId(String(response.session_id ?? ''));
+      setSuccess(true);
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : 'Ошибка генерации письма');
     } finally {
@@ -59,15 +65,45 @@ export default function GenerateLetterPage() {
     }
   };
 
+  const handleDownload = async () => {
+    if (!sessionId) {
+      setError('Нет session_id для скачивания DOCX');
+      return;
+    }
+
+    setDownloadLoading(true);
+    setError('');
+
+    try {
+      const { apiUrl, apiKey } = await getApiConfig();
+      const blob = await downloadLetterDocx(apiUrl, apiKey, sessionId);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `letter-${sessionId}.docx`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (downloadError) {
+      setError(downloadError instanceof Error ? downloadError.message : 'Ошибка скачивания DOCX');
+    } finally {
+      setDownloadLoading(false);
+    }
+  };
+
   return (
     <section style={{ display: 'grid', gap: 12 }}>
       <h2>Генерация письма</h2>
-      <DocumentForm fields={fields} onSubmit={handleSubmit} isLoading={isLoading} />
+      <DocumentForm fields={fields} onSubmit={handleSubmit} isLoading={isLoading} error={error} />
+      {success && <p style={{ color: 'green', fontWeight: 600 }}>✓ Письмо сгенерировано</p>}
       {error && <p style={{ color: 'crimson' }}>{error}</p>}
+      {sessionId && <p style={{ color: '#777', fontSize: 12 }}>session_id: {sessionId}</p>}
       <label style={{ display: 'grid', gap: 8 }}>
         <span>Результат</span>
         <textarea value={result} rows={12} readOnly />
       </label>
+      <button type="button" onClick={handleDownload} disabled={!sessionId || downloadLoading}>
+        {downloadLoading ? 'Скачивание...' : 'Скачать DOCX'}
+      </button>
     </section>
   );
 }
