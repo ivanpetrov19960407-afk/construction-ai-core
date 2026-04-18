@@ -13,6 +13,7 @@ export interface ChatResponse {
   session_id?: string;
   agents_used?: string[];
   confidence?: number | null;
+  conflict_rate?: number | null;
 }
 
 export interface ChatResponseMeta {

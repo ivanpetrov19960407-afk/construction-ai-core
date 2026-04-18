@@ -1,9 +1,13 @@
 import type { ChatMessage } from '../store/chatStore';
-import type { ChatResponseMeta } from '../api/coreClient';
+
+export interface MessageMetadata {
+  agents?: string[];
+  confidence?: number;
+}
 
 interface Props {
   message: ChatMessage;
-  metadata?: ChatResponseMeta;
+  metadata?: MessageMetadata;
 }
 
 function getConfidenceBadge(confidence?: number) {
