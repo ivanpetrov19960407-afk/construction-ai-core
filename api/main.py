@@ -25,6 +25,8 @@ from api.middleware import (
 from api.routes import (
     analytics,
     auth,
+    billing,
+    branding,
     chat,
     compliance,
     generate,
@@ -34,6 +36,7 @@ from api.routes import (
     rag,
     sign,
     web,
+    web_push,
 )
 from api.routes.analyze import router as analyze_router
 from config.settings import settings
@@ -107,6 +110,8 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)
 # ── Routes ─────────────────────────────────────
 app.include_router(health.router, tags=["health"])
 app.include_router(auth.router, tags=["auth"])
+app.include_router(billing.router, prefix="/api", tags=["billing"])
+app.include_router(branding.router, prefix="/api", tags=["branding"])
 app.include_router(chat.router, prefix="/api", tags=["chat"])
 # generate.router содержит /api/generate/* включая /api/generate/exec-album
 app.include_router(generate.router, prefix="/api", tags=["generate"])
@@ -117,6 +122,7 @@ app.include_router(rag.router, prefix="/api/rag", tags=["rag"])
 app.include_router(projects.router, prefix="/api", tags=["projects"])
 app.include_router(analytics.router, prefix="/api", tags=["analytics"])
 app.include_router(compliance.router, prefix="/api", tags=["compliance"])
+app.include_router(web_push.router)
 app.include_router(web.router, tags=["web"])
 app.mount("/web", StaticFiles(directory="web", html=True), name="web")
 setup_rate_limiter(app.routes)

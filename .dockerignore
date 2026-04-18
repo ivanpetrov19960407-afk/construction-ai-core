@@ -6,6 +6,12 @@ docs/
 tests/
 *.pyc
 __pycache__
+venv/
+.venv/
+env/
+.envrc
+node_modules/
+dist/
 .env
 .env.*
 data/

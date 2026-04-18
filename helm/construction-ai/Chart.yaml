@@ -1,0 +1,5 @@
+apiVersion: v2
+name: construction-ai
+description: Construction AI Core — ИИ-помощник для строительной отрасли
+version: 0.1.0
+appVersion: "4.2"

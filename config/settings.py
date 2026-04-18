@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     admin_api_keys: list[str] = []
     jwt_secret: str = "changeme"
     jwt_expire_minutes: int = 60
+    multitenancy_enabled: bool = False
     users_db_path: str = "data/users.db"
     invite_codes: dict[str, str] = {
         "ADMIN-XXX": "admin",
@@ -63,6 +64,10 @@ class Settings(BaseSettings):
     isup_enabled: bool = False
     isup_webhook_secret: str = ""
 
+    # ── YooKassa ──────────────────────────────
+    yookassa_shop_id: str = ""
+    yookassa_secret_key: str = ""
+
     # ── Telegram ───────────────────────────────
     bot_token: str = ""
     core_api_url: str = "http://api:8000"
@@ -72,6 +77,11 @@ class Settings(BaseSettings):
     admin_telegram_ids: list[int] = []
     pto_engineer_telegram_ids: list[int] = []
     domain: str = "localhost"
+
+    # ── Web Push (VAPID) ─────────────────────
+    vapid_public_key: str = ""
+    vapid_private_key: str = ""
+    vapid_claims_email: str = "admin@construction-ai.ru"
 
     # ── tk-generator ───────────────────────────
     tk_generator_path: str = "../tk-generator"

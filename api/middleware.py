@@ -23,7 +23,14 @@ from starlette.routing import BaseRoute
 from api.routes.auth import decode_jwt_token
 from config.settings import settings
 
-EXCLUDED_PATHS = {"/health", "/docs", "/redoc", "/openapi.json", "/telegram/webhook", "/metrics"}
+EXCLUDED_PATHS = {
+    "/health",
+    "/docs",
+    "/redoc",
+    "/openapi.json",
+    "/telegram/webhook",
+    "/metrics",
+}
 PUBLIC_AUTH_PATHS = {"/auth/register", "/auth/login"}
 limiter = Limiter(key_func=get_remote_address, default_limits=[])
 
@@ -38,7 +45,8 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
     ) -> Response:
         path = request.url.path
         if (
-            path in EXCLUDED_PATHS
+            request.method == "OPTIONS"
+            or path in EXCLUDED_PATHS
             or path in PUBLIC_AUTH_PATHS
             or path == "/web"
             or path.startswith("/web/")
@@ -51,6 +59,7 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
             payload = decode_jwt_token(token)
             request.state.username = payload["username"]
             request.state.user_role = payload["role"]
+            request.state.org_id = payload.get("org_id", "default")
             return await call_next(request)
 
         provided_key = request.headers.get("X-API-Key")

@@ -6,12 +6,13 @@ import json
 from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from config.settings import settings
 from core.analytics.schedule_predictor import SchedulePredictor
 from core.cache import RedisCache
+from core.multitenancy import get_tenant_id
 from core.projects import Project, get_projects_sessionmaker
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
@@ -41,7 +42,22 @@ class AnalyticsDashboardResponse(BaseModel):
     forecast: ScheduleAnalyticsResponse
 
 
-def _require_project_access(request: Request, project_id: str) -> None:
+class AllProjectsDashboardItem(BaseModel):
+    project_id: str
+    project_name: str
+    delay_rate: float
+    avg_delay_days: float
+    predicted_completion: str
+    top_risks: list[str]
+
+
+class AllProjectsDashboardResponse(BaseModel):
+    high_risk_projects: list[AllProjectsDashboardItem]
+    total_checked: int
+    threshold: float
+
+
+def _require_project_access(request: Request, project_id: str, org_id: str) -> None:
     username = getattr(request.state, "username", None)
     if not username:
         raise HTTPException(status_code=401, detail="Authentication required")
@@ -53,7 +69,7 @@ def _require_project_access(request: Request, project_id: str) -> None:
         raise HTTPException(status_code=404, detail="Project not found") from exc
     with session_local() as session:
         project = session.get(Project, project_uuid)
-        if project is None:
+        if project is None or project.org_id != org_id:
             raise HTTPException(status_code=404, detail="Project not found")
         members = project.members or []
         if username != project.owner_id and username not in members:
@@ -61,9 +77,14 @@ def _require_project_access(request: Request, project_id: str) -> None:
 
 
 @router.get("/schedule/{project_id}", response_model=ScheduleAnalyticsResponse)
-async def get_schedule_analytics(project_id: str, request: Request) -> dict:
+async def get_schedule_analytics(
+    project_id: str,
+    request: Request,
+    org_id: str | None = Depends(get_tenant_id),
+) -> dict:
     """Return project delay stats and completion forecast."""
-    _require_project_access(request, project_id)
+    tenant = org_id or "default"
+    _require_project_access(request, project_id, tenant)
     key = f"analytics:schedule:{project_id}"
     cached = await _cache.get(key)
     if cached is not None:
@@ -78,10 +99,15 @@ async def get_schedule_analytics(project_id: str, request: Request) -> dict:
     return prediction
 
 
-@router.get("/dashboard/{project_id}", response_model=AnalyticsDashboardResponse)
-async def get_analytics_dashboard(project_id: str, request: Request) -> dict:
+@router.get("/dashboard/{project_id:uuid}", response_model=AnalyticsDashboardResponse)
+async def get_analytics_dashboard(
+    project_id: str,
+    request: Request,
+    org_id: str | None = Depends(get_tenant_id),
+) -> dict:
     """Return dashboard summary by KG sections with schedule forecast."""
-    _require_project_access(request, project_id)
+    tenant = org_id or "default"
+    _require_project_access(request, project_id, tenant)
     key = f"analytics:schedule:{project_id}"
     cached = await _cache.get(key)
     if cached is not None:
@@ -100,3 +126,56 @@ async def get_analytics_dashboard(project_id: str, request: Request) -> dict:
         "sections": sections,
         "forecast": forecast,
     }
+
+
+@router.get("/dashboard/all", response_model=AllProjectsDashboardResponse)
+async def get_all_projects_dashboard(
+    request: Request,
+    threshold: float = 0.3,
+    org_id: str | None = Depends(get_tenant_id),
+) -> AllProjectsDashboardResponse:
+    """Сводный дашборд по всем проектам с высоким риском задержки."""
+    _ = request
+    tenant = org_id or "default"
+
+    session_local = get_projects_sessionmaker(settings.sqlite_db_path)
+    with session_local() as session:
+        from sqlalchemy import select
+
+        stmt = select(Project).where(Project.org_id == tenant)
+        project_rows = session.execute(stmt).scalars().all()
+        project_list = [{"id": str(project.id), "name": project.name} for project in project_rows]
+
+    results: list[AllProjectsDashboardItem] = []
+    for project in project_list:
+        try:
+            forecast = await _predictor.predict_completion(project["id"], include_llm=False)
+        except Exception:  # noqa: BLE001
+            continue
+
+        delay_rate = float(forecast.get("delay_rate", 0))
+        if delay_rate < threshold:
+            continue
+        risks_raw = forecast.get("risks", [])
+        top_risks = [
+            (risk.get("section", "") + " — " + risk.get("description", "")).strip(" —")
+            for risk in risks_raw[:3]
+            if isinstance(risk, dict)
+        ]
+        results.append(
+            AllProjectsDashboardItem(
+                project_id=project["id"],
+                project_name=project["name"],
+                delay_rate=delay_rate,
+                avg_delay_days=float(forecast.get("avg_delay_days", 0)),
+                predicted_completion=str(forecast.get("predicted_completion", "—")),
+                top_risks=top_risks,
+            )
+        )
+
+    results.sort(key=lambda item: item.delay_rate, reverse=True)
+    return AllProjectsDashboardResponse(
+        high_risk_projects=results,
+        total_checked=len(project_list),
+        threshold=threshold,
+    )

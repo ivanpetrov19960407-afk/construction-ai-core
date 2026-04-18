@@ -2,9 +2,10 @@
 
 import uuid
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
+from core.billing import require_quota
 from core.orchestrator import Orchestrator
 
 router = APIRouter()
@@ -48,13 +49,22 @@ class ChatResponse(BaseModel):
         }
     },
 )
-async def chat(payload: ChatRequest, request: Request):
+async def chat(
+    payload: ChatRequest,
+    request: Request,
+    _quota: None = Depends(require_quota("ai_requests")),
+):
     """Обработать сообщение пользователя через оркестратор."""
-    _ = request
+    _ = (request, _quota)
     session_id = payload.session_id or str(uuid.uuid4())
     result = await orchestrator.process(
         message=payload.message,
         session_id=session_id,
         role=payload.role,
     )
-    return result
+    return ChatResponse(
+        reply=str(result.get("reply", "")),
+        session_id=str(result.get("session_id", session_id)),
+        agents_used=list(result.get("agents_used", [])),
+        confidence=result.get("confidence"),
+    )

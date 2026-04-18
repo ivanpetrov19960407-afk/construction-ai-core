@@ -53,3 +53,5 @@ htmlcov/
 
 # ── Generated DOCX templates ───────────
 templates/*.docx
+.env.save
+.env

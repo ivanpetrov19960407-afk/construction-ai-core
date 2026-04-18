@@ -5,11 +5,13 @@ from __future__ import annotations
 import datetime as dt
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import desc
 
 from config.settings import settings
+from core.billing import require_quota
+from core.multitenancy import get_tenant_id
 from core.projects import Project, ProjectComment, ProjectDocument, get_projects_sessionmaker
 
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -52,6 +54,7 @@ def _serialize_project(project: Project) -> dict:
         "id": str(project.id),
         "name": project.name,
         "description": project.description,
+        "org_id": project.org_id,
         "owner_id": project.owner_id,
         "created_at": project.created_at.isoformat(),
         "members": sorted(set(members)),
@@ -72,8 +75,15 @@ def _serialize_document(document: ProjectDocument) -> dict:
 
 
 @router.post("", status_code=201)
-async def create_project(payload: CreateProjectRequest, request: Request) -> dict:
+async def create_project(
+    payload: CreateProjectRequest,
+    request: Request,
+    org_id: str | None = Depends(get_tenant_id),
+    _quota: None = Depends(require_quota("projects")),
+) -> dict:
+    _ = _quota
     owner = _require_username(request)
+    tenant = org_id or "default"
     session_local = get_projects_sessionmaker(settings.sqlite_db_path)
 
     members = sorted(set(payload.members + [owner]))
@@ -82,6 +92,7 @@ async def create_project(payload: CreateProjectRequest, request: Request) -> dic
         project = Project(
             name=payload.name,
             description=payload.description,
+            org_id=tenant,
             owner_id=owner,
             members=members,
         )
@@ -92,24 +103,38 @@ async def create_project(payload: CreateProjectRequest, request: Request) -> dic
 
 
 @router.get("")
-async def list_projects(request: Request) -> dict[str, list[dict]]:
+async def list_projects(
+    request: Request,
+    org_id: str | None = Depends(get_tenant_id),
+) -> dict[str, list[dict]]:
     username = _require_username(request)
+    tenant = org_id or "default"
     session_local = get_projects_sessionmaker(settings.sqlite_db_path)
 
     with session_local() as session:
-        projects = session.query(Project).order_by(desc(Project.created_at)).all()
+        projects = (
+            session.query(Project)
+            .filter(Project.org_id == tenant)
+            .order_by(desc(Project.created_at))
+            .all()
+        )
         visible = [p for p in projects if username == p.owner_id or username in (p.members or [])]
         return {"projects": [_serialize_project(project) for project in visible]}
 
 
 @router.get("/{project_id}")
-async def get_project(project_id: UUID, request: Request) -> dict:
+async def get_project(
+    project_id: UUID,
+    request: Request,
+    org_id: str | None = Depends(get_tenant_id),
+) -> dict:
     username = _require_username(request)
+    tenant = org_id or "default"
     session_local = get_projects_sessionmaker(settings.sqlite_db_path)
 
     with session_local() as session:
         project = session.get(Project, project_id)
-        if project is None:
+        if project is None or project.org_id != tenant:
             raise HTTPException(status_code=404, detail="Project not found")
         members = project.members or []
         if username != project.owner_id and username not in members:
@@ -118,13 +143,19 @@ async def get_project(project_id: UUID, request: Request) -> dict:
 
 
 @router.post("/{project_id}/members")
-async def add_project_member(project_id: UUID, payload: AddMemberRequest, request: Request) -> dict:
+async def add_project_member(
+    project_id: UUID,
+    payload: AddMemberRequest,
+    request: Request,
+    org_id: str | None = Depends(get_tenant_id),
+) -> dict:
     username = _require_username(request)
+    tenant = org_id or "default"
     session_local = get_projects_sessionmaker(settings.sqlite_db_path)
 
     with session_local() as session:
         project = session.get(Project, project_id)
-        if project is None:
+        if project is None or project.org_id != tenant:
             raise HTTPException(status_code=404, detail="Project not found")
         if username != project.owner_id:
             raise HTTPException(status_code=403, detail="Only owner can add members")
@@ -144,13 +175,15 @@ async def add_project_document(
     project_id: UUID,
     payload: AddDocumentRequest,
     request: Request,
+    org_id: str | None = Depends(get_tenant_id),
 ) -> dict:
     username = _require_username(request)
+    tenant = org_id or "default"
     session_local = get_projects_sessionmaker(settings.sqlite_db_path)
 
     with session_local() as session:
         project = session.get(Project, project_id)
-        if project is None:
+        if project is None or project.org_id != tenant:
             raise HTTPException(status_code=404, detail="Project not found")
         members = project.members or []
         if username != project.owner_id and username not in members:
@@ -171,13 +204,18 @@ async def add_project_document(
 
 
 @router.get("/{project_id}/documents")
-async def list_project_documents(project_id: UUID, request: Request) -> dict[str, list[dict]]:
+async def list_project_documents(
+    project_id: UUID,
+    request: Request,
+    org_id: str | None = Depends(get_tenant_id),
+) -> dict[str, list[dict]]:
     username = _require_username(request)
+    tenant = org_id or "default"
     session_local = get_projects_sessionmaker(settings.sqlite_db_path)
 
     with session_local() as session:
         project = session.get(Project, project_id)
-        if project is None:
+        if project is None or project.org_id != tenant:
             raise HTTPException(status_code=404, detail="Project not found")
         members = project.members or []
         if username != project.owner_id and username not in members:
@@ -198,13 +236,15 @@ async def add_document_comment(
     doc_id: UUID,
     payload: AddCommentRequest,
     request: Request,
+    org_id: str | None = Depends(get_tenant_id),
 ) -> dict:
     username = _require_username(request)
+    tenant = org_id or "default"
     session_local = get_projects_sessionmaker(settings.sqlite_db_path)
 
     with session_local() as session:
         project = session.get(Project, project_id)
-        if project is None:
+        if project is None or project.org_id != tenant:
             raise HTTPException(status_code=404, detail="Project not found")
         members = project.members or []
         if username != project.owner_id and username not in members:
@@ -228,13 +268,18 @@ async def add_document_comment(
 
 
 @router.get("/{project_id}/history")
-async def get_project_history(project_id: UUID, request: Request) -> dict[str, list[dict]]:
+async def get_project_history(
+    project_id: UUID,
+    request: Request,
+    org_id: str | None = Depends(get_tenant_id),
+) -> dict[str, list[dict]]:
     username = _require_username(request)
+    tenant = org_id or "default"
     session_local = get_projects_sessionmaker(settings.sqlite_db_path)
 
     with session_local() as session:
         project = session.get(Project, project_id)
-        if project is None:
+        if project is None or project.org_id != tenant:
             raise HTTPException(status_code=404, detail="Project not found")
         members = project.members or []
         if username != project.owner_id and username not in members:

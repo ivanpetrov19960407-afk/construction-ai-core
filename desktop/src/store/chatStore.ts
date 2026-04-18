@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { ChatResponseMeta } from '../api/coreClient';
 
 export type ChatRole = 'pto_engineer' | 'foreman' | 'tender_specialist' | 'admin';
 export type MessageRole = 'user' | 'assistant';
@@ -8,6 +9,7 @@ export interface ChatMessage {
   role: MessageRole;
   content: string;
   createdAt: string;
+  metadata?: ChatResponseMeta;
 }
 
 interface ChatSession {

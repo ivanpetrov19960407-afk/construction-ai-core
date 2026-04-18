@@ -14,6 +14,8 @@ interface DocumentFormProps {
   fields: DocumentField[];
   onSubmit: (data: Record<string, string>) => void;
   isLoading: boolean;
+  error?: string;
+  disabledOnLoading?: boolean;
 }
 
 const makeInitialValues = (fields: DocumentField[]): Record<string, string> =>
@@ -22,7 +24,13 @@ const makeInitialValues = (fields: DocumentField[]): Record<string, string> =>
     return acc;
   }, {});
 
-export default function DocumentForm({ fields, onSubmit, isLoading }: DocumentFormProps) {
+export default function DocumentForm({
+  fields,
+  onSubmit,
+  isLoading,
+  error,
+  disabledOnLoading = true
+}: DocumentFormProps) {
   const initialValues = useMemo(() => makeInitialValues(fields), [fields]);
   const [values, setValues] = useState<Record<string, string>>(initialValues);
 
@@ -50,12 +58,14 @@ export default function DocumentForm({ fields, onSubmit, isLoading }: DocumentFo
               value={values[field.name] ?? ''}
               onChange={(e) => setValues((prev) => ({ ...prev, [field.name]: e.target.value }))}
               placeholder={field.placeholder}
+              disabled={disabledOnLoading && isLoading}
               required
             />
           ) : field.type === 'select' ? (
             <select
               value={values[field.name] ?? ''}
               onChange={(e) => setValues((prev) => ({ ...prev, [field.name]: e.target.value }))}
+              disabled={disabledOnLoading && isLoading}
               required
             >
               <option value="" disabled>
@@ -73,6 +83,7 @@ export default function DocumentForm({ fields, onSubmit, isLoading }: DocumentFo
               value={values[field.name] ?? ''}
               onChange={(e) => setValues((prev) => ({ ...prev, [field.name]: e.target.value }))}
               placeholder={field.placeholder}
+              disabled={disabledOnLoading && isLoading}
               required
             />
           )}
@@ -80,14 +91,17 @@ export default function DocumentForm({ fields, onSubmit, isLoading }: DocumentFo
       ))}
 
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-        <button type="submit" disabled={isLoading}>
-          Сгенерировать
+        <button type="submit" disabled={disabledOnLoading && isLoading}>
+          {isLoading ? '⏳ Сгенерировать' : 'Сгенерировать'}
         </button>
-        <button type="button" onClick={handleClear} disabled={isLoading}>
+        <button type="button" onClick={handleClear} disabled={disabledOnLoading && isLoading}>
           Очистить
         </button>
         {isLoading && <span role="status">⏳ Генерация...</span>}
       </div>
+      {error && error.includes('Failed to fetch') && (
+        <p style={{ color: '#8a6d3b' }}>Проверьте API URL и API Key в разделе Настройки</p>
+      )}
     </form>
   );
 }
