@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useRef, useState } from 'react';
 import MessageBubble from './MessageBubble';
 import { useChatStore } from '../store/chatStore';
 import { sendChatMessage } from '../api/coreClient';
+import type { ChatResponseMeta } from '../api/coreClient';
 import { Store } from '@tauri-apps/plugin-store';
 
 export default function ChatWindow() {
@@ -46,12 +47,17 @@ export default function ChatWindow() {
         role,
         session_id: sessionId
       });
+      const metadata: ChatResponseMeta = {
+        agents: response.agents_used,
+        confidence: typeof response.confidence === 'number' ? response.confidence : undefined
+      };
 
       addMessage({
         id: crypto.randomUUID(),
         role: 'assistant',
         content: response.reply,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        metadata
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Ошибка отправки сообщения');
@@ -76,7 +82,7 @@ export default function ChatWindow() {
         }}
       >
         {messages.map((message) => (
-          <MessageBubble key={message.id} message={message} />
+          <MessageBubble key={message.id} message={message} metadata={message.metadata} />
         ))}
         {isTyping && <div style={{ color: '#777' }}>Assistant печатает…</div>}
       </div>

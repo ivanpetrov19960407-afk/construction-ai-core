@@ -10,6 +10,14 @@ export interface ChatRequest {
 
 export interface ChatResponse {
   reply: string;
+  session_id?: string;
+  agents_used?: string[];
+  confidence?: number | null;
+}
+
+export interface ChatResponseMeta {
+  agents?: string[];
+  confidence?: number;
 }
 
 export interface TKRequest {

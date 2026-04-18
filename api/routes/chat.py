@@ -62,4 +62,9 @@ async def chat(
         session_id=session_id,
         role=payload.role,
     )
-    return result
+    return ChatResponse(
+        reply=str(result.get("reply", "")),
+        session_id=str(result.get("session_id", session_id)),
+        agents_used=list(result.get("agents_used", [])),
+        confidence=result.get("confidence"),
+    )

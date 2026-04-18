@@ -8,6 +8,7 @@ Supervisor-паттерн на LangGraph. Управляет pipeline'ами:
 """
 
 import json
+import re
 import uuid
 from pathlib import Path
 from typing import Any, TypedDict, cast
@@ -26,6 +27,8 @@ from api.metrics import PIPELINE_DURATION
 from core.llm_router import LLMRouter
 from core.session_memory import SessionMemory
 from core.tk_bridge import TKGeneratorBridge
+
+METRICS_PATTERN = re.compile(r"Метрика \w+:\s*\S+\.?\s*", re.UNICODE)
 
 
 class PipelineState(TypedDict):
@@ -187,6 +190,12 @@ class Orchestrator:
         }
         return payload
 
+    def _clean_reply(self, raw_reply: str | None) -> str:
+        """Удалить служебные метрики из текста ответа."""
+        if not raw_reply:
+            return ""
+        return METRICS_PATTERN.sub("", raw_reply).strip()
+
     async def _run_pipeline(
         self,
         intent: str,
@@ -272,8 +281,9 @@ class Orchestrator:
         last_output = ""
         if history and isinstance(history[-1], dict):
             last_output = str(history[-1].get("output", ""))
+        clean_reply = self._clean_reply(last_output)
         result_payload = {
-            "reply": last_output,
+            "reply": clean_reply,
             "session_id": session_id,
             "agents_used": pipeline,
             "confidence": final_state.get("confidence"),
@@ -337,9 +347,10 @@ class Orchestrator:
                 prompt=message,
                 system_prompt=system_prompt,
             )
-            await self.session_memory.add(session_id, role="assistant", content=response.text)
+            clean_reply = self._clean_reply(response.text)
+            await self.session_memory.add(session_id, role="assistant", content=clean_reply)
             return {
-                "reply": response.text,
+                "reply": clean_reply,
                 "session_id": session_id,
                 "agents_used": ["researcher"],  # базовый режим
                 "confidence": None,
