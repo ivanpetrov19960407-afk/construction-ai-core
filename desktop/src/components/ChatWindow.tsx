@@ -10,6 +10,7 @@ export default function ChatWindow() {
   const [error, setError] = useState<string | null>(null);
   const messages = useChatStore((s) => s.messages);
   const role = useChatStore((s) => s.role);
+  const defaultRole = useChatStore((s) => s.defaultRole);
   const sessionId = useChatStore((s) => s.sessionId);
   const addMessage = useChatStore((s) => s.addMessage);
   const isTyping = useChatStore((s) => s.isTyping);
@@ -44,7 +45,7 @@ export default function ChatWindow() {
 
       const response = await sendChatMessage(apiUrl, apiKey, {
         message: trimmed,
-        role,
+        role: role || defaultRole,
         session_id: sessionId
       });
       const metadata: ChatResponseMeta = {
