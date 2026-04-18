@@ -2,7 +2,6 @@
 
 use dirs::config_dir;
 use std::{fs, path::PathBuf};
-use tauri::Manager;
 use tauri_plugin_store::{StoreExt, JsonValue};
 
 const STORE_DIR: &str = "construction-ai";

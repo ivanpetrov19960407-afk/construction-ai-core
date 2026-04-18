@@ -42,7 +42,8 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
     ) -> Response:
         path = request.url.path
         if (
-            path in EXCLUDED_PATHS
+            request.method == "OPTIONS"
+            or path in EXCLUDED_PATHS
             or path in PUBLIC_AUTH_PATHS
             or path == "/web"
             or path.startswith("/web/")

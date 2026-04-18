@@ -56,7 +56,63 @@ export interface ApiConfig {
   apiKey: string;
 }
 
-const normalizeApiUrl = (apiUrl: string) => apiUrl.replace(/\/$/, '');
+export const DEFAULT_API_URL = 'https://vanekpetrov1997.fvds.ru';
+
+const LEGACY_DEFAULT_API_URL = 'http://vanekpetrov1997.fvds.ru';
+
+export const normalizeApiUrl = (apiUrl: string) => {
+  const trimmedUrl = apiUrl.trim().replace(/\/+$/, '');
+
+  if (!trimmedUrl || trimmedUrl === LEGACY_DEFAULT_API_URL) {
+    return DEFAULT_API_URL;
+  }
+
+  return trimmedUrl;
+};
+
+async function readResponseBody(response: Response): Promise<string> {
+  const fallback = '<пустой ответ>';
+
+  try {
+    const text = await response.text();
+    return text.trim() || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+export async function formatHttpError(response: Response, endpoint: string): Promise<string> {
+  const responseBody = await readResponseBody(response);
+  const authHint =
+    response.status === 401
+      ? ' Проверьте API Key: он должен совпадать с одним из значений API_KEYS в серверном .env.'
+      : '';
+
+  return `Запрос ${endpoint} завершился ошибкой HTTP ${response.status}.${authHint} Ответ сервера: ${responseBody}`;
+}
+
+export function formatNetworkError(error: unknown, endpoint: string): string {
+  const details = error instanceof Error && error.message ? ` Детали: ${error.message}` : '';
+  return `Не удалось подключиться к API (${endpoint}). Проверьте API URL и доступность /health.${details}`;
+}
+
+export async function assertOk(response: Response, endpoint: string): Promise<void> {
+  if (!response.ok) {
+    throw new Error(await formatHttpError(response, endpoint));
+  }
+}
+
+export async function apiFetch(
+  apiUrl: string,
+  endpoint: string,
+  init?: RequestInit
+): Promise<Response> {
+  try {
+    return await fetch(`${normalizeApiUrl(apiUrl)}${endpoint}`, init);
+  } catch (error) {
+    throw new Error(formatNetworkError(error, endpoint));
+  }
+}
 
 async function postJson<TRequest>(
   apiUrl: string,
@@ -64,18 +120,16 @@ async function postJson<TRequest>(
   endpoint: string,
   payload: TRequest
 ): Promise<GenerateDocumentResponse> {
-  const response = await fetch(`${normalizeApiUrl(apiUrl)}${endpoint}`, {
+  const response = await apiFetch(apiUrl, endpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-API-Key': apiKey
+      'X-API-Key': apiKey.trim()
     },
     body: JSON.stringify(payload)
   });
 
-  if (!response.ok) {
-    throw new Error(`API error: ${response.status}`);
-  }
+  await assertOk(response, endpoint);
 
   return (await response.json()) as GenerateDocumentResponse;
 }
@@ -83,8 +137,8 @@ async function postJson<TRequest>(
 export async function getApiConfig(): Promise<ApiConfig> {
   const store = await Store.load('settings.json');
   const savedUrl = await store.get<string>('api_url');
-  const apiUrl = savedUrl || (await invoke<string>('get_api_url'));
-  const apiKey = (await store.get<string>('api_key')) || '';
+  const apiUrl = normalizeApiUrl(savedUrl || (await invoke<string>('get_api_url')) || DEFAULT_API_URL);
+  const apiKey = ((await store.get<string>('api_key')) || '').trim();
   return { apiUrl, apiKey };
 }
 
@@ -93,18 +147,17 @@ export async function sendChatMessage(
   apiKey: string,
   payload: ChatRequest
 ): Promise<ChatResponse> {
-  const response = await fetch(`${normalizeApiUrl(apiUrl)}/api/chat`, {
+  const endpoint = '/api/chat';
+  const response = await apiFetch(apiUrl, endpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-API-Key': apiKey
+      'X-API-Key': apiKey.trim()
     },
     body: JSON.stringify(payload)
   });
 
-  if (!response.ok) {
-    throw new Error(`Chat API error: ${response.status}`);
-  }
+  await assertOk(response, endpoint);
 
   return (await response.json()) as ChatResponse;
 }
@@ -122,19 +175,15 @@ export function generateKS(apiUrl: string, apiKey: string, payload: KSRequest) {
 }
 
 export async function downloadTKDocx(apiUrl: string, apiKey: string, sessionId: string): Promise<Blob> {
-  const response = await fetch(
-    `${normalizeApiUrl(apiUrl)}/api/generate/tk/${encodeURIComponent(sessionId)}/download`,
-    {
-      method: 'GET',
-      headers: {
-        'X-API-Key': apiKey
-      }
+  const endpoint = `/api/generate/tk/${encodeURIComponent(sessionId)}/download`;
+  const response = await apiFetch(apiUrl, endpoint, {
+    method: 'GET',
+    headers: {
+      'X-API-Key': apiKey.trim()
     }
-  );
+  });
 
-  if (!response.ok) {
-    throw new Error(`Download API error: ${response.status}`);
-  }
+  await assertOk(response, endpoint);
 
   return await response.blob();
 }

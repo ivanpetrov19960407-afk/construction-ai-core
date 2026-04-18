@@ -81,3 +81,30 @@ def test_health_is_accessible_without_api_key():
         assert response.json()["status"] == "ok"
 
     asyncio.run(_run())
+
+
+def test_cors_preflight_with_api_key_header_is_allowed():
+    """Browser preflight requests should pass before API key validation."""
+
+    async def _run() -> None:
+        old_keys = settings.api_keys
+        settings.api_keys = ["valid-key"]
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.options(
+                    "/api/billing/plan",
+                    headers={
+                        "Origin": "http://localhost:1420",
+                        "Access-Control-Request-Method": "GET",
+                        "Access-Control-Request-Headers": "x-api-key",
+                    },
+                )
+        finally:
+            settings.api_keys = old_keys
+
+        assert response.status_code == 200
+        assert response.headers["access-control-allow-origin"] == "http://localhost:1420"
+        assert "x-api-key" in response.headers["access-control-allow-headers"].lower()
+
+    asyncio.run(_run())
