@@ -5,9 +5,9 @@ import json
 import re
 import tempfile
 import uuid
-from io import BytesIO
 from datetime import datetime, timedelta, timezone
 from enum import Enum
+from io import BytesIO
 from pathlib import Path
 from typing import Literal
 
@@ -938,8 +938,12 @@ async def generate_ks(
         )
     result_text = str(result.get("reply") or "")
     if not result_text:
+        ks_payload = {
+            "ks2": ks2 if isinstance(ks2, dict) else {},
+            "ks3": ks3 if isinstance(ks3, dict) else {},
+        }
         result_text = json.dumps(
-            {"ks2": ks2 if isinstance(ks2, dict) else {}, "ks3": ks3 if isinstance(ks3, dict) else {}},
+            ks_payload,
             ensure_ascii=False,
             indent=2,
         )
@@ -1239,46 +1243,6 @@ async def export_m29_1c_xml(
         content=xml_bytes,
         media_type="application/xml",
         headers={"Content-Disposition": f'attachment; filename="m29_{project_id}_{period}.xml"'},
-    )
-
-
-@router.get("/generate/letter/{session_id}/download")
-async def download_letter_docx(
-    session_id: str,
-    request: Request,
-    org_id: str | None = Depends(get_tenant_id),
-    format: Literal["docx", "pdf"] = Query(default="docx"),
-):
-    """Скачать ранее сгенерированный DOCX/PDF письма по session_id."""
-    _ = (request, org_id)
-    documents = await session_memory.get_session_documents(session_id)
-    letter_document = next((doc for doc in documents if doc.get("doc_type") == "letter"), None)
-    docx_bytes = letter_document.get("docx_bytes") if letter_document else None
-    if not docx_bytes:
-        raise HTTPException(status_code=404, detail="DOCX not found for this session")
-
-    if format == "pdf":
-        docx_bytes = pdf_exporter.docx_to_pdf(docx_bytes, f"letter_{session_id}.docx")
-    suffix = ".pdf" if format == "pdf" else ".docx"
-    tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
-    tmp_path = Path(tmp_file.name)
-    with tmp_file:
-        tmp_file.write(docx_bytes)
-
-    return FileResponse(
-        path=tmp_path,
-        media_type=(
-            "application/pdf"
-            if format == "pdf"
-            else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        ),
-        filename=(
-            f"letter_{session_id}.pdf"
-            if format == "pdf"
-            else (
-                letter_document.get("filename") if letter_document else f"letter_{session_id}.docx"
-            )
-        ),
     )
 
 
