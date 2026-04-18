@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { Store } from '@tauri-apps/plugin-store';
 import type { ChatResponseMeta } from '../api/coreClient';
 
 export type ChatRole = 'pto_engineer' | 'foreman' | 'tender_specialist' | 'admin';
@@ -21,10 +22,12 @@ interface ChatSession {
 interface ChatState {
   sessionId: string;
   role: ChatRole;
+  defaultRole: ChatRole;
   messages: ChatMessage[];
   sessions: ChatSession[];
   isTyping: boolean;
   setRole: (role: ChatRole) => void;
+  setDefaultRole: (role: ChatRole) => void;
   addMessage: (message: ChatMessage) => void;
   setTyping: (isTyping: boolean) => void;
   resetSession: () => void;
@@ -34,11 +37,13 @@ const createSessionId = () => crypto.randomUUID();
 
 export const useChatStore = create<ChatState>((set, get) => ({
   sessionId: createSessionId(),
-  role: 'admin',
+  role: 'pto_engineer',
+  defaultRole: 'pto_engineer',
   messages: [],
   sessions: [],
   isTyping: false,
   setRole: (role) => set({ role }),
+  setDefaultRole: (role) => set({ defaultRole: role, role }),
   addMessage: (message) => set({ messages: [...get().messages, message] }),
   setTyping: (isTyping) => set({ isTyping }),
   resetSession: () => {
@@ -57,3 +62,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
     });
   }
 }));
+
+void (async () => {
+  const store = await Store.load('settings.json');
+  const defaultRole = await store.get<ChatRole>('default_role');
+
+  if (defaultRole) {
+    useChatStore.setState({ defaultRole, role: defaultRole });
+  }
+})();

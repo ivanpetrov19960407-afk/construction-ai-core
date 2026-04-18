@@ -65,6 +65,14 @@ export interface ApiConfig {
   apiKey: string;
 }
 
+export interface HealthResponse {
+  status: string;
+  service: string;
+  version: string;
+  uptime_seconds: number;
+  components: Record<string, { status: string; [key: string]: unknown }>;
+}
+
 export const DEFAULT_API_URL = 'https://vanekpetrov1997.fvds.ru';
 
 const LEGACY_DEFAULT_API_URL = 'http://vanekpetrov1997.fvds.ru';
@@ -188,6 +196,12 @@ export async function sendChatMessage(
   await assertOk(response, endpoint);
 
   return (await response.json()) as ChatResponse;
+}
+
+export async function checkHealth(apiUrl: string): Promise<HealthResponse> {
+  const response = await apiFetch(apiUrl, '/health');
+  await assertOk(response, '/health');
+  return (await response.json()) as HealthResponse;
 }
 
 export function generateTK(apiUrl: string, apiKey: string, payload: TKRequest) {
