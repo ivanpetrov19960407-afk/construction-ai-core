@@ -27,6 +27,7 @@ class ChatResponse(BaseModel):
     session_id: str
     agents_used: list[str] = []
     confidence: float | None = None
+    conflict_rate: float | None = None
 
 
 @router.post(
@@ -67,4 +68,5 @@ async def chat(
         session_id=str(result.get("session_id", session_id)),
         agents_used=list(result.get("agents_used", [])),
         confidence=result.get("confidence"),
+        conflict_rate=result.get("conflict_rate"),
     )

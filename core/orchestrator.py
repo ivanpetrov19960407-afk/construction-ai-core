@@ -194,7 +194,14 @@ class Orchestrator:
         """Удалить служебные метрики из текста ответа."""
         if not raw_reply:
             return ""
-        return METRICS_PATTERN.sub("", raw_reply).strip()
+        without_inline_metrics = METRICS_PATTERN.sub("", raw_reply)
+        without_metric_lines = re.sub(
+            r"^\s*Метрика \w+:\s*.+$",
+            "",
+            without_inline_metrics,
+            flags=re.MULTILINE | re.UNICODE,
+        )
+        return re.sub(r"\n{3,}", "\n\n", without_metric_lines).strip()
 
     async def _run_pipeline(
         self,
@@ -281,12 +288,14 @@ class Orchestrator:
         last_output = ""
         if history and isinstance(history[-1], dict):
             last_output = str(history[-1].get("output", ""))
-        clean_reply = self._clean_reply(last_output)
+        raw_reply = last_output or str(final_state.get("final_output", "") or "")
+        clean_reply = self._clean_reply(raw_reply)
         result_payload = {
             "reply": clean_reply,
             "session_id": session_id,
             "agents_used": pipeline,
             "confidence": final_state.get("confidence"),
+            "conflict_rate": final_state.get("conflict_rate"),
             "state": final_state,
         }
         if tk_bridge_result:
