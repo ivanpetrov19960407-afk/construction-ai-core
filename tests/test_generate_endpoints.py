@@ -68,6 +68,7 @@ def test_tk_generate_and_download():
 
 def test_session_store_keeps_documents_by_doc_type():
     """Один session_id должен хранить несколько типов документов без перезаписи."""
+
     async def _run() -> None:
         generate.SESSION_STORE.clear()
 
