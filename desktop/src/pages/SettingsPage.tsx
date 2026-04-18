@@ -7,8 +7,6 @@ import Input from '../components/ui/Input';
 import { colors, spacing } from '../styles/tokens';
 import {
   DEFAULT_API_URL,
-  apiFetch,
-  assertOk,
   checkHealth,
   normalizeApiUrl,
   type HealthResponse
@@ -110,6 +108,7 @@ export default function SettingsPage() {
     setConnectionStatus({ tone: 'checking', message: 'Проверяю сервер...' });
 
     try {
+      // Шаг 1: проверить доступность сервера через /health (не требует ключа)
       const healthResponse = await checkHealth(normalizedUrl);
       setHealth(healthResponse);
       setLastCheckedAt(new Date().toISOString());
@@ -123,14 +122,29 @@ export default function SettingsPage() {
         return;
       }
 
+      // Шаг 2: проверить ключ через POST /api/chat с минимальным запросом
       setConnectionStatus({ tone: 'checking', message: 'Сервер доступен. Проверяю API Key...' });
-      const protectedResponse = await apiFetch(normalizedUrl, '/api/billing/plan', {
-        method: 'GET',
+      const testResponse = await fetch(`${normalizedUrl}/api/chat`, {
+        method: 'POST',
         headers: {
+          'Content-Type': 'application/json',
           'X-API-Key': trimmedKey
-        }
+        },
+        body: JSON.stringify({ message: 'ping', role: 'pto_engineer', session_id: 'settings-check' }),
+        signal: AbortSignal.timeout(10000)
       });
-      await assertOk(protectedResponse, '/api/billing/plan');
+
+      // 200 или 422 (validation error) — оба означают что ключ принят
+      // 401/403 — ключ неверный
+      if (testResponse.status === 401 || testResponse.status === 403) {
+        setConnectionStatus({
+          tone: 'error',
+          message: `Неверный API Key (HTTP ${testResponse.status}). Проверьте значение API_KEYS в .env на сервере.`
+        });
+        return;
+      }
+
+      // Ключ принят — сохранить настройки
       await persistSettings(normalizedUrl, trimmedKey, defaultRole);
       setApiKey(trimmedKey);
       setDefaultRole(defaultRole);
@@ -187,7 +201,7 @@ export default function SettingsPage() {
             {connectionStatus.tone === 'checking' ? 'Проверка...' : 'Проверить соединение'}
           </Button>
         </div>
-        {saved && <span style={{ color: colors.success }}>Сохранено</span>}
+        {saved && <span style={{ color: colors.success }}>Сохранено ✓</span>}
         <p style={{ color: statusColor[connectionStatus.tone], margin: 0 }}>
           {connectionStatus.message}
         </p>
