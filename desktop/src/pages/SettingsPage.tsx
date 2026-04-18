@@ -1,16 +1,36 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { Store } from '@tauri-apps/plugin-store';
+import { DEFAULT_API_URL, apiFetch, assertOk, normalizeApiUrl } from '../api/coreClient';
+
+type ConnectionStatus = {
+  tone: 'idle' | 'checking' | 'success' | 'warning' | 'error';
+  message: string;
+};
+
+const statusColor: Record<ConnectionStatus['tone'], string> = {
+  idle: '#4b5563',
+  checking: '#2563eb',
+  success: '#15803d',
+  warning: '#b45309',
+  error: '#b91c1c'
+};
 
 export default function SettingsPage() {
-  const [apiUrl, setApiUrl] = useState('http://localhost:8000');
+  const [apiUrl, setApiUrl] = useState(DEFAULT_API_URL);
   const [apiKey, setApiKey] = useState('');
   const [saved, setSaved] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>({
+    tone: 'idle',
+    message: 'Проверка соединения ещё не выполнялась.'
+  });
 
   useEffect(() => {
     const load = async () => {
       const store = await Store.load('settings.json');
-      const url = (await store.get<string>('api_url')) || (await invoke<string>('get_api_url'));
+      const url = normalizeApiUrl(
+        (await store.get<string>('api_url')) || (await invoke<string>('get_api_url')) || DEFAULT_API_URL
+      );
       const key = (await store.get<string>('api_key')) || '';
       setApiUrl(url);
       setApiKey(key);
@@ -19,19 +39,79 @@ export default function SettingsPage() {
     void load();
   }, []);
 
+  const persistSettings = async (normalizedUrl: string, trimmedKey: string) => {
+    const store = await Store.load('settings.json');
+    await store.set('api_url', normalizedUrl);
+    await store.set('api_key', trimmedKey);
+    await store.save();
+    await invoke('set_api_url', { url: normalizedUrl });
+  };
+
   const onSave = async (event: FormEvent) => {
     event.preventDefault();
-    const store = await Store.load('settings.json');
-    await store.set('api_url', apiUrl);
-    await store.set('api_key', apiKey);
-    await store.save();
-    await invoke('set_api_url', { url: apiUrl });
-    setSaved(true);
-    setTimeout(() => setSaved(false), 1500);
+    const normalizedUrl = normalizeApiUrl(apiUrl);
+    const trimmedKey = apiKey.trim();
+
+    try {
+      await persistSettings(normalizedUrl, trimmedKey);
+      setApiUrl(normalizedUrl);
+      setApiKey(trimmedKey);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1500);
+    } catch (error) {
+      setConnectionStatus({
+        tone: 'error',
+        message: error instanceof Error ? error.message : 'Не удалось сохранить настройки API.'
+      });
+    }
+  };
+
+  const onCheckConnection = async () => {
+    const normalizedUrl = normalizeApiUrl(apiUrl);
+    const trimmedKey = apiKey.trim();
+    setApiUrl(normalizedUrl);
+    setConnectionStatus({ tone: 'checking', message: 'Проверяю сервер...' });
+
+    try {
+      const healthResponse = await apiFetch(normalizedUrl, '/health');
+      await assertOk(healthResponse, '/health');
+
+      if (!trimmedKey) {
+        setConnectionStatus({
+          tone: 'warning',
+          message:
+            'Сервер доступен, но API Key пустой. Для Chat и генерации документов укажите ключ из API_KEYS в серверном .env.'
+        });
+        return;
+      }
+
+      setConnectionStatus({ tone: 'checking', message: 'Сервер доступен. Проверяю API Key...' });
+      const protectedResponse = await apiFetch(normalizedUrl, '/api/billing/plan', {
+        method: 'GET',
+        headers: {
+          'X-API-Key': trimmedKey
+        }
+      });
+      await assertOk(protectedResponse, '/api/billing/plan');
+      await persistSettings(normalizedUrl, trimmedKey);
+      setApiKey(trimmedKey);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1500);
+
+      setConnectionStatus({
+        tone: 'success',
+        message: 'Сервер доступен, API Key принят. Desktop готов к работе с серверным API.'
+      });
+    } catch (error) {
+      setConnectionStatus({
+        tone: 'error',
+        message: error instanceof Error ? error.message : 'Не удалось проверить соединение с API.'
+      });
+    }
   };
 
   return (
-    <form onSubmit={onSave} style={{ display: 'grid', gap: 8, maxWidth: 540 }}>
+    <form onSubmit={onSave} style={{ display: 'grid', gap: 10, maxWidth: 640 }}>
       <label>
         API URL
         <input value={apiUrl} onChange={(e) => setApiUrl(e.target.value)} style={{ width: '100%' }} />
@@ -40,8 +120,20 @@ export default function SettingsPage() {
         API Key
         <input value={apiKey} onChange={(e) => setApiKey(e.target.value)} style={{ width: '100%' }} />
       </label>
-      <button type="submit">Сохранить</button>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <button type="submit">Сохранить</button>
+        <button
+          type="button"
+          onClick={onCheckConnection}
+          disabled={connectionStatus.tone === 'checking'}
+        >
+          {connectionStatus.tone === 'checking' ? 'Проверка...' : 'Проверить соединение'}
+        </button>
+      </div>
       {saved && <span style={{ color: 'green' }}>Сохранено</span>}
+      <p style={{ color: statusColor[connectionStatus.tone], margin: 0 }}>
+        {connectionStatus.message}
+      </p>
     </form>
   );
 }
