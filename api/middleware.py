@@ -23,12 +23,15 @@ from starlette.routing import BaseRoute
 from api.routes.auth import decode_jwt_token
 from config.settings import settings
 
-<<<<<<< Updated upstream
-EXCLUDED_PATHS = {"/health", "/docs", "/redoc", "/openapi.json", "/telegram/webhook", "/metrics"}
+EXCLUDED_PATHS = {
+    "/health",
+    "/docs",
+    "/redoc",
+    "/openapi.json",
+    "/telegram/webhook",
+    "/metrics",
+}
 PUBLIC_AUTH_PATHS = {"/auth/register", "/auth/login"}
-=======
-EXCLUDED_PATHS = {"/health", "/docs", "/redoc", "/openapi.json", "/webhook", "/telegram/webhook", "/metrics", "/api/chat"}
->>>>>>> Stashed changes
 limiter = Limiter(key_func=get_remote_address, default_limits=[])
 
 
