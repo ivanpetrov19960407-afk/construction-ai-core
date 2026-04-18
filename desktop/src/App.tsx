@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import { getApiConfig } from './api/coreClient';
+import { checkHealth, getApiConfig } from './api/coreClient';
 import Sidebar from './components/Sidebar';
+import StatusBar from './components/StatusBar';
 import { resolveRoute } from './router';
 import { colors, spacing, typography } from './styles/tokens';
 import type { BrandingConfig } from './store/brandingStore';
 import { useBrandingStore } from './store/brandingStore';
+import { useServerStatusStore } from './store/serverStatusStore';
 
 const normalizePath = (path: string) => path.replace(/\/$/, '') || '/';
 
@@ -50,6 +52,40 @@ export default function App() {
     };
   }, [setBranding]);
 
+  useEffect(() => {
+    let isDisposed = false;
+    const { setChecking, setOnline, updateFromHealth } = useServerStatusStore.getState();
+
+    const refreshServerStatus = async () => {
+      setChecking(true);
+
+      try {
+        const { apiUrl } = await getApiConfig();
+        const health = await checkHealth(apiUrl);
+        if (isDisposed) {
+          return;
+        }
+        updateFromHealth(health);
+      } catch (_error) {
+        if (isDisposed) {
+          return;
+        }
+        setChecking(false);
+        setOnline(false);
+      }
+    };
+
+    void refreshServerStatus();
+    const intervalId = window.setInterval(() => {
+      void refreshServerStatus();
+    }, 60_000);
+
+    return () => {
+      isDisposed = true;
+      window.clearInterval(intervalId);
+    };
+  }, []);
+
   const navigate = (path: string) => {
     const nextPath = normalizePath(path);
     if (nextPath === currentPath) {
@@ -77,8 +113,11 @@ export default function App() {
       <style>{`*, *::before, *::after { box-sizing: border-box; } body { margin: 0; }`}</style>
       <main style={appTheme}>
         <Sidebar currentPath={currentPath} onNavigate={navigate} />
-        <section style={{ flex: 1, padding: spacing.lg }}>{resolveRoute(currentPath, () => navigate('/'))}</section>
+        <section style={{ flex: 1, padding: spacing.lg, paddingBottom: 36 }}>
+          {resolveRoute(currentPath, () => navigate('/'))}
+        </section>
       </main>
+      <StatusBar />
     </>
   );
 }
