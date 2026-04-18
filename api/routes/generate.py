@@ -7,10 +7,12 @@ import tempfile
 import uuid
 from datetime import datetime, timedelta, timezone
 from enum import Enum
+from io import BytesIO
 from pathlib import Path
 from typing import Literal
 
 import structlog
+from docx import Document
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field, field_validator
@@ -43,6 +45,89 @@ ALLOWED_UNITS = ["м³", "м²", "пог.м.", "шт.", "т", "кг"]
 MAX_UPLOAD_SIZE_BYTES = 20 * 1024 * 1024
 ANALYZE_TIMEOUT_SECONDS = 120
 EXEC_ALBUM_SECTIONS = ("AR", "KZH", "KM", "KMD", "OV", "VK", "EM", "TX", "GP")
+SESSION_TTL_SECONDS = 30 * 60
+SESSION_CLEANUP_INTERVAL_SECONDS = 10 * 60
+SESSION_STORE: dict[str, dict[str, dict]] = {}
+_cleanup_task: asyncio.Task | None = None
+_cleanup_lock = asyncio.Lock()
+
+
+def _now_mono() -> float:
+    """Текущее время event-loop в монотонной шкале."""
+    return asyncio.get_event_loop().time()
+
+
+def _is_session_expired(session_data: dict, now: float | None = None) -> bool:
+    created_at = float(session_data.get("created_at", 0.0))
+    current = now if now is not None else _now_mono()
+    return (current - created_at) > SESSION_TTL_SECONDS
+
+
+def _touch_session(
+    session_id: str,
+    *,
+    text: str,
+    doc_type: str,
+    docx_bytes: bytes | None = None,
+) -> None:
+    session_bucket = SESSION_STORE.setdefault(session_id, {})
+    session_bucket[doc_type] = {
+        "text": text,
+        "doc_type": doc_type,
+        "docx_bytes": docx_bytes,
+        "created_at": _now_mono(),
+    }
+
+
+def _get_live_session(session_id: str, expected_doc_type: str) -> dict | None:
+    session_bucket = SESSION_STORE.get(session_id)
+    if not isinstance(session_bucket, dict):
+        return None
+    session_data = session_bucket.get(expected_doc_type)
+    if not isinstance(session_data, dict):
+        return None
+    if _is_session_expired(session_data):
+        session_bucket.pop(expected_doc_type, None)
+        if not session_bucket:
+            SESSION_STORE.pop(session_id, None)
+        return None
+    return session_data
+
+
+def _render_docx_from_text(text: str) -> bytes:
+    """Сгенерировать минимальный DOCX-файл по тексту документа."""
+    document = Document()
+    for chunk in (text or "").splitlines():
+        if chunk.strip():
+            document.add_paragraph(chunk)
+        else:
+            document.add_paragraph("")
+    buffer = BytesIO()
+    document.save(buffer)
+    return buffer.getvalue()
+
+
+async def cleanup_expired_sessions() -> None:
+    """Фоновая очистка просроченных in-memory сессий."""
+    while True:
+        await asyncio.sleep(SESSION_CLEANUP_INTERVAL_SECONDS)
+        now = _now_mono()
+        for sid, doc_map in list(SESSION_STORE.items()):
+            if not isinstance(doc_map, dict):
+                SESSION_STORE.pop(sid, None)
+                continue
+            for doc_type, data in list(doc_map.items()):
+                if isinstance(data, dict) and _is_session_expired(data, now=now):
+                    doc_map.pop(doc_type, None)
+            if not doc_map:
+                SESSION_STORE.pop(sid, None)
+
+
+async def _ensure_cleanup_task_started() -> None:
+    global _cleanup_task  # noqa: PLW0603
+    async with _cleanup_lock:
+        if _cleanup_task is None or _cleanup_task.done():
+            _cleanup_task = asyncio.create_task(cleanup_expired_sessions())
 
 
 class TKRequest(BaseModel):
@@ -76,6 +161,7 @@ class TKRequest(BaseModel):
 class TKResponse(BaseModel):
     """Ответ на генерацию технологической карты."""
 
+    result: str
     session_id: str
     document: dict
     agents_used: list[str]
@@ -108,6 +194,7 @@ class KSRequest(BaseModel):
 class KSResponse(BaseModel):
     """Ответ на генерацию КС-2/КС-3."""
 
+    result: str
     session_id: str
     ks2: dict
     ks3: dict
@@ -168,6 +255,7 @@ class LetterRequest(BaseModel):
 class LetterResponse(BaseModel):
     """Ответ на генерацию делового письма."""
 
+    result: str
     session_id: str
     document: dict
     agents_used: list[str]
@@ -419,6 +507,7 @@ async def generate_tk(
 ):
     """Генерация технологической карты (ТК) через orchestrator."""
     _ = (request, org_id)
+    await _ensure_cleanup_task_started()
     session_id = payload.session_id or str(uuid.uuid4())
     norms_text = ", ".join(payload.norms) if payload.norms else "не указаны"
     message = (
@@ -452,7 +541,11 @@ async def generate_tk(
             },
         )
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"LLM processing error: {exc}") from exc
+        logger.exception("generate_tk_llm_error", session_id=session_id, error=str(exc))
+        raise HTTPException(
+            status_code=503,
+            detail="LLM временно недоступен, попробуйте позже",
+        ) from exc
 
     state = result.get("state", {}) if isinstance(result, dict) else {}
     docx_bytes = state.get("docx_bytes")
@@ -473,8 +566,18 @@ async def generate_tk(
     tk_bridge_result = result.get("tk_bridge_result") if isinstance(result, dict) else None
     if isinstance(document, dict) and tk_bridge_result:
         document["tk_generator"] = tk_bridge_result
+    result_text = str(result.get("reply") or "")
+    if not result_text and isinstance(document, dict):
+        result_text = json.dumps(document, ensure_ascii=False, indent=2)
+    _touch_session(
+        session_id,
+        text=result_text,
+        doc_type="tk",
+        docx_bytes=docx_bytes if isinstance(docx_bytes, bytes) else None,
+    )
 
     return TKResponse(
+        result=result_text,
         session_id=result["session_id"],
         document=document,
         agents_used=result.get("agents_used", []),
@@ -543,6 +646,7 @@ async def generate_letter_v2(
 ):
     """Генерация делового письма через orchestrator."""
     _ = (request, org_id)
+    await _ensure_cleanup_task_started()
     session_id = payload.session_id or str(uuid.uuid4())
     body_points_text = "; ".join(payload.body_points)
     contract_number = payload.contract_number or "не указан"
@@ -563,7 +667,11 @@ async def generate_letter_v2(
             include_legal_expert=payload.include_npa,
         )
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"LLM processing error: {exc}") from exc
+        logger.exception("generate_letter_llm_error", session_id=session_id, error=str(exc))
+        raise HTTPException(
+            status_code=503,
+            detail="LLM временно недоступен, попробуйте позже",
+        ) from exc
 
     state = result.get("state", {}) if isinstance(result, dict) else {}
     history = state.get("history", []) if isinstance(state, dict) else []
@@ -580,8 +688,18 @@ async def generate_letter_v2(
             docx_bytes=docx_bytes,
             sha256=sha256,
         )
+    result_text = str(result.get("reply") or "")
+    if not result_text and isinstance(document, dict):
+        result_text = json.dumps(document, ensure_ascii=False, indent=2)
+    _touch_session(
+        session_id,
+        text=result_text,
+        doc_type="letter",
+        docx_bytes=docx_bytes if isinstance(docx_bytes, bytes) else None,
+    )
 
     return LetterResponse(
+        result=result_text,
         session_id=result["session_id"],
         document=document,
         agents_used=result.get("agents_used", []),
@@ -770,6 +888,7 @@ async def generate_ks(
 ):
     """Генерация КС-2/КС-3 через orchestrator pipeline."""
     _ = request
+    await _ensure_cleanup_task_started()
     tenant = org_id or "default"
     session_id = payload.session_id or str(uuid.uuid4())
     work_names = ", ".join(item.name for item in payload.work_items)
@@ -799,7 +918,11 @@ async def generate_ks(
             extra_state=extra_state,
         )
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"LLM processing error: {exc}") from exc
+        logger.exception("generate_ks_llm_error", session_id=session_id, error=str(exc))
+        raise HTTPException(
+            status_code=503,
+            detail="LLM временно недоступен, попробуйте позже",
+        ) from exc
 
     state = result.get("state", {}) if isinstance(result, dict) else {}
     ks2 = state.get("ks2_data", {})
@@ -819,6 +942,23 @@ async def generate_ks(
             docx_bytes=docx_bytes,
             sha256=sha256,
         )
+    result_text = str(result.get("reply") or "")
+    if not result_text:
+        ks_payload = {
+            "ks2": ks2 if isinstance(ks2, dict) else {},
+            "ks3": ks3 if isinstance(ks3, dict) else {},
+        }
+        result_text = json.dumps(
+            ks_payload,
+            ensure_ascii=False,
+            indent=2,
+        )
+    _touch_session(
+        session_id,
+        text=result_text,
+        doc_type="ks",
+        docx_bytes=docx_bytes if isinstance(docx_bytes, bytes) else None,
+    )
     try:
         await asyncio.to_thread(
             _upsert_generated_doc,
@@ -836,6 +976,7 @@ async def generate_ks(
         )
 
     return KSResponse(
+        result=result_text,
         session_id=result["session_id"],
         ks2=ks2,
         ks3=ks3,
@@ -891,6 +1032,28 @@ def _extract_risks(analysis: str) -> list[str]:
         if normalized and "риск" in normalized.lower():
             risks.append(normalized)
     return risks
+
+
+async def _load_docx_for_download(session_id: str, doc_type: str) -> bytes | None:
+    """Получить DOCX из in-memory сессии или persistent session_memory."""
+    live_session = _get_live_session(session_id, expected_doc_type=doc_type)
+    if live_session:
+        docx_bytes = live_session.get("docx_bytes")
+        if isinstance(docx_bytes, bytes):
+            return docx_bytes
+        text_value = str(live_session.get("text", ""))
+        if text_value:
+            rendered = _render_docx_from_text(text_value)
+            live_session["docx_bytes"] = rendered
+            return rendered
+
+    documents = await session_memory.get_session_documents(session_id)
+    persisted_document = next((doc for doc in documents if doc.get("doc_type") == doc_type), None)
+    persisted_docx = persisted_document.get("docx_bytes") if persisted_document else None
+    if not isinstance(persisted_docx, bytes):
+        return None
+    _touch_session(session_id, text="", doc_type=doc_type, docx_bytes=persisted_docx)
+    return persisted_docx
 
 
 @router.post(
@@ -984,36 +1147,48 @@ async def download_tk_docx(
     session_id: str,
     request: Request,
     org_id: str | None = Depends(get_tenant_id),
-    format: Literal["docx", "pdf"] = Query(default="docx"),
 ):
-    """Скачать ранее сгенерированный DOCX/PDF по session_id."""
+    """Скачать ранее сгенерированный DOCX по session_id."""
     _ = (request, org_id)
-    documents = await session_memory.get_session_documents(session_id)
-    tk_document = next((doc for doc in documents if doc.get("doc_type") == "tk"), None)
-    docx_bytes = tk_document.get("docx_bytes") if tk_document else None
-    if not docx_bytes:
-        raise HTTPException(status_code=404, detail="DOCX not found for this session")
+    await _ensure_cleanup_task_started()
+    docx_bytes = await _load_docx_for_download(session_id=session_id, doc_type="tk")
+    if not isinstance(docx_bytes, bytes):
+        raise HTTPException(status_code=404, detail="Сессия не найдена или истекла")
 
-    if format == "pdf":
-        docx_bytes = pdf_exporter.docx_to_pdf(docx_bytes, f"tk_{session_id}.docx")
-    suffix = ".pdf" if format == "pdf" else ".docx"
-    tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+    tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
     tmp_path = Path(tmp_file.name)
     with tmp_file:
         tmp_file.write(docx_bytes)
 
     return FileResponse(
         path=tmp_path,
-        media_type=(
-            "application/pdf"
-            if format == "pdf"
-            else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        ),
-        filename=(
-            f"tk_{session_id}.pdf"
-            if format == "pdf"
-            else (tk_document.get("filename") if tk_document else f"tk_{session_id}.docx")
-        ),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        filename=f"tk-{session_id}.docx",
+    )
+
+
+@router.get("/generate/letter/{session_id}/download")
+async def download_letter_docx(
+    session_id: str,
+    request: Request,
+    org_id: str | None = Depends(get_tenant_id),
+):
+    """Скачать ранее сгенерированный DOCX письма по session_id."""
+    _ = (request, org_id)
+    await _ensure_cleanup_task_started()
+    docx_bytes = await _load_docx_for_download(session_id=session_id, doc_type="letter")
+    if not isinstance(docx_bytes, bytes):
+        raise HTTPException(status_code=404, detail="Сессия не найдена или истекла")
+
+    tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+    tmp_path = Path(tmp_file.name)
+    with tmp_file:
+        tmp_file.write(docx_bytes)
+
+    return FileResponse(
+        path=tmp_path,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        filename=f"letter-{session_id}.docx",
     )
 
 
@@ -1022,36 +1197,23 @@ async def download_ks_docx(
     session_id: str,
     request: Request,
     org_id: str | None = Depends(get_tenant_id),
-    format: Literal["docx", "pdf"] = Query(default="docx"),
 ):
-    """Скачать ранее сгенерированный DOCX/PDF КС-2/КС-3 по session_id."""
+    """Скачать ранее сгенерированный DOCX КС-2/КС-3 по session_id."""
     _ = (request, org_id)
-    documents = await session_memory.get_session_documents(session_id)
-    ks_document = next((doc for doc in documents if doc.get("doc_type") == "ks"), None)
-    docx_bytes = ks_document.get("docx_bytes") if ks_document else None
-    if not docx_bytes:
-        raise HTTPException(status_code=404, detail="DOCX not found for this session")
+    await _ensure_cleanup_task_started()
+    docx_bytes = await _load_docx_for_download(session_id=session_id, doc_type="ks")
+    if not isinstance(docx_bytes, bytes):
+        raise HTTPException(status_code=404, detail="Сессия не найдена или истекла")
 
-    if format == "pdf":
-        docx_bytes = pdf_exporter.docx_to_pdf(docx_bytes, f"ks_{session_id}.docx")
-    suffix = ".pdf" if format == "pdf" else ".docx"
-    tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+    tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
     tmp_path = Path(tmp_file.name)
     with tmp_file:
         tmp_file.write(docx_bytes)
 
     return FileResponse(
         path=tmp_path,
-        media_type=(
-            "application/pdf"
-            if format == "pdf"
-            else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        ),
-        filename=(
-            f"ks_{session_id}.pdf"
-            if format == "pdf"
-            else (ks_document.get("filename") if ks_document else f"ks_{session_id}.docx")
-        ),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        filename=f"ks-{session_id}.docx",
     )
 
 
@@ -1094,46 +1256,6 @@ async def export_m29_1c_xml(
         content=xml_bytes,
         media_type="application/xml",
         headers={"Content-Disposition": f'attachment; filename="m29_{project_id}_{period}.xml"'},
-    )
-
-
-@router.get("/generate/letter/{session_id}/download")
-async def download_letter_docx(
-    session_id: str,
-    request: Request,
-    org_id: str | None = Depends(get_tenant_id),
-    format: Literal["docx", "pdf"] = Query(default="docx"),
-):
-    """Скачать ранее сгенерированный DOCX/PDF письма по session_id."""
-    _ = (request, org_id)
-    documents = await session_memory.get_session_documents(session_id)
-    letter_document = next((doc for doc in documents if doc.get("doc_type") == "letter"), None)
-    docx_bytes = letter_document.get("docx_bytes") if letter_document else None
-    if not docx_bytes:
-        raise HTTPException(status_code=404, detail="DOCX not found for this session")
-
-    if format == "pdf":
-        docx_bytes = pdf_exporter.docx_to_pdf(docx_bytes, f"letter_{session_id}.docx")
-    suffix = ".pdf" if format == "pdf" else ".docx"
-    tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
-    tmp_path = Path(tmp_file.name)
-    with tmp_file:
-        tmp_file.write(docx_bytes)
-
-    return FileResponse(
-        path=tmp_path,
-        media_type=(
-            "application/pdf"
-            if format == "pdf"
-            else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        ),
-        filename=(
-            f"letter_{session_id}.pdf"
-            if format == "pdf"
-            else (
-                letter_document.get("filename") if letter_document else f"letter_{session_id}.docx"
-            )
-        ),
     )
 
 
