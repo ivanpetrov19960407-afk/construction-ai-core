@@ -2,6 +2,7 @@
 
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from hmac import compare_digest
 from typing import cast
 
 from aiogram.types import Update
@@ -61,7 +62,13 @@ async def lifespan(app: FastAPI):
     if settings.telegram_webhook_url and settings.bot_token:
         app.state.telegram_bot = create_bot()
         app.state.telegram_dp = create_dispatcher()
-        await app.state.telegram_bot.set_webhook(settings.telegram_webhook_url)
+        if settings.telegram_webhook_secret:
+            await app.state.telegram_bot.set_webhook(
+                settings.telegram_webhook_url,
+                secret_token=settings.telegram_webhook_secret,
+            )
+        else:
+            await app.state.telegram_bot.set_webhook(settings.telegram_webhook_url)
     print("🚀 Construction AI Core запускается...")
     yield
     await analytics_notifier.stop()
@@ -154,6 +161,15 @@ async def telegram_webhook_handler(request: Request) -> dict[str, bool]:
     dp = request.app.state.telegram_dp
     if bot is None or dp is None:
         raise HTTPException(status_code=503, detail="Telegram webhook is not configured")
+    if not settings.telegram_webhook_secret:
+        raise HTTPException(
+            status_code=503,
+            detail="Telegram webhook secret is not configured",
+        )
+
+    received_secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
+    if not compare_digest(received_secret, settings.telegram_webhook_secret):
+        raise HTTPException(status_code=403, detail="Invalid Telegram webhook secret")
 
     payload = await request.json()
     update = Update.model_validate(payload, context={"bot": bot})
