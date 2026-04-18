@@ -1,5 +1,9 @@
 import { useState } from 'react';
 import DocumentForm, { type DocumentField } from '../components/DocumentForm';
+import Button from '../components/ui/Button';
+import Card from '../components/ui/Card';
+import Input from '../components/ui/Input';
+import { colors, spacing } from '../styles/tokens';
 import { downloadKSDocx, generateKS, getApiConfig, type KSWorkItem } from '../api/coreClient';
 
 const fields: DocumentField[] = [
@@ -159,39 +163,38 @@ export default function GenerateKSPage() {
   };
 
   return (
-    <section style={{ display: 'grid', gap: 12 }}>
-      <h2>Генерация КС</h2>
-      <DocumentForm fields={fields} onSubmit={handleSubmit} isLoading={isLoading} error={error} />
-      {success && <p style={{ color: 'green', fontWeight: 600 }}>✓ КС сгенерирована</p>}
-      {error && <p style={{ color: 'crimson' }}>{error}</p>}
-      {sessionId && <p style={{ color: '#777', fontSize: 12 }}>session_id: {sessionId}</p>}
-      {summary && (
-        <table style={{ borderCollapse: 'collapse', width: '100%', maxWidth: 700 }}>
-          <thead>
-            <tr>
-              <th style={{ border: '1px solid #ddd', padding: 8 }}>ks2 (стоимость)</th>
-              <th style={{ border: '1px solid #ddd', padding: 8 }}>ks3 (выполнение)</th>
-              <th style={{ border: '1px solid #ddd', padding: 8 }}>total_cost</th>
-              <th style={{ border: '1px solid #ddd', padding: 8 }}>total_hours</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td style={{ border: '1px solid #ddd', padding: 8 }}>{summary.ks2 || '—'}</td>
-              <td style={{ border: '1px solid #ddd', padding: 8 }}>{summary.ks3 || '—'}</td>
-              <td style={{ border: '1px solid #ddd', padding: 8 }}>{summary.total_cost || '—'}</td>
-              <td style={{ border: '1px solid #ddd', padding: 8 }}>{summary.total_hours || '—'}</td>
-            </tr>
-          </tbody>
-        </table>
-      )}
-      <label style={{ display: 'grid', gap: 8 }}>
-        <span>Результат</span>
-        <textarea value={result} rows={12} readOnly />
-      </label>
-      <button type="button" onClick={handleDownload} disabled={!sessionId || downloadLoading}>
-        {downloadLoading ? 'Скачивание...' : 'Скачать DOCX'}
-      </button>
-    </section>
+    <Card>
+      <section style={{ display: 'grid', gap: spacing.md }}>
+        <h2>Генерация КС</h2>
+        <DocumentForm fields={fields} onSubmit={handleSubmit} isLoading={isLoading} error={error} />
+        {success && <p style={{ color: colors.success, fontWeight: 600 }}>✓ КС сгенерирована</p>}
+        {error && <p style={{ color: colors.error }}>{error}</p>}
+        {sessionId && <p style={{ color: colors.textSecondary, fontSize: 12 }}>session_id: {sessionId}</p>}
+        {summary && (
+          <table style={{ borderCollapse: 'collapse', width: '100%', maxWidth: 700 }}>
+            <thead>
+              <tr>
+                <th style={{ border: `1px solid ${colors.border}`, padding: 8 }}>ks2 (стоимость)</th>
+                <th style={{ border: `1px solid ${colors.border}`, padding: 8 }}>ks3 (выполнение)</th>
+                <th style={{ border: `1px solid ${colors.border}`, padding: 8 }}>total_cost</th>
+                <th style={{ border: `1px solid ${colors.border}`, padding: 8 }}>total_hours</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td style={{ border: `1px solid ${colors.border}`, padding: 8 }}>{summary.ks2 || '—'}</td>
+                <td style={{ border: `1px solid ${colors.border}`, padding: 8 }}>{summary.ks3 || '—'}</td>
+                <td style={{ border: `1px solid ${colors.border}`, padding: 8 }}>{summary.total_cost || '—'}</td>
+                <td style={{ border: `1px solid ${colors.border}`, padding: 8 }}>{summary.total_hours || '—'}</td>
+              </tr>
+            </tbody>
+          </table>
+        )}
+        <Input type="textarea" label="Результат" value={result} rows={12} readOnly />
+        <Button type="button" onClick={handleDownload} disabled={!sessionId || downloadLoading} loading={downloadLoading}>
+          {downloadLoading ? 'Скачивание...' : 'Скачать DOCX'}
+        </Button>
+      </section>
+    </Card>
   );
 }

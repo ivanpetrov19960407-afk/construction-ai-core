@@ -1,4 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
+import Button from './ui/Button';
+import Input from './ui/Input';
+import { colors, radius, spacing, typography } from '../styles/tokens';
 
 export type DocumentFieldType = 'text' | 'number' | 'select' | 'textarea';
 
@@ -48,59 +51,74 @@ export default function DocumentForm({
   };
 
   return (
-    <form onSubmit={handleSubmit} style={{ display: 'grid', gap: 12, maxWidth: 700 }}>
+    <form onSubmit={handleSubmit} style={{ display: 'grid', gap: spacing.md, maxWidth: 700 }}>
       {fields.map((field) => (
-        <label key={field.name} style={{ display: 'grid', gap: 6 }}>
-          <span>{field.label}</span>
+        <div key={field.name}>
           {field.type === 'textarea' ? (
-            <textarea
+            <Input
+              type="textarea"
               rows={6}
               value={values[field.name] ?? ''}
               onChange={(e) => setValues((prev) => ({ ...prev, [field.name]: e.target.value }))}
               placeholder={field.placeholder}
               disabled={disabledOnLoading && isLoading}
               required
+              label={field.label}
             />
           ) : field.type === 'select' ? (
-            <select
-              value={values[field.name] ?? ''}
-              onChange={(e) => setValues((prev) => ({ ...prev, [field.name]: e.target.value }))}
-              disabled={disabledOnLoading && isLoading}
-              required
-            >
-              <option value="" disabled>
-                Выберите значение
-              </option>
-              {(field.options ?? []).map((option) => (
-                <option key={option} value={option}>
-                  {option}
+            <label style={{ display: 'grid', gap: spacing.xs }}>
+              <span style={{ color: colors.textPrimary, fontSize: typography.label.fontSize, fontWeight: typography.label.fontWeight }}>
+                {field.label}
+              </span>
+              <select
+                value={values[field.name] ?? ''}
+                onChange={(e) => setValues((prev) => ({ ...prev, [field.name]: e.target.value }))}
+                disabled={disabledOnLoading && isLoading}
+                required
+                style={{
+                  width: '100%',
+                  borderRadius: radius.md,
+                  border: `1px solid ${colors.border}`,
+                  padding: `${spacing.sm}px ${spacing.md}px`,
+                  fontFamily: typography.fontFamily,
+                  fontSize: typography.body.fontSize
+                }}
+              >
+                <option value="" disabled>
+                  Выберите значение
                 </option>
-              ))}
-            </select>
+                {(field.options ?? []).map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </label>
           ) : (
-            <input
+            <Input
               type={field.type}
               value={values[field.name] ?? ''}
               onChange={(e) => setValues((prev) => ({ ...prev, [field.name]: e.target.value }))}
               placeholder={field.placeholder}
               disabled={disabledOnLoading && isLoading}
               required
+              label={field.label}
             />
           )}
-        </label>
+        </div>
       ))}
 
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-        <button type="submit" disabled={disabledOnLoading && isLoading}>
-          {isLoading ? '⏳ Сгенерировать' : 'Сгенерировать'}
-        </button>
-        <button type="button" onClick={handleClear} disabled={disabledOnLoading && isLoading}>
+      <div style={{ display: 'flex', gap: spacing.sm, alignItems: 'center', flexWrap: 'wrap' }}>
+        <Button type="submit" loading={isLoading} disabled={disabledOnLoading && isLoading}>
+          {isLoading ? 'Сгенерировать...' : 'Сгенерировать'}
+        </Button>
+        <Button type="button" variant="secondary" onClick={handleClear} disabled={disabledOnLoading && isLoading}>
           Очистить
-        </button>
+        </Button>
         {isLoading && <span role="status">⏳ Генерация...</span>}
       </div>
       {error && error.includes('Failed to fetch') && (
-        <p style={{ color: '#8a6d3b' }}>Проверьте API URL и API Key в разделе Настройки</p>
+        <p style={{ color: colors.warning }}>Проверьте API URL и API Key в разделе Настройки</p>
       )}
     </form>
   );

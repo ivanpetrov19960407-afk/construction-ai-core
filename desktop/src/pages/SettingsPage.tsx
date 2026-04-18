@@ -1,6 +1,10 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { Store } from '@tauri-apps/plugin-store';
+import Card from '../components/ui/Card';
+import Button from '../components/ui/Button';
+import Input from '../components/ui/Input';
+import { colors, spacing } from '../styles/tokens';
 import { DEFAULT_API_URL, apiFetch, assertOk, normalizeApiUrl } from '../api/coreClient';
 
 type ConnectionStatus = {
@@ -9,11 +13,11 @@ type ConnectionStatus = {
 };
 
 const statusColor: Record<ConnectionStatus['tone'], string> = {
-  idle: '#4b5563',
-  checking: '#2563eb',
-  success: '#15803d',
-  warning: '#b45309',
-  error: '#b91c1c'
+  idle: colors.textSecondary,
+  checking: colors.primary,
+  success: colors.success,
+  warning: colors.warning,
+  error: colors.error
 };
 
 export default function SettingsPage() {
@@ -111,29 +115,27 @@ export default function SettingsPage() {
   };
 
   return (
-    <form onSubmit={onSave} style={{ display: 'grid', gap: 10, maxWidth: 640 }}>
-      <label>
-        API URL
-        <input value={apiUrl} onChange={(e) => setApiUrl(e.target.value)} style={{ width: '100%' }} />
-      </label>
-      <label>
-        API Key
-        <input value={apiKey} onChange={(e) => setApiKey(e.target.value)} style={{ width: '100%' }} />
-      </label>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <button type="submit">Сохранить</button>
-        <button
-          type="button"
-          onClick={onCheckConnection}
-          disabled={connectionStatus.tone === 'checking'}
-        >
-          {connectionStatus.tone === 'checking' ? 'Проверка...' : 'Проверить соединение'}
-        </button>
-      </div>
-      {saved && <span style={{ color: 'green' }}>Сохранено</span>}
-      <p style={{ color: statusColor[connectionStatus.tone], margin: 0 }}>
-        {connectionStatus.message}
-      </p>
-    </form>
+    <Card>
+      <form onSubmit={onSave} style={{ display: 'grid', gap: spacing.md, maxWidth: 640 }}>
+        <Input label="API URL" value={apiUrl} onChange={(e) => setApiUrl(e.target.value)} />
+        <Input label="API Key" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
+        <div style={{ display: 'flex', gap: spacing.sm, flexWrap: 'wrap' }}>
+          <Button type="submit">Сохранить</Button>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={onCheckConnection}
+            disabled={connectionStatus.tone === 'checking'}
+            loading={connectionStatus.tone === 'checking'}
+          >
+            {connectionStatus.tone === 'checking' ? 'Проверка...' : 'Проверить соединение'}
+          </Button>
+        </div>
+        {saved && <span style={{ color: colors.success }}>Сохранено</span>}
+        <p style={{ color: statusColor[connectionStatus.tone], margin: 0 }}>
+          {connectionStatus.message}
+        </p>
+      </form>
+    </Card>
   );
 }
