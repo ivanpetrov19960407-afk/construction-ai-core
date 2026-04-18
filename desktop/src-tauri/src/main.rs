@@ -9,7 +9,7 @@ const STORE_DIR: &str = "construction-ai";
 const STORE_FILE: &str = "settings.json";
 const API_URL_KEY: &str = "api_url";
 const API_KEY_KEY: &str = "api_key";
-const DEFAULT_API_URL: &str = "http://localhost:8000";
+const DEFAULT_API_URL: &str = "https://vanekpetrov1997.fvds.ru";
 
 fn settings_path() -> PathBuf {
   config_dir()

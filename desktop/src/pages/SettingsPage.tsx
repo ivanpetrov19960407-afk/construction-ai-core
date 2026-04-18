@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { Store } from '@tauri-apps/plugin-store';
 
 export default function SettingsPage() {
-  const [apiUrl, setApiUrl] = useState('http://localhost:8000');
+  const [apiUrl, setApiUrl] = useState('http://vanekpetrov1997.fvds.ru');
   const [apiKey, setApiKey] = useState('');
   const [saved, setSaved] = useState(false);
 

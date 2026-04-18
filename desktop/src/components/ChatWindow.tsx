@@ -38,7 +38,7 @@ export default function ChatWindow() {
 
     try {
       const settings = await Store.load('settings.json');
-      const apiUrl = (await settings.get<string>('api_url')) || 'http://localhost:8000';
+      const apiUrl = (await settings.get<string>('api_url')) || 'https://vanekpetrov1997.fvds.ru';
       const apiKey = (await settings.get<string>('api_key')) || '';
 
       const response = await sendChatMessage(apiUrl, apiKey, {
