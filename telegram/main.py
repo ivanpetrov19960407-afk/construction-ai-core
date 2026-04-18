@@ -35,7 +35,10 @@ async def main() -> None:
         await dp.start_polling(bot)
         return
 
-    await bot.set_webhook(settings.telegram_webhook_url)
+    webhook_kwargs: dict[str, str] = {}
+    if settings.telegram_webhook_secret:
+        webhook_kwargs["secret_token"] = settings.telegram_webhook_secret
+    await bot.set_webhook(settings.telegram_webhook_url, **webhook_kwargs)
     await asyncio.Event().wait()
 
 

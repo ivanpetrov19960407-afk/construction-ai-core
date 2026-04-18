@@ -68,6 +68,7 @@ class Settings(BaseSettings):
     core_api_url: str = "http://api:8000"
     telegram_bot_token: str = ""
     telegram_webhook_url: str = ""
+    telegram_webhook_secret: str = ""
     admin_telegram_ids: list[int] = []
     pto_engineer_telegram_ids: list[int] = []
     domain: str = "localhost"
