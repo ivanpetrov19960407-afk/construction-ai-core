@@ -62,10 +62,13 @@ async def lifespan(app: FastAPI):
     if settings.telegram_webhook_url and settings.bot_token:
         app.state.telegram_bot = create_bot()
         app.state.telegram_dp = create_dispatcher()
-        webhook_kwargs: dict[str, str] = {}
         if settings.telegram_webhook_secret:
-            webhook_kwargs["secret_token"] = settings.telegram_webhook_secret
-        await app.state.telegram_bot.set_webhook(settings.telegram_webhook_url, **webhook_kwargs)
+            await app.state.telegram_bot.set_webhook(
+                settings.telegram_webhook_url,
+                secret_token=settings.telegram_webhook_secret,
+            )
+        else:
+            await app.state.telegram_bot.set_webhook(settings.telegram_webhook_url)
     print("🚀 Construction AI Core запускается...")
     yield
     await analytics_notifier.stop()
