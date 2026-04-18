@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import TabLayout from '../components/TabLayout';
+import Button from '../components/ui/Button';
+import Card from '../components/ui/Card';
+import Input from '../components/ui/Input';
 import { getApiConfig } from '../api/coreClient';
+import { colors, spacing } from '../styles/tokens';
 import type { GSNChecklist, GSNSectionStatus, ScheduleForecast, SignStatus } from '../types/handover';
 
 interface ProjectDocument {
@@ -363,26 +367,26 @@ export default function HandoverPage() {
   const signedCount = documents.filter((doc) => signedDocIds.includes(doc.id) || doc.status === 'signed').length;
 
   return (
-    <section style={{ display: 'grid', gap: 12 }}>
+    <Card><section style={{ display: 'grid', gap: spacing.md }}>
       <h2>Сдача объекта</h2>
 
       <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
         <label style={{ display: 'grid', gap: 4 }}>
           <span>Project ID</span>
-          <input value={projectId} onChange={(event) => setProjectId(event.target.value)} placeholder="UUID проекта" />
+          <Input value={projectId} onChange={(event) => setProjectId(event.target.value)} placeholder="UUID проекта" />
         </label>
         <label style={{ display: 'grid', gap: 4 }}>
           <span>User ID для ЭЦП</span>
-          <input value={userId} onChange={(event) => setUserId(event.target.value)} placeholder="Идентификатор пользователя" />
+          <Input value={userId} onChange={(event) => setUserId(event.target.value)} placeholder="Идентификатор пользователя" />
         </label>
       </div>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <button type="button" onClick={loadAll} disabled={loading}>
+        <Button type="button" onClick={loadAll} disabled={loading}>
           {loading ? 'Загрузка...' : 'Загрузить данные'}
-        </button>
-        <button type="button" onClick={handleBatchSign} disabled={batchLoading || !documents.length}>
+        </Button>
+        <Button type="button" onClick={handleBatchSign} disabled={batchLoading || !documents.length}>
           {batchLoading ? 'Подписание...' : 'Подписать все (batch)'}
-        </button>
+        </Button>
       </div>
       {error && <p style={{ color: 'crimson', margin: 0 }}>{error}</p>}
 
@@ -393,9 +397,9 @@ export default function HandoverPage() {
             title: 'Готовность ИД',
             content: (
               <section style={{ display: 'grid', gap: 12 }}>
-                <button type="button" onClick={handleGenerateReport}>
+                <Button type="button" onClick={handleGenerateReport}>
                   Сформировать отчёт
-                </button>
+                </Button>
                 <div style={{ display: 'grid', gap: 10 }}>
                   {checklistSections.map((section) => (
                     <article
@@ -464,13 +468,13 @@ export default function HandoverPage() {
                         </span>
                       </div>
                       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                        <button type="button" onClick={() => handleSign(doc)} disabled={status === 'signed'}>
+                        <Button type="button" onClick={() => handleSign(doc)} disabled={status === 'signed'}>
                           Подписать ЭЦП
-                        </button>
+                        </Button>
                         {project?.is_state_contract && status === 'signed' && (
-                          <button type="button" onClick={() => handleIsupSubmit(doc.id)}>
+                          <Button type="button" onClick={() => handleIsupSubmit(doc.id)}>
                             Передать в ИСУП
-                          </button>
+                          </Button>
                         )}
                       </div>
                     </article>
@@ -543,30 +547,30 @@ export default function HandoverPage() {
                   <strong>КС-2 в XML для 1С</strong>
                   <p style={{ margin: '8px 0' }}>Экспорт акта выполненных работ в формат 1С</p>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    <input
+                    <Input
                       placeholder="ID документа КС-2"
                       value={ks2DocId}
                       onChange={(event) => setKs2DocId(event.target.value)}
                       style={{ flex: 1, minWidth: 200 }}
                     />
-                    <button type="button" onClick={handleExportKs2Xml}>
+                    <Button type="button" onClick={handleExportKs2Xml}>
                       Скачать КС-2 XML
-                    </button>
+                    </Button>
                   </div>
                 </article>
                 <article style={{ border: '1px solid #33415555', borderRadius: 12, padding: 12 }}>
                   <strong>М-29 в XML для 1С</strong>
                   <p style={{ margin: '8px 0' }}>Ведомость списания материалов</p>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    <input
+                    <Input
                       placeholder="Период (YYYY-MM)"
                       value={m29Period}
                       onChange={(event) => setM29Period(event.target.value)}
                       style={{ flex: 1, minWidth: 140 }}
                     />
-                    <button type="button" onClick={handleExportM29Xml}>
+                    <Button type="button" onClick={handleExportM29Xml}>
                       Скачать М-29 XML
-                    </button>
+                    </Button>
                   </div>
                 </article>
               </section>
@@ -635,6 +639,6 @@ export default function HandoverPage() {
         activeTab={activeTab}
         onChange={setActiveTab}
       />
-    </section>
+    </section></Card>
   );
 }

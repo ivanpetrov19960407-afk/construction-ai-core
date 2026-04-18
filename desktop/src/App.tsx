@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { getApiConfig } from './api/coreClient';
 import Sidebar from './components/Sidebar';
 import { resolveRoute } from './router';
+import { colors, spacing, typography } from './styles/tokens';
 import type { BrandingConfig } from './store/brandingStore';
 import { useBrandingStore } from './store/brandingStore';
 
@@ -62,19 +63,22 @@ export default function App() {
   const appTheme = useMemo(
     () => ({
       minHeight: '100vh',
-      padding: 16,
-      fontFamily: 'Inter, Arial, sans-serif',
+      fontFamily: typography.fontFamily,
       display: 'flex',
-      gap: 16,
-      borderTop: `4px solid ${branding?.primary_color ?? '#2563eb'}`
+      gap: spacing.lg,
+      borderTop: `4px solid ${branding?.primary_color ?? '#2563eb'}`,
+      background: colors.bgPage
     }),
     [branding?.primary_color]
   );
 
   return (
-    <main style={appTheme}>
-      <Sidebar currentPath={currentPath} onNavigate={navigate} />
-      <section style={{ flex: 1 }}>{resolveRoute(currentPath, () => navigate('/'))}</section>
-    </main>
+    <>
+      <style>{`*, *::before, *::after { box-sizing: border-box; } body { margin: 0; }`}</style>
+      <main style={appTheme}>
+        <Sidebar currentPath={currentPath} onNavigate={navigate} />
+        <section style={{ flex: 1, padding: spacing.lg }}>{resolveRoute(currentPath, () => navigate('/'))}</section>
+      </main>
+    </>
   );
 }

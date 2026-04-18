@@ -1,7 +1,10 @@
 import { useState } from 'react';
 import DocumentForm, { type DocumentField } from '../components/DocumentForm';
+import Button from '../components/ui/Button';
+import Card from '../components/ui/Card';
+import Input from '../components/ui/Input';
+import { colors, spacing } from '../styles/tokens';
 import { downloadLetterDocx, generateLetter, getApiConfig } from '../api/coreClient';
-
 
 const letterTypeMap: Record<string, 'запрос' | 'претензия' | 'уведомление' | 'ответ'> = {
   Запрос: 'запрос',
@@ -91,19 +94,20 @@ export default function GenerateLetterPage() {
   };
 
   return (
-    <section style={{ display: 'grid', gap: 12 }}>
-      <h2>Генерация письма</h2>
-      <DocumentForm fields={fields} onSubmit={handleSubmit} isLoading={isLoading} error={error} />
-      {success && <p style={{ color: 'green', fontWeight: 600 }}>✓ Письмо сгенерировано</p>}
-      {error && <p style={{ color: 'crimson' }}>{error}</p>}
-      {sessionId && <p style={{ color: '#777', fontSize: 12 }}>session_id: {sessionId}</p>}
-      <label style={{ display: 'grid', gap: 8 }}>
-        <span>Результат</span>
-        <textarea value={result} rows={12} readOnly />
-      </label>
-      <button type="button" onClick={handleDownload} disabled={!sessionId || downloadLoading}>
-        {downloadLoading ? 'Скачивание...' : 'Скачать DOCX'}
-      </button>
-    </section>
+    <Card>
+      <section style={{ display: 'grid', gap: spacing.md }}>
+        <h2>Генерация письма</h2>
+        <DocumentForm fields={fields} onSubmit={handleSubmit} isLoading={isLoading} error={error} />
+        {success && <p style={{ color: colors.success, fontWeight: 600 }}>✓ Письмо сгенерировано</p>}
+        {error && <p style={{ color: colors.error }}>{error}</p>}
+        {sessionId && <p style={{ color: colors.textSecondary, fontSize: 12 }}>session_id: {sessionId}</p>}
+
+        <Input type="textarea" label="Результат" value={result} rows={12} readOnly />
+
+        <Button type="button" onClick={handleDownload} disabled={!sessionId || downloadLoading} loading={downloadLoading}>
+          {downloadLoading ? 'Скачивание...' : 'Скачать DOCX'}
+        </Button>
+      </section>
+    </Card>
   );
 }
