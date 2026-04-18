@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import secrets
+from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
@@ -11,6 +13,7 @@ from sqlalchemy import create_engine, text
 
 from config.settings import settings
 from core.integrations.isup import ISUPClient, _fetch_doc_payload
+from core.projects import Project, get_projects_sessionmaker
 
 router = APIRouter(prefix="/api/isup", tags=["isup"])
 
@@ -35,6 +38,27 @@ class ISUPCallbackPayload(BaseModel):
     submission_id: str
     status: str
     comment: str = ""
+
+
+def _require_project_access(project_id: str, request: Request) -> None:
+    username = getattr(request.state, "username", None)
+    if not username:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    try:
+        project_uuid = UUID(project_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid project ID") from exc
+
+    session_local = get_projects_sessionmaker(settings.sqlite_db_path)
+    with session_local() as session:
+        project = session.get(Project, project_uuid)
+        if project is None:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        members = project.members or []
+        if username != project.owner_id and username not in members:
+            raise HTTPException(status_code=403, detail="Access denied")
 
 
 @router.post("/submit-document")
@@ -78,8 +102,16 @@ async def get_status(submission_id: str, request: Request) -> dict:
 
 
 @router.post("/callback")
-async def isup_status_callback(payload: ISUPCallbackPayload) -> dict:
+async def isup_status_callback(payload: ISUPCallbackPayload, request: Request) -> dict:
     """Вебхук от ИСУП: обновить статус отправки."""
+    configured_secret = settings.isup_webhook_secret.strip()
+    if not configured_secret:
+        raise HTTPException(status_code=503, detail="ISUP webhook secret is not configured")
+
+    provided_secret = request.headers.get("X-ISUP-Webhook-Secret", "")
+    if not secrets.compare_digest(provided_secret, configured_secret):
+        raise HTTPException(status_code=403, detail="Invalid webhook secret")
+
     engine = create_engine(settings.database_url, future=True)
     query = text(
         """
@@ -99,8 +131,10 @@ async def isup_status_callback(payload: ISUPCallbackPayload) -> dict:
 
 
 @router.get("/submissions/{project_id}")
-async def list_isup_submissions(project_id: str) -> dict:
+async def list_isup_submissions(project_id: str, request: Request) -> dict:
     """Список отправок в ИСУП по проекту для polling из фронтенда."""
+    _require_project_access(project_id, request)
+
     engine = create_engine(settings.database_url, future=True)
     with engine.connect() as conn:
         rows = (
