@@ -47,7 +47,7 @@ ANALYZE_TIMEOUT_SECONDS = 120
 EXEC_ALBUM_SECTIONS = ("AR", "KZH", "KM", "KMD", "OV", "VK", "EM", "TX", "GP")
 SESSION_TTL_SECONDS = 30 * 60
 SESSION_CLEANUP_INTERVAL_SECONDS = 10 * 60
-SESSION_STORE: dict[str, dict] = {}
+SESSION_STORE: dict[str, dict[str, dict]] = {}
 _cleanup_task: asyncio.Task | None = None
 _cleanup_lock = asyncio.Lock()
 
@@ -70,7 +70,8 @@ def _touch_session(
     doc_type: str,
     docx_bytes: bytes | None = None,
 ) -> None:
-    SESSION_STORE[session_id] = {
+    session_bucket = SESSION_STORE.setdefault(session_id, {})
+    session_bucket[doc_type] = {
         "text": text,
         "doc_type": doc_type,
         "docx_bytes": docx_bytes,
@@ -79,13 +80,16 @@ def _touch_session(
 
 
 def _get_live_session(session_id: str, expected_doc_type: str) -> dict | None:
-    session_data = SESSION_STORE.get(session_id)
+    session_bucket = SESSION_STORE.get(session_id)
+    if not isinstance(session_bucket, dict):
+        return None
+    session_data = session_bucket.get(expected_doc_type)
     if not isinstance(session_data, dict):
         return None
-    if session_data.get("doc_type") != expected_doc_type:
-        return None
     if _is_session_expired(session_data):
-        SESSION_STORE.pop(session_id, None)
+        session_bucket.pop(expected_doc_type, None)
+        if not session_bucket:
+            SESSION_STORE.pop(session_id, None)
         return None
     return session_data
 
@@ -108,13 +112,15 @@ async def cleanup_expired_sessions() -> None:
     while True:
         await asyncio.sleep(SESSION_CLEANUP_INTERVAL_SECONDS)
         now = _now_mono()
-        stale_ids = [
-            sid
-            for sid, data in SESSION_STORE.items()
-            if isinstance(data, dict) and _is_session_expired(data, now=now)
-        ]
-        for sid in stale_ids:
-            SESSION_STORE.pop(sid, None)
+        for sid, doc_map in list(SESSION_STORE.items()):
+            if not isinstance(doc_map, dict):
+                SESSION_STORE.pop(sid, None)
+                continue
+            for doc_type, data in list(doc_map.items()):
+                if isinstance(data, dict) and _is_session_expired(data, now=now):
+                    doc_map.pop(doc_type, None)
+            if not doc_map:
+                SESSION_STORE.pop(sid, None)
 
 
 async def _ensure_cleanup_task_started() -> None:
@@ -1028,6 +1034,28 @@ def _extract_risks(analysis: str) -> list[str]:
     return risks
 
 
+async def _load_docx_for_download(session_id: str, doc_type: str) -> bytes | None:
+    """Получить DOCX из in-memory сессии или persistent session_memory."""
+    live_session = _get_live_session(session_id, expected_doc_type=doc_type)
+    if live_session:
+        docx_bytes = live_session.get("docx_bytes")
+        if isinstance(docx_bytes, bytes):
+            return docx_bytes
+        text_value = str(live_session.get("text", ""))
+        if text_value:
+            rendered = _render_docx_from_text(text_value)
+            live_session["docx_bytes"] = rendered
+            return rendered
+
+    documents = await session_memory.get_session_documents(session_id)
+    persisted_document = next((doc for doc in documents if doc.get("doc_type") == doc_type), None)
+    persisted_docx = persisted_document.get("docx_bytes") if persisted_document else None
+    if not isinstance(persisted_docx, bytes):
+        return None
+    _touch_session(session_id, text="", doc_type=doc_type, docx_bytes=persisted_docx)
+    return persisted_docx
+
+
 @router.post(
     "/analyze/document",
     summary="Анализ загруженного документа",
@@ -1123,14 +1151,9 @@ async def download_tk_docx(
     """Скачать ранее сгенерированный DOCX по session_id."""
     _ = (request, org_id)
     await _ensure_cleanup_task_started()
-    tk_session = _get_live_session(session_id, expected_doc_type="tk")
-    if not tk_session:
-        raise HTTPException(status_code=404, detail="Сессия не найдена или истекла")
-
-    docx_bytes = tk_session.get("docx_bytes")
+    docx_bytes = await _load_docx_for_download(session_id=session_id, doc_type="tk")
     if not isinstance(docx_bytes, bytes):
-        docx_bytes = _render_docx_from_text(str(tk_session.get("text", "")))
-        tk_session["docx_bytes"] = docx_bytes
+        raise HTTPException(status_code=404, detail="Сессия не найдена или истекла")
 
     tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
     tmp_path = Path(tmp_file.name)
@@ -1153,14 +1176,9 @@ async def download_letter_docx(
     """Скачать ранее сгенерированный DOCX письма по session_id."""
     _ = (request, org_id)
     await _ensure_cleanup_task_started()
-    letter_session = _get_live_session(session_id, expected_doc_type="letter")
-    if not letter_session:
-        raise HTTPException(status_code=404, detail="Сессия не найдена или истекла")
-
-    docx_bytes = letter_session.get("docx_bytes")
+    docx_bytes = await _load_docx_for_download(session_id=session_id, doc_type="letter")
     if not isinstance(docx_bytes, bytes):
-        docx_bytes = _render_docx_from_text(str(letter_session.get("text", "")))
-        letter_session["docx_bytes"] = docx_bytes
+        raise HTTPException(status_code=404, detail="Сессия не найдена или истекла")
 
     tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
     tmp_path = Path(tmp_file.name)
@@ -1183,14 +1201,9 @@ async def download_ks_docx(
     """Скачать ранее сгенерированный DOCX КС-2/КС-3 по session_id."""
     _ = (request, org_id)
     await _ensure_cleanup_task_started()
-    ks_session = _get_live_session(session_id, expected_doc_type="ks")
-    if not ks_session:
-        raise HTTPException(status_code=404, detail="Сессия не найдена или истекла")
-
-    docx_bytes = ks_session.get("docx_bytes")
+    docx_bytes = await _load_docx_for_download(session_id=session_id, doc_type="ks")
     if not isinstance(docx_bytes, bytes):
-        docx_bytes = _render_docx_from_text(str(ks_session.get("text", "")))
-        ks_session["docx_bytes"] = docx_bytes
+        raise HTTPException(status_code=404, detail="Сессия не найдена или истекла")
 
     tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
     tmp_path = Path(tmp_file.name)
