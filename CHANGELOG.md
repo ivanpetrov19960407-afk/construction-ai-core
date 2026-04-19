@@ -3,6 +3,7 @@
 ### Fixed
 - fix(health): honest LLM status
 - fix(cors): valid credentials+origins
+- fix(bot): correct entrypoint, add /link validation, rate-limit
 
 ### Added
 - feat(kb): split personal vs global knowledge base

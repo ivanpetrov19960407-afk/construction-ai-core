@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import re
 import secrets
@@ -25,6 +26,7 @@ from aiogram.types import (
     WebAppInfo,
 )
 
+from api.metrics import BOT_MESSAGES_TOTAL
 from config.settings import settings
 from core.session_bridge import issue_telegram_link_token
 from telegram.keyboards import (
@@ -35,6 +37,11 @@ from telegram.keyboards import (
     role_keyboard,
     skip_keyboard,
     unit_keyboard,
+)
+from telegram.middlewares.auth import (
+    delete_api_key_for_chat,
+    get_api_key_for_chat,
+    save_api_key_for_chat,
 )
 from telegram.states import AnalyzeForm, KSStates, LetterStates, TKStates, UploadForm
 
@@ -52,6 +59,7 @@ ROLE_NAMES = {
 }
 
 _PERIOD_RE = re.compile(r"^\d{2}\.\d{2}\.\d{4}\s*-\s*\d{2}\.\d{2}\.\d{4}$")
+_API_KEY_RE = re.compile(r"^[a-zA-Z0-9_-]{16,64}$")
 
 
 def _get_api_key() -> str:
@@ -59,6 +67,17 @@ def _get_api_key() -> str:
     if settings.api_keys:
         return settings.api_keys[0]
     return ""
+
+
+def _friendly_error_by_code(code: str) -> str:
+    mapping = {
+        "llm_not_configured": "LLM не настроен. Обратитесь к администратору",
+        "llm_timeout": "Сервис генерации отвечает слишком долго. Попробуйте позже.",
+        "validation_failed": "Некорректные входные данные. Проверьте поля и попробуйте снова.",
+        "rag_empty": "Недостаточно данных в базе знаний для ответа.",
+        "internal": "Внутренняя ошибка сервиса. Попробуйте позже.",
+    }
+    return mapping.get(code, "Ошибка генерации. Попробуйте позже.")
 
 
 def _get_admin_api_key() -> str:
@@ -136,7 +155,8 @@ async def _call_api_with_typing(
 
     typing_task = asyncio.create_task(_typing_loop())
     try:
-        headers = {"X-API-Key": _get_api_key()}
+        chat_api_key = await get_api_key_for_chat(int(chat_id))
+        headers = {"X-API-Key": chat_api_key or _get_api_key()}
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.post(
                 f"{settings.core_api_url.rstrip('/')}{path}",
@@ -145,8 +165,16 @@ async def _call_api_with_typing(
             )
             response.raise_for_status()
             return response.json()
-    except (httpx.TimeoutException, httpx.HTTPStatusError) as exc:
-        await message.answer(f"Ошибка при обращении к API: {exc}")
+    except httpx.TimeoutException:
+        await message.answer(_friendly_error_by_code("llm_timeout"))
+        return None
+    except httpx.HTTPStatusError as exc:
+        code = "internal"
+        with contextlib.suppress(ValueError):
+            detail = exc.response.json().get("detail", {})
+            if isinstance(detail, Mapping):
+                code = str(detail.get("code", code))
+        await message.answer(_friendly_error_by_code(code))
         return None
     finally:
         typing_task.cancel()
@@ -194,15 +222,93 @@ async def app_handler(message: Message) -> None:
 
 @router.message(Command("link"))
 async def link_handler(message: Message) -> None:
-    """Выдать одноразовый код для привязки Telegram к desktop-сессии."""
+    """Привязка API-ключа через /link <api_key>."""
     user_id = _require_user_id(message)
-    token = issue_telegram_link_token(telegram_user_id=user_id, session_id=str(user_id))
+    text = (message.text or "").strip()
+    parts = text.split(maxsplit=1)
+    if len(parts) < 2:
+        token = issue_telegram_link_token(telegram_user_id=user_id, session_id=str(user_id))
+        await message.answer(
+            "Код для привязки к Desktop (вставьте в настройках):\n"
+            f"`{token}`\n\n"
+            "Или используйте /link <api_key> для API-ключа.",
+            parse_mode="Markdown",
+        )
+        return
+
+    api_key = parts[1].strip()
+    if not _API_KEY_RE.match(api_key):
+        await message.answer("Неверный формат ключа")
+        return
+
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            response = await client.get(
+                f"{settings.core_api_url.rstrip('/')}/api/me",
+                headers={"X-API-Key": api_key},
+            )
+    except httpx.HTTPError:
+        await message.answer("Не удалось проверить ключ. Попробуйте позже.")
+        return
+
+    if response.status_code == 401:
+        await message.answer("Ключ недействителен")
+        return
+    if response.status_code != 200:
+        await message.answer("Не удалось проверить ключ. Попробуйте позже.")
+        return
+
+    await save_api_key_for_chat(user_id, api_key)
+    await message.answer("Ключ сохранён ✅")
+
+
+@router.message(Command("unlink"))
+async def unlink_handler(message: Message) -> None:
+    user_id = _require_user_id(message)
+    await delete_api_key_for_chat(user_id)
+    await message.answer("Ключ отвязан.")
+
+
+@router.message(Command("whoami"))
+async def whoami_handler(message: Message) -> None:
+    user_id = _require_user_id(message)
+    api_key = await get_api_key_for_chat(user_id)
+    if not api_key:
+        await message.answer("Ключ не привязан. Используйте /link <api_key>.")
+        return
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            response = await client.get(
+                f"{settings.core_api_url.rstrip('/')}/api/me",
+                headers={"X-API-Key": api_key},
+            )
+            response.raise_for_status()
+            profile = response.json()
+    except httpx.HTTPError:
+        await message.answer("Не удалось получить профиль.")
+        return
     await message.answer(
-        "Код для привязки к Desktop (вставьте в настройках):\n"
-        f"`{token}`\n\n"
-        "После привязки desktop будет получать уведомления о готовых документах.",
-        parse_mode="Markdown",
+        f"Пользователь: {profile.get('username', 'unknown')}\n"
+        f"Роль: {profile.get('role', 'unknown')}"
     )
+
+
+@router.message(Command("health"))
+async def health_handler(message: Message) -> None:
+    user_id = _require_user_id(message)
+    api_key = await get_api_key_for_chat(user_id)
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(
+                f"{settings.core_api_url.rstrip('/')}/api/telegram/health",
+                headers={"X-API-Key": api_key or _get_api_key()},
+            )
+            response.raise_for_status()
+            payload = response.json()
+    except httpx.HTTPError:
+        await message.answer("Healthcheck недоступен.")
+        return
+    await message.answer(f"Активных сессий: {payload.get('active_sessions', 0)}")
 
 
 @router.callback_query(F.data.startswith("project_doc:"))
@@ -281,6 +387,7 @@ async def projects_handler(message: Message) -> None:
 
 @router.message(Command("tk"))
 async def tk_start_handler(message: Message, state: FSMContext) -> None:
+    BOT_MESSAGES_TOTAL.labels(handler="tk").inc()
     await state.set_state(TKStates.work_type)
     await message.answer("Введите вид работ:", reply_markup=cancel_keyboard())
 
@@ -380,6 +487,7 @@ async def tk_confirm_yes_handler(callback: CallbackQuery, state: FSMContext) -> 
 
 @router.message(Command("letter"))
 async def letter_start_handler(message: Message, state: FSMContext) -> None:
+    BOT_MESSAGES_TOTAL.labels(handler="letter").inc()
     await state.set_state(LetterStates.letter_type)
     await message.answer(
         "Выберите тип письма:",
@@ -491,6 +599,7 @@ async def letter_confirm_yes_handler(callback: CallbackQuery, state: FSMContext)
 
 @router.message(Command("ks"))
 async def ks_start_handler(message: Message, state: FSMContext) -> None:
+    BOT_MESSAGES_TOTAL.labels(handler="ks").inc()
     await state.set_state(KSStates.object_name)
     await message.answer("Введите наименование объекта:", reply_markup=cancel_keyboard())
 

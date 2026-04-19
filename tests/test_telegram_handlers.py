@@ -43,6 +43,7 @@ def _install_aiogram_stubs() -> None:
 
     aiogram.F = DummyF()
     aiogram.Router = DummyRouter
+    aiogram.BaseMiddleware = object
 
     filters = types.ModuleType("aiogram.filters")
     filters.Command = lambda value: value
@@ -100,6 +101,7 @@ def _install_aiogram_stubs() -> None:
     types_mod.KeyboardButton = _KeyboardButton
     types_mod.ReplyKeyboardMarkup = _ReplyKeyboardMarkup
     types_mod.Document = object
+    types_mod.WebAppInfo = lambda url="": SimpleNamespace(url=url)
 
     sys.modules["aiogram"] = aiogram
     sys.modules["aiogram.filters"] = filters
@@ -394,3 +396,115 @@ def test_project_doc_callback_uses_short_token_mapping():
         "Откройте документ в сессии: very-long-session-id-value",
     )
     callback.answer.assert_awaited_once()
+
+
+def test_link_invalid_key_format_returns_message():
+    _install_aiogram_stubs()
+    handlers = importlib.import_module("telegram.handlers")
+    message = SimpleNamespace(
+        text="/link bad!",
+        from_user=SimpleNamespace(id=55),
+        answer=AsyncMock(),
+    )
+
+    asyncio.run(handlers.link_handler(message))
+
+    message.answer.assert_awaited_once_with("Неверный формат ключа")
+
+
+def test_rate_limit_blocks_11th_request(monkeypatch):
+    module = importlib.import_module("telegram.middlewares.rate_limit")
+
+    class FakeRedis:
+        def __init__(self):
+            self.counter = 0
+
+        async def incr(self, _key):
+            self.counter += 1
+            return self.counter
+
+        async def expire(self, _key, _seconds):
+            return True
+
+        async def ttl(self, _key):
+            return 42
+
+        async def close(self):
+            return None
+
+    fake = FakeRedis()
+    monkeypatch.setattr(module, "_redis_client", lambda: fake)
+
+    async def _run():
+        for _ in range(10):
+            allowed, retry_after = await module.check_rate_limit(77)
+            assert allowed is True
+            assert retry_after == 0
+
+        allowed, retry_after = await module.check_rate_limit(77)
+        assert allowed is False
+        assert retry_after == 42
+
+    asyncio.run(_run())
+
+
+def test_health_handler_sends_api_key_header(monkeypatch):
+    _install_aiogram_stubs()
+    handlers = importlib.import_module("telegram.handlers")
+
+    async def fake_get_api_key_for_chat(_chat_id: int) -> str:
+        return "linked_api_key_123456"
+
+    class DummyResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"active_sessions": 7}
+
+    get_mock = AsyncMock(return_value=DummyResponse())
+
+    class DummyAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return SimpleNamespace(get=get_mock)
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(handlers, "get_api_key_for_chat", fake_get_api_key_for_chat)
+    monkeypatch.setattr(handlers.httpx, "AsyncClient", DummyAsyncClient)
+
+    message = SimpleNamespace(
+        text="/health",
+        from_user=SimpleNamespace(id=99),
+        answer=AsyncMock(),
+    )
+
+    asyncio.run(handlers.health_handler(message))
+
+    assert get_mock.await_count == 1
+    assert get_mock.await_args.kwargs["headers"]["X-API-Key"] == "linked_api_key_123456"
+    message.answer.assert_awaited_once_with("Активных сессий: 7")
+
+
+def test_rate_limit_uses_callback_message_chat(monkeypatch):
+    module = importlib.import_module("telegram.middlewares.rate_limit")
+    middleware = module.TelegramRateLimitMiddleware()
+    handler = AsyncMock(return_value="ok")
+
+    check_mock = AsyncMock(return_value=(True, 0))
+    monkeypatch.setattr(module, "check_rate_limit", check_mock)
+
+    callback_event = SimpleNamespace(
+        chat=None,
+        message=SimpleNamespace(chat=SimpleNamespace(id=4242)),
+        answer=AsyncMock(),
+    )
+
+    result = asyncio.run(middleware.__call__(handler, callback_event, {}))
+
+    assert result == "ok"
+    check_mock.assert_awaited_once_with(4242)

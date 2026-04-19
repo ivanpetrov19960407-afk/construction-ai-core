@@ -22,6 +22,11 @@ LLM_TOKENS_USED = Counter(
     "Использовано LLM токенов",
     ["provider", "direction"],  # direction: input/output
 )
+BOT_MESSAGES_TOTAL = Counter(
+    "bot_messages_total",
+    "Количество обработанных сообщений Telegram-ботом",
+    ["handler"],
+)
 
 __all__ = [
     "Instrumentator",
@@ -29,4 +34,5 @@ __all__ = [
     "PIPELINE_DURATION",
     "ACTIVE_SESSIONS",
     "LLM_TOKENS_USED",
+    "BOT_MESSAGES_TOTAL",
 ]
