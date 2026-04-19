@@ -14,6 +14,8 @@ from config.settings import settings
 from core.pdf_parser import PDFParser
 from core.rag_engine import RAGEngine
 
+DOCX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
 router = APIRouter()
 pdf_parser = PDFParser()
 
@@ -50,10 +52,7 @@ async def rag_ingest(
     _require_admin(request)
     filename = file.filename or source_name
     is_pdf = file.content_type == "application/pdf" or filename.lower().endswith(".pdf")
-    is_docx = (
-        file.content_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        or filename.lower().endswith(".docx")
-    )
+    is_docx = file.content_type == DOCX_MIME_TYPE or filename.lower().endswith(".docx")
     if not is_pdf and not is_docx:
         raise HTTPException(status_code=400, detail="Only PDF and DOCX files are supported")
 
@@ -66,13 +65,25 @@ async def rag_ingest(
         with NamedTemporaryFile(suffix=".pdf", delete=True) as tmp:
             tmp.write(file_bytes)
             tmp.flush()
-            chunks_added = get_rag_engine().ingest_pdf(tmp.name, source_name=source_name, metadata=metadata)
+            chunks_added = get_rag_engine().ingest_pdf(
+                tmp.name,
+                source_name=source_name,
+                metadata=metadata,
+            )
     else:
         document = Document(BytesIO(file_bytes))
-        text = "\n".join(paragraph.text.strip() for paragraph in document.paragraphs if paragraph.text.strip())
+        text = "\n".join(
+            paragraph.text.strip()
+            for paragraph in document.paragraphs
+            if paragraph.text.strip()
+        )
         if not text.strip():
             raise HTTPException(status_code=400, detail="DOCX does not contain text")
-        chunks_added = get_rag_engine().ingest_text(text, source_name=source_name, metadata=metadata)
+        chunks_added = get_rag_engine().ingest_text(
+            text,
+            source_name=source_name,
+            metadata=metadata,
+        )
 
     return {"chunks_added": int(chunks_added), "source": source_name}
 
