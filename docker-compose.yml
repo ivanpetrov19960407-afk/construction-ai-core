@@ -25,10 +25,14 @@ services:
     build: .
     container_name: construction-ai-telegram-bot
     working_dir: /app
-    command: python -m telegram.bot
+    command: python -m telegram.main
     depends_on:
-      - api
-      - redis
+      api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
     env_file:
       - .env
     environment:
@@ -37,12 +41,29 @@ services:
       - ./data:/app/data
       - ./templates:/app/templates
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import aiogram; print('ok')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   redis:
     image: redis:7-alpine
     command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: construction_ai
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d construction_ai"]
       interval: 10s
       timeout: 5s
       retries: 5

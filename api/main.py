@@ -6,6 +6,7 @@ from hmac import compare_digest
 from typing import cast
 
 from aiogram.types import Update
+import sqlite3
 from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
@@ -43,7 +44,7 @@ from api.routes.analyze import router as analyze_router
 from config.settings import settings
 from core.analytics.notifications import AnalyticsNotifier
 from core.database import init_db
-from telegram.bot import create_bot, create_dispatcher
+from telegram.main import create_bot, create_dispatcher
 
 _ = (AGENT_RUNS, PIPELINE_DURATION)
 telegram_router = APIRouter()
@@ -181,6 +182,18 @@ async def telegram_webhook_handler(request: Request) -> dict[str, bool]:
     update = Update.model_validate(payload, context={"bot": bot})
     await dp.feed_update(bot, update)
     return {"ok": True}
+
+
+@telegram_router.get("/api/telegram/health")
+async def telegram_health() -> dict[str, int]:
+    active_sessions = 0
+    try:
+        with sqlite3.connect(settings.sqlite_db_path) as connection:
+            row = connection.execute("SELECT COUNT(*) FROM sessions").fetchone()
+            active_sessions = int(row[0]) if row else 0
+    except sqlite3.Error:
+        active_sessions = 0
+    return {"active_sessions": active_sessions}
 
 
 app.include_router(telegram_router, tags=["telegram"])

@@ -43,6 +43,7 @@ def _install_aiogram_stubs() -> None:
 
     aiogram.F = DummyF()
     aiogram.Router = DummyRouter
+    aiogram.BaseMiddleware = object
 
     filters = types.ModuleType("aiogram.filters")
     filters.Command = lambda value: value
@@ -100,6 +101,7 @@ def _install_aiogram_stubs() -> None:
     types_mod.KeyboardButton = _KeyboardButton
     types_mod.ReplyKeyboardMarkup = _ReplyKeyboardMarkup
     types_mod.Document = object
+    types_mod.WebAppInfo = lambda url="": SimpleNamespace(url=url)
 
     sys.modules["aiogram"] = aiogram
     sys.modules["aiogram.filters"] = filters
@@ -394,3 +396,53 @@ def test_project_doc_callback_uses_short_token_mapping():
         "Откройте документ в сессии: very-long-session-id-value",
     )
     callback.answer.assert_awaited_once()
+
+
+def test_link_invalid_key_format_returns_message():
+    _install_aiogram_stubs()
+    handlers = importlib.import_module("telegram.handlers")
+    message = SimpleNamespace(
+        text="/link bad!",
+        from_user=SimpleNamespace(id=55),
+        answer=AsyncMock(),
+    )
+
+    asyncio.run(handlers.link_handler(message))
+
+    message.answer.assert_awaited_once_with("Неверный формат ключа")
+
+
+def test_rate_limit_blocks_11th_request(monkeypatch):
+    module = importlib.import_module("telegram.middlewares.rate_limit")
+
+    class FakeRedis:
+        def __init__(self):
+            self.counter = 0
+
+        async def incr(self, _key):
+            self.counter += 1
+            return self.counter
+
+        async def expire(self, _key, _seconds):
+            return True
+
+        async def ttl(self, _key):
+            return 42
+
+        async def close(self):
+            return None
+
+    fake = FakeRedis()
+    monkeypatch.setattr(module, "_redis_client", lambda: fake)
+
+    async def _run():
+        for _ in range(10):
+            allowed, retry_after = await module.check_rate_limit(77)
+            assert allowed is True
+            assert retry_after == 0
+
+        allowed, retry_after = await module.check_rate_limit(77)
+        assert allowed is False
+        assert retry_after == 42
+
+    asyncio.run(_run())
