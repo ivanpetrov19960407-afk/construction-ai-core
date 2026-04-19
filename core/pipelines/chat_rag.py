@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Any, Sequence, cast
 
 from core.rag_engine import RAGEngine
 
@@ -19,10 +19,11 @@ class ChatRagPipeline:
         where: dict[str, Any] | None,
     ) -> list[dict[str, Any]]:
         embedding = self.rag_engine._embed_texts([query])[0]
+        query_embeddings: list[Sequence[float]] = [cast(Sequence[float], embedding)]
         payload = cast(
             Any,
             self.rag_engine.collection.query(
-                query_embeddings=[embedding],
+                query_embeddings=query_embeddings,
                 n_results=n_results,
                 include=["documents", "metadatas", "distances"],
                 where=where,
