@@ -10,7 +10,7 @@
     "store:default",
     "shell:allow-open",
     "fs:allow-read-dir",
-    "path:default",
+    "core:path:default",
     "dialog:allow-message",
     "dialog:allow-ask",
     "allow-get-api-url",
