@@ -26,6 +26,7 @@ from config.settings import settings
 
 EXCLUDED_PATHS = {
     "/health",
+    "/api/health",
     "/docs",
     "/redoc",
     "/openapi.json",

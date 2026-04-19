@@ -1,7 +1,7 @@
 services:
   api:
     image: ghcr.io/your-org/construction-ai-core:latest
-    env_file: ../../.env
+    env_file: ../.env
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
       interval: 30s
@@ -18,7 +18,7 @@ services:
   bot:
     image: ghcr.io/your-org/construction-ai-core:latest
     command: python -m telegram.main
-    env_file: ../../.env
+    env_file: ../.env
     depends_on:
       api:
         condition: service_healthy

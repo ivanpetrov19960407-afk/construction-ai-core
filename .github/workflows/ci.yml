@@ -18,6 +18,8 @@ jobs:
         with:
           node-version: '20'
       - uses: dtolnay/rust-toolchain@stable
+      - name: Install Linux deps for Tauri Rust checks
+        run: sudo apt-get update && sudo apt-get install -y libglib2.0-dev libgtk-3-dev libwebkit2gtk-4.1-dev
       - name: Install pre-commit
         run: pip install pre-commit
       - name: Install desktop deps
@@ -84,7 +86,7 @@ jobs:
     needs: typecheck
     timeout-minutes: 10
     env:
-      DATABASE_URL: sqlite:///./data/construction_ai.db
+      DATABASE_URL: sqlite:///./construction_ai_ci.db
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
