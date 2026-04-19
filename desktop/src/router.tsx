@@ -5,6 +5,7 @@ import GenerateLetterPage from './pages/GenerateLetterPage';
 import GenerateTKPage from './pages/GenerateTKPage';
 import HandoverPage from './pages/HandoverPage';
 import KnowledgeBasePage from './pages/KnowledgeBasePage';
+import DiagnosticsPage from './pages/DiagnosticsPage';
 import SettingsPage from './pages/SettingsPage';
 
 export function resolveRoute(path: string, onNavigateHome: () => void): ReactNode {
@@ -23,6 +24,8 @@ export function resolveRoute(path: string, onNavigateHome: () => void): ReactNod
       return <GenerateKSPage />;
     case '/handover':
       return <HandoverPage />;
+    case '/diagnostics':
+      return <DiagnosticsPage />;
     default:
       return (
         <section>
