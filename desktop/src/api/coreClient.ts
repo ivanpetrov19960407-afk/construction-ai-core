@@ -134,6 +134,24 @@ export interface UploadChatDocumentResponse {
   source: string;
 }
 
+export interface TelegramLinkResponse {
+  ok: boolean;
+  telegram_user_id: string;
+  user_id: string;
+  session_id: string;
+}
+
+export interface DesktopNotification {
+  id: string;
+  user_id: string;
+  telegram_user_id: string;
+  session_id: string;
+  event_type: string;
+  title: string;
+  body: string;
+  created_at: string;
+}
+
 export const DEFAULT_API_URL = 'https://vanekpetrov1997.fvds.ru';
 
 const LEGACY_DEFAULT_API_URL = 'http://vanekpetrov1997.fvds.ru';
@@ -317,6 +335,44 @@ export async function checkHealth(apiUrl: string, { timeoutMs, signal }: ApiCall
     signal
   });
   return (await response.json()) as HealthResponse;
+}
+
+export async function linkTelegramAccount(
+  apiUrl: string,
+  apiKey: string,
+  payload: { code: string; user_id: string; session_id: string },
+  { timeoutMs, signal }: ApiCallOptions = {}
+): Promise<TelegramLinkResponse> {
+  const response = await apiRequest(normalizeApiUrl(apiUrl), '/api/link/telegram', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-API-Key': apiKey.trim()
+    },
+    body: JSON.stringify(payload),
+    timeoutMs,
+    signal
+  });
+  return (await response.json()) as TelegramLinkResponse;
+}
+
+export async function fetchNotifications(
+  apiUrl: string,
+  apiKey: string,
+  userId: string,
+  { timeoutMs, signal }: ApiCallOptions = {}
+): Promise<DesktopNotification[]> {
+  const endpoint = `/api/notifications?user_id=${encodeURIComponent(userId)}`;
+  const response = await apiRequest(normalizeApiUrl(apiUrl), endpoint, {
+    method: 'GET',
+    headers: {
+      'X-API-Key': apiKey.trim()
+    },
+    timeoutMs,
+    signal
+  });
+  const data = (await response.json()) as { notifications?: DesktopNotification[] };
+  return Array.isArray(data.notifications) ? data.notifications : [];
 }
 
 export function generateTK(apiUrl: string, apiKey: string, payload: TKRequest, options?: ApiCallOptions) {

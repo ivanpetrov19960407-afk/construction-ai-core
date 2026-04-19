@@ -32,6 +32,7 @@ from api.routes import (
     generate,
     health,
     isup,
+    linking,
     projects,
     rag,
     sign,
@@ -125,6 +126,8 @@ app.include_router(rag.router, prefix="/api/rag", tags=["rag"])
 app.include_router(projects.router, prefix="/api", tags=["projects"])
 app.include_router(analytics.router, prefix="/api", tags=["analytics"])
 app.include_router(compliance.router, prefix="/api", tags=["compliance"])
+app.include_router(linking.router, prefix="/api", tags=["linking"])
+app.include_router(linking.notifications_router, prefix="/api", tags=["notifications"])
 app.include_router(web_push.router)
 app.include_router(web.router, tags=["web"])
 app.mount("/web", StaticFiles(directory="web", html=True), name="web")
