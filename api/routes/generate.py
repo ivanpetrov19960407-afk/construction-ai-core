@@ -615,6 +615,15 @@ async def generate_tk(
                 await asyncio.wait_for(asyncio.shield(task), timeout=5)
             except TimeoutError:
                 continue
+            except HTTPException as exc:
+                yield _sse_event("error", {"stage": "error", "message": str(exc.detail)})
+                return
+            except Exception:
+                yield _sse_event(
+                    "error",
+                    {"stage": "error", "message": "Unexpected generation error"},
+                )
+                return
 
         try:
             response = await task
@@ -1051,6 +1060,15 @@ async def generate_ks(
                 await asyncio.wait_for(asyncio.shield(task), timeout=5)
             except TimeoutError:
                 continue
+            except HTTPException as exc:
+                yield _sse_event("error", {"stage": "error", "message": str(exc.detail)})
+                return
+            except Exception:
+                yield _sse_event(
+                    "error",
+                    {"stage": "error", "message": "Unexpected generation error"},
+                )
+                return
 
         try:
             response = await task
