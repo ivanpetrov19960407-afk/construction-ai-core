@@ -7,7 +7,6 @@ Create Date: 2026-04-16
 
 import sqlalchemy as sa
 from alembic import op
-from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision = "20260416_create_isup_submissions"
@@ -17,15 +16,24 @@ depends_on = None
 
 
 def upgrade() -> None:
+    bind = op.get_bind()
+    dialect = bind.dialect.name
+    if dialect == "postgresql":
+        id_type: sa.TypeEngine = sa.UUID()
+        json_type: sa.TypeEngine = sa.JSON()
+    else:
+        id_type = sa.String(length=36)
+        json_type = sa.JSON()
+
     op.create_table(
         "isup_submissions",
-        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("project_id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("doc_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("id", id_type, nullable=False),
+        sa.Column("project_id", id_type, nullable=False),
+        sa.Column("doc_id", id_type, nullable=False),
         sa.Column("submission_id", sa.String(length=255), nullable=False),
         sa.Column("status", sa.String(length=64), nullable=False),
         sa.Column("submitted_at", sa.TIMESTAMP(timezone=False), nullable=False),
-        sa.Column("response_json", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+        sa.Column("response_json", json_type, nullable=False),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(
