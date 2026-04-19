@@ -2,9 +2,10 @@ import { useState } from 'react';
 import DocumentForm, { type DocumentField } from '../components/DocumentForm';
 import Button from '../components/ui/Button';
 import Card from '../components/ui/Card';
+import ErrorModal from '../components/ErrorModal';
 import Input from '../components/ui/Input';
 import { colors, spacing } from '../styles/tokens';
-import { downloadLetterDocx, generateLetter, getApiConfig } from '../api/coreClient';
+import { downloadLetterDocx, generateLetter, getApiConfig, SSEError, type GenerationStage } from '../api/coreClient';
 import { DEFAULT_GENERATION_TIMEOUT_MS } from '../lib/apiClient';
 import { validateLetter } from '../lib/validation';
 
@@ -35,6 +36,11 @@ export default function GenerateLetterPage() {
   const [success, setSuccess] = useState(false);
   const [downloadLoading, setDownloadLoading] = useState(false);
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
+  const [progress, setProgress] = useState(0);
+  const [stage, setStage] = useState<GenerationStage>('queued');
+  const [toastMessage, setToastMessage] = useState('');
+  const [sseError, setSseError] = useState<SSEError | null>(null);
+  const [isErrorModalOpen, setIsErrorModalOpen] = useState(false);
 
   const handleSubmit = async (data: Record<string, string>) => {
     const bodyPoints = (data.body ?? '')
@@ -58,6 +64,8 @@ export default function GenerateLetterPage() {
     setIsLoading(true);
     setError('');
     setSuccess(false);
+    setProgress(0);
+    setStage('queued');
 
     try {
       const { apiUrl, apiKey } = await getApiConfig();
@@ -69,6 +77,10 @@ export default function GenerateLetterPage() {
           addressee: data.addressee?.trim() ?? '',
           subject: data.subject?.trim() ?? '',
           body_points: bodyPoints
+        },
+        (event) => {
+          setProgress(event.progress ?? 0);
+          setStage(event.stage);
         },
         { timeoutMs: DEFAULT_GENERATION_TIMEOUT_MS }
       );
@@ -83,7 +95,13 @@ export default function GenerateLetterPage() {
       setSessionId(String(response.session_id ?? ''));
       setSuccess(true);
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : 'Ошибка генерации письма');
+      if (submitError instanceof SSEError) {
+        setSseError(submitError);
+        setToastMessage(submitError.message);
+        setError(submitError.message);
+      } else {
+        setError(submitError instanceof Error ? submitError.message : 'Ошибка генерации письма');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -135,8 +153,22 @@ export default function GenerateLetterPage() {
           error={error}
           fieldErrors={validationErrors}
         />
+        {isLoading && <p style={{ color: colors.textSecondary }}>Текущий шаг: {stage} · {progress}%</p>}
         {success && <p style={{ color: colors.success, fontWeight: 600 }}>✓ Письмо сгенерировано</p>}
         {error && <p style={{ color: colors.error }}>{error}</p>}
+        {toastMessage && (
+          <div style={{ border: `1px solid ${colors.error}`, borderRadius: 8, padding: spacing.sm, display: 'flex', gap: spacing.sm, alignItems: 'center' }}>
+            <span style={{ color: colors.error, fontWeight: 600 }}>{toastMessage}</span>
+            <Button type="button" variant="ghost" onClick={() => setIsErrorModalOpen(true)}>
+              Подробнее
+            </Button>
+            {sseError?.code === 'llm_not_configured' && (
+              <a href="/settings" style={{ color: colors.primary }}>
+                Открыть Settings
+              </a>
+            )}
+          </div>
+        )}
         {sessionId && <p style={{ color: colors.textSecondary, fontSize: 12 }}>session_id: {sessionId}</p>}
 
         <Input type="textarea" label="Результат" value={result} rows={12} readOnly />
@@ -144,6 +176,13 @@ export default function GenerateLetterPage() {
         <Button type="button" onClick={handleDownload} disabled={!sessionId || downloadLoading} loading={downloadLoading}>
           {downloadLoading ? 'Скачивание...' : 'Скачать DOCX'}
         </Button>
+        <ErrorModal
+          isOpen={Boolean(sseError) && isErrorModalOpen}
+          onClose={() => setIsErrorModalOpen(false)}
+          title={sseError?.message ?? 'Детали ошибки'}
+          details={sseError?.details}
+          trace={typeof sseError?.details?.trace === 'string' ? sseError.details.trace : undefined}
+        />
       </section>
     </Card>
   );

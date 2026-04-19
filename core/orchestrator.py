@@ -10,6 +10,7 @@ Supervisor-паттерн на LangGraph. Управляет pipeline'ами:
 import json
 import re
 import uuid
+import asyncio
 from pathlib import Path
 from typing import Any, TypedDict, cast
 
@@ -27,6 +28,7 @@ from api.metrics import PIPELINE_DURATION
 from core.llm_router import LLMRouter
 from core.session_memory import SessionMemory
 from core.tk_bridge import TKGeneratorBridge
+from core.errors import AppError, LLMProviderNotConfiguredError
 
 METRICS_PATTERN = re.compile(r"Метрика \w+:\s*\S+\.?\s*", re.UNICODE)
 
@@ -203,6 +205,22 @@ class Orchestrator:
         )
         return re.sub(r"\n{3,}", "\n\n", without_metric_lines).strip()
 
+    def _map_pipeline_exception(self, exc: Exception) -> AppError:
+        if isinstance(exc, LLMProviderNotConfiguredError):
+            return exc
+        if isinstance(exc, asyncio.TimeoutError):
+            return AppError(
+                message="LLM не ответил за 60 сек",
+                code="llm_timeout",
+                status_code=504,
+            )
+        text = str(exc).lower()
+        if "validation" in text:
+            return AppError(message="Ошибка валидации входных данных", code="validation_failed", status_code=422)
+        if "rag" in text and ("empty" in text or "no document" in text):
+            return AppError(message="RAG не вернул релевантных документов", code="rag_empty", status_code=422)
+        return AppError(message="Внутренняя ошибка генерации", code="internal", status_code=503)
+
     async def _run_pipeline(
         self,
         intent: str,
@@ -333,14 +351,17 @@ class Orchestrator:
         intent = intent or await self._detect_intent(message)
 
         if intent != "chat":
-            result = await self._run_pipeline(
-                intent,
-                message,
-                session_id,
-                role,
-                include_legal_expert=include_legal_expert,
-                extra_state=extra_state,
-            )
+            try:
+                result = await self._run_pipeline(
+                    intent,
+                    message,
+                    session_id,
+                    role,
+                    include_legal_expert=include_legal_expert,
+                    extra_state=extra_state,
+                )
+            except Exception as exc:
+                raise self._map_pipeline_exception(exc) from exc
             if result.get("reply"):
                 await self.session_memory.add(
                     session_id, role="assistant", content=str(result["reply"])

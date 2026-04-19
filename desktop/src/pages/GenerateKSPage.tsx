@@ -1,6 +1,7 @@
 import { type FormEvent, useState } from 'react';
 import Button from '../components/ui/Button';
 import Card from '../components/ui/Card';
+import ErrorModal from '../components/ErrorModal';
 import Input from '../components/ui/Input';
 import { colors, radius, spacing, typography } from '../styles/tokens';
 import {
@@ -14,6 +15,7 @@ import {
   type KSHeader,
   type KSWorkItem
 } from '../api/coreClient';
+import { SSEError } from '../api/coreClient';
 import { DEFAULT_GENERATION_TIMEOUT_MS } from '../lib/apiClient';
 import { validateKS } from '../lib/validation';
 
@@ -118,6 +120,9 @@ export default function GenerateKSPage() {
   const [progress, setProgress] = useState(0);
   const [stage, setStage] = useState<GenerationStage>('queued');
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
+  const [toastMessage, setToastMessage] = useState('');
+  const [sseError, setSseError] = useState<SSEError | null>(null);
+  const [isErrorModalOpen, setIsErrorModalOpen] = useState(false);
 
   const handleRowChange = (rowId: string, key: keyof Omit<WorkRow, 'id'>, value: string) => {
     setWorkRows((prev) => prev.map((row) => (row.id === rowId ? { ...row, [key]: value } : row)));
@@ -292,7 +297,13 @@ export default function GenerateKSPage() {
           : JSON.stringify(normalizedResult, null, 2)
       );
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : 'Ошибка генерации КС');
+      if (submitError instanceof SSEError) {
+        setSseError(submitError);
+        setToastMessage(submitError.message);
+        setError(submitError.message);
+      } else {
+        setError(submitError instanceof Error ? submitError.message : 'Ошибка генерации КС');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -539,6 +550,19 @@ export default function GenerateKSPage() {
         </form>
         {success && <p style={{ color: colors.success, fontWeight: 600 }}>✓ КС сгенерирована</p>}
         {error && <p style={{ color: colors.error }}>{error}</p>}
+        {toastMessage && (
+          <div style={{ border: `1px solid ${colors.error}`, borderRadius: 8, padding: spacing.sm, display: 'flex', gap: spacing.sm, alignItems: 'center' }}>
+            <span style={{ color: colors.error, fontWeight: 600 }}>{toastMessage}</span>
+            <Button type="button" variant="ghost" onClick={() => setIsErrorModalOpen(true)}>
+              Подробнее
+            </Button>
+            {sseError?.code === 'llm_not_configured' && (
+              <a href="/settings" style={{ color: colors.primary }}>
+                Открыть Settings
+              </a>
+            )}
+          </div>
+        )}
         {sessionId && <p style={{ color: colors.textSecondary, fontSize: 12 }}>session_id: {sessionId}</p>}
         {summary && (
           <p style={{ color: colors.textPrimary, fontWeight: 600 }}>
@@ -550,6 +574,13 @@ export default function GenerateKSPage() {
         <Button type="button" onClick={handleDownload} disabled={!sessionId || downloadLoading} loading={downloadLoading}>
           {downloadLoading ? 'Скачивание...' : 'Скачать DOCX'}
         </Button>
+        <ErrorModal
+          isOpen={Boolean(sseError) && isErrorModalOpen}
+          onClose={() => setIsErrorModalOpen(false)}
+          title={sseError?.message ?? 'Детали ошибки'}
+          details={sseError?.details}
+          trace={typeof sseError?.details?.trace === 'string' ? sseError.details.trace : undefined}
+        />
       </section>
     </Card>
   );

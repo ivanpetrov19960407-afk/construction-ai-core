@@ -23,7 +23,7 @@ from config.settings import settings
 from core.billing import require_quota
 from core.branding import BrandingConfig, get_branding
 from core.cache import RedisCache
-from core.errors import LLMProviderNotConfiguredError
+from core.errors import AppError
 from core.export.onec_exporter import OneCExporter
 from core.llm_router import LLMRouter
 from core.multitenancy import get_tenant_id
@@ -53,6 +53,13 @@ SESSION_STORE: dict[str, dict[str, dict]] = {}
 _cleanup_task: asyncio.Task | None = None
 _cleanup_lock = asyncio.Lock()
 GENERATION_STAGES = ("research", "draft", "critic", "verify", "format")
+ERROR_CODES = {
+    "llm_timeout",
+    "llm_not_configured",
+    "validation_failed",
+    "rag_empty",
+    "internal",
+}
 
 
 def _now_mono() -> float:
@@ -141,9 +148,49 @@ def _http_exception_payload(exc: HTTPException) -> dict[str, str]:
     detail = exc.detail
     if isinstance(detail, dict):
         message = str(detail.get("message", "Ошибка генерации"))
-        code = str(detail.get("code", "generation_error"))
-        return {"stage": "error", "message": message, "code": code}
-    return {"stage": "error", "message": str(detail), "code": "generation_error"}
+        code = str(detail.get("code", "internal"))
+        payload: dict[str, object] = {"stage": "error", "message": message, "code": code}
+        if isinstance(detail.get("details"), dict):
+            payload["details"] = detail["details"]
+        return payload
+    return {"stage": "error", "message": str(detail), "code": "internal"}
+
+
+async def _emit_error(
+    queue,
+    code: str,
+    message: str,
+    details: dict | None = None,
+) -> None:
+    normalized_code = code if code in ERROR_CODES else "internal"
+    payload: dict[str, object] = {"stage": "error", "code": normalized_code, "message": message}
+    if details:
+        payload["details"] = details
+    await queue.put(_sse_event("error", payload))
+
+
+def _exception_to_http(exc: Exception) -> HTTPException:
+    if isinstance(exc, AppError):
+        message = exc.message
+        if exc.code == "llm_not_configured":
+            message = "LLM-провайдер не настроен. Добавьте ключ в Настройках"
+        return HTTPException(
+            status_code=exc.status_code,
+            detail={"message": message, "code": exc.code, "details": getattr(exc, "details", None)},
+        )
+    if isinstance(exc, asyncio.TimeoutError):
+        return HTTPException(
+            status_code=504,
+            detail={
+                "message": "LLM не ответил за 60 сек",
+                "code": "llm_timeout",
+                "details": {"timeout_seconds": 60},
+            },
+        )
+    return HTTPException(
+        status_code=503,
+        detail={"message": "LLM временно недоступен, попробуйте позже", "code": "internal"},
+    )
 
 
 def _is_sse_requested(request: Request, stream: bool) -> bool:
@@ -533,15 +580,7 @@ async def _generate_tk_response(payload: TKRequest) -> TKResponse:
         )
     except Exception as exc:
         logger.exception("generate_tk_llm_error", session_id=session_id, error=str(exc))
-        if isinstance(exc, LLMProviderNotConfiguredError):
-            raise HTTPException(
-                status_code=exc.status_code,
-                detail={"message": exc.message, "code": exc.code},
-            ) from exc
-        raise HTTPException(
-            status_code=503,
-            detail="LLM временно недоступен, попробуйте позже",
-        ) from exc
+        raise _exception_to_http(exc) from exc
 
     state = result.get("state", {}) if isinstance(result, dict) else {}
     docx_bytes = state.get("docx_bytes")
@@ -620,46 +659,52 @@ async def generate_tk(
         return await _generate_tk_response(payload)
 
     async def _stream():
-        yield _sse_event("queued", {"stage": "queued", "progress": 0})
+        yield _sse_event("progress", {"stage": "queued", "progress": 0})
         task = asyncio.create_task(_generate_tk_response(payload))
         stage_index = 0
         while not task.done():
             stage = GENERATION_STAGES[min(stage_index, len(GENERATION_STAGES) - 1)]
             progress = min(90, int(((stage_index + 1) / (len(GENERATION_STAGES) + 1)) * 100))
-            yield _sse_event(stage, {"stage": stage, "progress": progress})
+            yield _sse_event("progress", {"stage": stage, "progress": progress})
             stage_index += 1
             try:
                 await asyncio.wait_for(asyncio.shield(task), timeout=5)
             except TimeoutError:
                 continue
             except HTTPException as exc:
-                yield _sse_event("error", _http_exception_payload(exc))
+                err_payload = _http_exception_payload(exc)
+                queue: asyncio.Queue[str] = asyncio.Queue()
+                await _emit_error(
+                    queue,
+                    code=str(err_payload.get("code", "internal")),
+                    message=str(err_payload.get("message", "Ошибка генерации")),
+                    details=err_payload.get("details") if isinstance(err_payload.get("details"), dict) else None,
+                )
+                yield await queue.get()
                 return
             except Exception:
-                yield _sse_event(
-                    "error",
-                    {
-                        "stage": "error",
-                        "message": "Unexpected generation error",
-                        "code": "generation_error",
-                    },
-                )
+                queue: asyncio.Queue[str] = asyncio.Queue()
+                await _emit_error(queue, code='internal', message='Unexpected generation error')
+                yield await queue.get()
                 return
 
         try:
             response = await task
         except HTTPException as exc:
-            yield _sse_event("error", _http_exception_payload(exc))
+            err_payload = _http_exception_payload(exc)
+            queue: asyncio.Queue[str] = asyncio.Queue()
+            await _emit_error(
+                queue,
+                code=str(err_payload.get("code", "internal")),
+                message=str(err_payload.get("message", "Ошибка генерации")),
+                details=err_payload.get("details") if isinstance(err_payload.get("details"), dict) else None,
+            )
+            yield await queue.get()
             return
         except Exception:
-            yield _sse_event(
-                "error",
-                {
-                    "stage": "error",
-                    "message": "Unexpected generation error",
-                    "code": "generation_error",
-                },
-            )
+            queue: asyncio.Queue[str] = asyncio.Queue()
+            await _emit_error(queue, code='internal', message='Unexpected generation error')
+            yield await queue.get()
             return
 
         yield _sse_event(
@@ -727,6 +772,7 @@ async def generate_letter_v2(
     payload: LetterRequest,
     request: Request,
     org_id: str | None = Depends(get_tenant_id),
+    stream: bool = Query(False, description="Вернуть прогресс в формате SSE"),
 ):
     """Генерация делового письма через orchestrator."""
     _ = (request, org_id)
@@ -742,55 +788,107 @@ async def generate_letter_v2(
         f"Договор: {contract_number}."
     )
 
-    try:
-        result = await orchestrator.process(
-            message=message,
-            session_id=session_id,
-            role=payload.role,
-            intent="generate_letter",
-            include_legal_expert=payload.include_npa,
-        )
-    except Exception as exc:
-        logger.exception("generate_letter_llm_error", session_id=session_id, error=str(exc))
-        raise HTTPException(
-            status_code=503,
-            detail="LLM временно недоступен, попробуйте позже",
-        ) from exc
+    async def _generate_letter_response() -> LetterResponse:
+        try:
+            result = await orchestrator.process(
+                message=message,
+                session_id=session_id,
+                role=payload.role,
+                intent="generate_letter",
+                include_legal_expert=payload.include_npa,
+            )
+        except Exception as exc:
+            logger.exception("generate_letter_llm_error", session_id=session_id, error=str(exc))
+            raise _exception_to_http(exc) from exc
 
-    state = result.get("state", {}) if isinstance(result, dict) else {}
-    history = state.get("history", []) if isinstance(state, dict) else []
-    document = state.get("docx_payload") or {"content": result.get("reply")}
-    legal_references = _extract_legal_references(history)
-    verification = state.get("verification", {}) if isinstance(state, dict) else {}
-    sha256 = (verification or {}).get("sha256")
-    docx_bytes = state.get("docx_bytes")
-    if isinstance(docx_bytes, bytes):
-        await session_memory.save_document(
-            session_id=session_id,
+        state = result.get("state", {}) if isinstance(result, dict) else {}
+        history = state.get("history", []) if isinstance(state, dict) else []
+        document = state.get("docx_payload") or {"content": result.get("reply")}
+        legal_references = _extract_legal_references(history)
+        verification = state.get("verification", {}) if isinstance(state, dict) else {}
+        sha256 = (verification or {}).get("sha256")
+        docx_bytes = state.get("docx_bytes")
+        if isinstance(docx_bytes, bytes):
+            await session_memory.save_document(
+                session_id=session_id,
+                doc_type="letter",
+                filename=f"letter_{session_id}.docx",
+                docx_bytes=docx_bytes,
+                sha256=sha256,
+            )
+        result_text = str(result.get("reply") or "")
+        if not result_text and isinstance(document, dict):
+            result_text = json.dumps(document, ensure_ascii=False, indent=2)
+        _touch_session(
+            session_id,
+            text=result_text,
             doc_type="letter",
-            filename=f"letter_{session_id}.docx",
-            docx_bytes=docx_bytes,
-            sha256=sha256,
+            docx_bytes=docx_bytes if isinstance(docx_bytes, bytes) else None,
         )
-    result_text = str(result.get("reply") or "")
-    if not result_text and isinstance(document, dict):
-        result_text = json.dumps(document, ensure_ascii=False, indent=2)
-    _touch_session(
-        session_id,
-        text=result_text,
-        doc_type="letter",
-        docx_bytes=docx_bytes if isinstance(docx_bytes, bytes) else None,
-    )
-    await create_document_ready_notification_for_session(session_id=session_id, doc_type="letter")
+        await create_document_ready_notification_for_session(session_id=session_id, doc_type="letter")
 
-    return LetterResponse(
-        result=result_text,
-        session_id=result["session_id"],
-        document=document,
-        agents_used=result.get("agents_used", []),
-        legal_references=legal_references,
-        confidence=result.get("confidence"),
-    )
+        return LetterResponse(
+            result=result_text,
+            session_id=result["session_id"],
+            document=document,
+            agents_used=result.get("agents_used", []),
+            legal_references=legal_references,
+            confidence=result.get("confidence"),
+        )
+
+    if not _is_sse_requested(request, stream):
+        return await _generate_letter_response()
+
+    async def _stream():
+        yield _sse_event("progress", {"stage": "queued", "progress": 0})
+        task = asyncio.create_task(_generate_letter_response())
+        stage_index = 0
+        while not task.done():
+            stage = GENERATION_STAGES[min(stage_index, len(GENERATION_STAGES) - 1)]
+            progress = min(90, int(((stage_index + 1) / (len(GENERATION_STAGES) + 1)) * 100))
+            yield _sse_event("progress", {"stage": stage, "progress": progress})
+            stage_index += 1
+            try:
+                await asyncio.wait_for(asyncio.shield(task), timeout=5)
+            except TimeoutError:
+                continue
+            except HTTPException as exc:
+                err_payload = _http_exception_payload(exc)
+                queue: asyncio.Queue[str] = asyncio.Queue()
+                await _emit_error(
+                    queue,
+                    code=str(err_payload.get("code", "internal")),
+                    message=str(err_payload.get("message", "Ошибка генерации")),
+                    details=err_payload.get("details") if isinstance(err_payload.get("details"), dict) else None,
+                )
+                yield await queue.get()
+                return
+            except Exception:
+                queue: asyncio.Queue[str] = asyncio.Queue()
+                await _emit_error(queue, code='internal', message='Unexpected generation error')
+                yield await queue.get()
+                return
+        try:
+            response = await task
+        except HTTPException as exc:
+            err_payload = _http_exception_payload(exc)
+            queue: asyncio.Queue[str] = asyncio.Queue()
+            await _emit_error(
+                queue,
+                code=str(err_payload.get("code", "internal")),
+                message=str(err_payload.get("message", "Ошибка генерации")),
+                details=err_payload.get("details") if isinstance(err_payload.get("details"), dict) else None,
+            )
+            yield await queue.get()
+            return
+        except Exception:
+            queue: asyncio.Queue[str] = asyncio.Queue()
+            await _emit_error(queue, code='internal', message='Unexpected generation error')
+            yield await queue.get()
+            return
+        yield _sse_event("done", {"stage": "done", "progress": 100, "result": response.model_dump()})
+
+    return StreamingResponse(_stream(), media_type="text/event-stream")
 
 
 @router.post(
@@ -965,10 +1063,7 @@ async def _generate_ks_response(payload: KSRequest, tenant: str) -> KSResponse:
         )
     except Exception as exc:
         logger.exception("generate_ks_llm_error", session_id=session_id, error=str(exc))
-        raise HTTPException(
-            status_code=503,
-            detail="LLM временно недоступен, попробуйте позже",
-        ) from exc
+        raise _exception_to_http(exc) from exc
 
     state = result.get("state", {}) if isinstance(result, dict) else {}
     ks2 = state.get("ks2_data", {})
@@ -1078,35 +1173,53 @@ async def generate_ks(
         return await _generate_ks_response(payload, tenant)
 
     async def _stream():
-        yield _sse_event("queued", {"stage": "queued", "progress": 0})
+        yield _sse_event("progress", {"stage": "queued", "progress": 0})
         task = asyncio.create_task(_generate_ks_response(payload, tenant))
         stage_index = 0
         while not task.done():
             stage = GENERATION_STAGES[min(stage_index, len(GENERATION_STAGES) - 1)]
             progress = min(90, int(((stage_index + 1) / (len(GENERATION_STAGES) + 1)) * 100))
-            yield _sse_event(stage, {"stage": stage, "progress": progress})
+            yield _sse_event("progress", {"stage": stage, "progress": progress})
             stage_index += 1
             try:
                 await asyncio.wait_for(asyncio.shield(task), timeout=5)
             except TimeoutError:
                 continue
             except HTTPException as exc:
-                yield _sse_event("error", {"stage": "error", "message": str(exc.detail)})
+                err_payload = _http_exception_payload(exc)
+                queue: asyncio.Queue[str] = asyncio.Queue()
+                await _emit_error(
+                    queue,
+                    code=str(err_payload.get("code", "internal")),
+                    message=str(err_payload.get("message", "Ошибка генерации")),
+                    details=err_payload.get("details") if isinstance(err_payload.get("details"), dict) else None,
+                )
+                yield await queue.get()
                 return
             except Exception:
                 yield _sse_event(
                     "error",
-                    {"stage": "error", "message": "Unexpected generation error"},
+                    {"stage": "error", "message": "Unexpected generation error", "code": "internal"},
                 )
                 return
 
         try:
             response = await task
         except HTTPException as exc:
-            yield _sse_event("error", {"stage": "error", "message": str(exc.detail)})
+            err_payload = _http_exception_payload(exc)
+            queue: asyncio.Queue[str] = asyncio.Queue()
+            await _emit_error(
+                queue,
+                code=str(err_payload.get("code", "internal")),
+                message=str(err_payload.get("message", "Ошибка генерации")),
+                details=err_payload.get("details") if isinstance(err_payload.get("details"), dict) else None,
+            )
+            yield await queue.get()
             return
         except Exception:
-            yield _sse_event("error", {"stage": "error", "message": "Unexpected generation error"})
+            queue: asyncio.Queue[str] = asyncio.Queue()
+            await _emit_error(queue, code='internal', message='Unexpected generation error')
+            yield await queue.get()
             return
 
         yield _sse_event(

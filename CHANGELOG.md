@@ -14,3 +14,5 @@
 
 ### Changed
 - Docker-образ оптимизирован с 1.5 ГБ до 500 МБ (multi-stage build)
+
+- feat(ui): surface real SSE error reasons

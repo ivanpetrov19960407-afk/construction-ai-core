@@ -7,6 +7,8 @@ import {
   DEFAULT_GENERATION_TIMEOUT_MS
 } from '../lib/apiClient';
 import type { ChatRole } from '../store/chatStore';
+import { logError } from '../lib/logger';
+import { parseSSEEvent } from './sseEvents';
 
 export interface ChatRequest {
   message: string;
@@ -160,6 +162,18 @@ export class ForbiddenError extends Error {
     this.name = 'ForbiddenError';
   }
 }
+export class SSEError extends Error {
+  code: string;
+  details?: Record<string, unknown>;
+
+  constructor(code: string, message: string, details?: Record<string, unknown>) {
+    super(message);
+    this.name = 'SSEError';
+    this.code = code;
+    this.details = details;
+  }
+}
+
 
 export interface TelegramLinkResponse {
   ok: boolean;
@@ -248,7 +262,6 @@ async function postJsonSSE<TRequest>(
       signal.addEventListener('abort', () => controller.abort(), { once: true });
     }
   }
-  const mergedSignal = controller.signal;
 
   try {
     const response = await fetch(`${normalizeApiUrl(apiUrl)}${endpoint}`, {
@@ -259,7 +272,7 @@ async function postJsonSSE<TRequest>(
         'X-API-Key': apiKey.trim()
       },
       body: JSON.stringify(payload),
-      signal: mergedSignal
+      signal: controller.signal
     });
 
     if (!response.ok || !response.body) {
@@ -277,26 +290,34 @@ async function postJsonSSE<TRequest>(
 
       while (buffer.includes('\n\n')) {
         const splitAt = buffer.indexOf('\n\n');
-        const chunk = buffer.slice(0, splitAt);
+        const rawEvent = buffer.slice(0, splitAt);
         buffer = buffer.slice(splitAt + 2);
-        const lines = chunk.split('\n');
-        const eventLine = lines.find((line) => line.startsWith('event:'));
-        const dataLine = lines.find((line) => line.startsWith('data:'));
-        if (!dataLine) continue;
 
-        const parsed = JSON.parse(dataLine.replace(/^data:\s*/, '')) as Omit<GenerationStreamEvent, 'event'>;
-        const event = (eventLine?.replace(/^event:\s*/, '') ?? parsed.stage) as GenerationStage;
-        const fullEvent: GenerationStreamEvent = { event, ...parsed };
-        onEvent(fullEvent);
-
-        if (event === 'error') {
-          if (parsed.code === 'llm_not_configured') {
-            throw new Error(parsed.message ?? 'LLM-провайдер не настроен в .env');
-          }
-          throw new Error(parsed.message ?? 'Ошибка генерации');
+        const parsedEvent = parseSSEEvent(rawEvent);
+        if (!parsedEvent) {
+          continue;
         }
-        if (event === 'done' && parsed.result) {
-          return parsed.result;
+
+        if (parsedEvent.event === 'error') {
+          logError('sse_error_event', {
+            code: parsedEvent.code,
+            message: parsedEvent.message,
+            details: parsedEvent.details,
+            endpoint
+          });
+          throw new SSEError(parsedEvent.code, parsedEvent.message, parsedEvent.details);
+        }
+
+        const stage = (parsedEvent.stage ?? parsedEvent.event) as GenerationStage;
+        onEvent({
+          event: stage,
+          stage,
+          progress: parsedEvent.progress ?? 0,
+          message: parsedEvent.message
+        });
+
+        if (parsedEvent.event === 'done' && parsedEvent.result) {
+          return parsedEvent.result;
         }
       }
     }
@@ -304,8 +325,9 @@ async function postJsonSSE<TRequest>(
     if (timeoutId !== null) window.clearTimeout(timeoutId);
   }
 
-  throw new Error('Поток генерации завершился без результата');
+  throw new SSEError('internal', 'Поток генерации завершился без результата');
 }
+
 
 export async function getApiConfig(): Promise<ApiConfig> {
   const store = await Store.load('settings.json');
@@ -548,8 +570,14 @@ export function generateTKStream(
   return postJsonSSE(apiUrl, apiKey, '/api/generate/tk?stream=true', payload, onEvent, options);
 }
 
-export function generateLetter(apiUrl: string, apiKey: string, payload: LetterRequest, options?: ApiCallOptions) {
-  return postJson(apiUrl, apiKey, '/api/generate/letter', payload, options);
+export function generateLetter(
+  apiUrl: string,
+  apiKey: string,
+  payload: LetterRequest,
+  onEvent: (event: GenerationStreamEvent) => void,
+  options?: ApiCallOptions
+) {
+  return postJsonSSE(apiUrl, apiKey, '/api/generate/letter?stream=true', payload, onEvent, options);
 }
 
 export function generateKS(apiUrl: string, apiKey: string, payload: KSRequest, options?: ApiCallOptions) {
