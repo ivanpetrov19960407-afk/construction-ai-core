@@ -2,9 +2,10 @@ import { useState } from 'react';
 import DocumentForm, { type DocumentField } from '../components/DocumentForm';
 import Button from '../components/ui/Button';
 import Card from '../components/ui/Card';
+import ErrorModal from '../components/ErrorModal';
 import Input from '../components/ui/Input';
 import { colors, spacing } from '../styles/tokens';
-import { downloadTKDocx, generateTKStream, getApiConfig, type GenerationStage } from '../api/coreClient';
+import { downloadTKDocx, generateTKStream, getApiConfig, SSEError, type GenerationStage } from '../api/coreClient';
 import { DEFAULT_GENERATION_TIMEOUT_MS } from '../lib/apiClient';
 import { validateTK } from '../lib/validation';
 
@@ -31,6 +32,9 @@ export default function GenerateTKPage() {
   const [progress, setProgress] = useState(0);
   const [stage, setStage] = useState<GenerationStage>('queued');
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
+  const [toastMessage, setToastMessage] = useState('');
+  const [sseError, setSseError] = useState<SSEError | null>(null);
+  const [isErrorModalOpen, setIsErrorModalOpen] = useState(false);
 
   const handleSubmit = async (data: Record<string, string>) => {
     const normalizedData = {
@@ -82,7 +86,13 @@ export default function GenerateTKPage() {
       setSessionId(String(response.session_id ?? ''));
       setSuccess(true);
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : 'Ошибка генерации ТК');
+      if (submitError instanceof SSEError) {
+        setSseError(submitError);
+        setToastMessage(submitError.message);
+        setError(submitError.message);
+      } else {
+        setError(submitError instanceof Error ? submitError.message : 'Ошибка генерации ТК');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -144,6 +154,19 @@ export default function GenerateTKPage() {
         )}
         {success && <p style={{ color: colors.success, fontWeight: 600 }}>✓ ТК сгенерирована</p>}
         {error && <p style={{ color: colors.error }}>{error}</p>}
+        {toastMessage && (
+          <div style={{ border: `1px solid ${colors.error}`, borderRadius: 8, padding: spacing.sm, display: 'flex', gap: spacing.sm, alignItems: 'center' }}>
+            <span style={{ color: colors.error, fontWeight: 600 }}>{toastMessage}</span>
+            <Button type="button" variant="ghost" onClick={() => setIsErrorModalOpen(true)}>
+              Подробнее
+            </Button>
+            {sseError?.code === 'llm_not_configured' && (
+              <a href="/settings" style={{ color: colors.primary }}>
+                Открыть Settings
+              </a>
+            )}
+          </div>
+        )}
         {sessionId && <p style={{ color: colors.textSecondary, fontSize: 12 }}>session_id: {sessionId}</p>}
 
         <Input type="textarea" label="Результат" value={result} rows={12} readOnly />
@@ -153,6 +176,13 @@ export default function GenerateTKPage() {
         <Button type="button" onClick={handleDownload} disabled={!sessionId || downloadLoading} loading={downloadLoading}>
           {downloadLoading ? 'Скачивание...' : 'Скачать DOCX'}
         </Button>
+        <ErrorModal
+          isOpen={Boolean(sseError) && isErrorModalOpen}
+          onClose={() => setIsErrorModalOpen(false)}
+          title={sseError?.message ?? 'Детали ошибки'}
+          details={sseError?.details}
+          trace={typeof sseError?.details?.trace === 'string' ? sseError.details.trace : undefined}
+        />
       </section>
     </Card>
   );

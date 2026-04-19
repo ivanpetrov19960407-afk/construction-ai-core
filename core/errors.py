@@ -10,6 +10,7 @@ class AppError(Exception):
     message: str
     code: str = "app_error"
     status_code: int = 500
+    details: dict | None = None
 
     def __str__(self) -> str:
         return self.message
@@ -26,6 +27,7 @@ class LLMProviderNotConfiguredError(AppError):
             ),
             code="llm_not_configured",
             status_code=503,
+            details={"provider": provider, "missing_setting": missing_setting.upper()},
         )
         self.provider = provider
         self.missing_setting = missing_setting
