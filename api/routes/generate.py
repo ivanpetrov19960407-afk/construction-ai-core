@@ -689,7 +689,7 @@ async def generate_tk(
                 return
             except Exception:
                 queue: asyncio.Queue[str] = asyncio.Queue()
-                await _emit_error(queue, code='internal', message='Unexpected generation error')
+                await _emit_error(queue, code="internal", message="Unexpected generation error")
                 yield await queue.get()
                 return
 
@@ -708,7 +708,7 @@ async def generate_tk(
             return
         except Exception:
             queue: asyncio.Queue[str] = asyncio.Queue()
-            await _emit_error(queue, code='internal', message='Unexpected generation error')
+            await _emit_error(queue, code="internal", message="Unexpected generation error")
             yield await queue.get()
             return
 
@@ -873,7 +873,7 @@ async def generate_letter_v2(
                 return
             except Exception:
                 queue: asyncio.Queue[str] = asyncio.Queue()
-                await _emit_error(queue, code='internal', message='Unexpected generation error')
+                await _emit_error(queue, code="internal", message="Unexpected generation error")
                 yield await queue.get()
                 return
         try:
@@ -891,7 +891,7 @@ async def generate_letter_v2(
             return
         except Exception:
             queue: asyncio.Queue[str] = asyncio.Queue()
-            await _emit_error(queue, code='internal', message='Unexpected generation error')
+            await _emit_error(queue, code="internal", message="Unexpected generation error")
             yield await queue.get()
             return
         yield _sse_event(
@@ -1233,7 +1233,7 @@ async def generate_ks(
             return
         except Exception:
             queue: asyncio.Queue[str] = asyncio.Queue()
-            await _emit_error(queue, code='internal', message='Unexpected generation error')
+            await _emit_error(queue, code="internal", message="Unexpected generation error")
             yield await queue.get()
             return
 

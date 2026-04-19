@@ -5,7 +5,13 @@ import Card from '../components/ui/Card';
 import ErrorModal from '../components/ErrorModal';
 import Input from '../components/ui/Input';
 import { colors, spacing } from '../styles/tokens';
-import { downloadLetterDocx, generateLetter, getApiConfig, SSEError, type GenerationStage } from '../api/coreClient';
+import {
+  downloadLetterDocx,
+  generateLetterStream,
+  getApiConfig,
+  SSEError,
+  type GenerationStage
+} from '../api/coreClient';
 import { DEFAULT_GENERATION_TIMEOUT_MS } from '../lib/apiClient';
 import { validateLetter } from '../lib/validation';
 
@@ -69,7 +75,7 @@ export default function GenerateLetterPage() {
 
     try {
       const { apiUrl, apiKey } = await getApiConfig();
-      const response = await generateLetter(
+      const response = await generateLetterStream(
         apiUrl,
         apiKey,
         {

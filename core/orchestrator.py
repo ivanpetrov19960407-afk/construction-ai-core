@@ -14,6 +14,7 @@ import uuid
 from pathlib import Path
 from typing import Any, TypedDict, cast
 
+import httpx
 from langgraph.graph import END, START, StateGraph
 
 from agents.analyst import AnalystAgent
@@ -208,7 +209,7 @@ class Orchestrator:
     def _map_pipeline_exception(self, exc: Exception) -> AppError:
         if isinstance(exc, LLMProviderNotConfiguredError):
             return exc
-        if isinstance(exc, asyncio.TimeoutError):
+        if isinstance(exc, (asyncio.TimeoutError, httpx.TimeoutException)):
             return AppError(
                 message="LLM не ответил за 60 сек",
                 code="llm_timeout",

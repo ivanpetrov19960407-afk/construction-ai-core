@@ -574,6 +574,15 @@ export function generateLetter(
   apiUrl: string,
   apiKey: string,
   payload: LetterRequest,
+  options?: ApiCallOptions
+) {
+  return postJson(apiUrl, apiKey, '/api/generate/letter', payload, options);
+}
+
+export function generateLetterStream(
+  apiUrl: string,
+  apiKey: string,
+  payload: LetterRequest,
   onEvent: (event: GenerationStreamEvent) => void,
   options?: ApiCallOptions
 ) {
