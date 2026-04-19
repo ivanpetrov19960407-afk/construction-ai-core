@@ -5,6 +5,7 @@ import Card from '../components/ui/Card';
 import Input from '../components/ui/Input';
 import { colors, spacing } from '../styles/tokens';
 import { downloadTKDocx, generateTK, getApiConfig } from '../api/coreClient';
+import { DEFAULT_GENERATION_TIMEOUT_MS } from '../lib/apiClient';
 
 const fields: DocumentField[] = [
   { name: 'work_type', label: 'Тип работ', type: 'text' },
@@ -34,12 +35,17 @@ export default function GenerateTKPage() {
 
     try {
       const { apiUrl, apiKey } = await getApiConfig();
-      const response = await generateTK(apiUrl, apiKey, {
-        work_type: data.work_type,
-        object_name: data.object_name,
-        volume: Number(data.volume),
-        unit: data.unit
-      });
+      const response = await generateTK(
+        apiUrl,
+        apiKey,
+        {
+          work_type: data.work_type,
+          object_name: data.object_name,
+          volume: Number(data.volume),
+          unit: data.unit
+        },
+        { timeoutMs: DEFAULT_GENERATION_TIMEOUT_MS }
+      );
 
       const normalizedResult =
         response.document ?? response.result ?? response.text ?? response.content ?? '';
@@ -69,7 +75,9 @@ export default function GenerateTKPage() {
 
     try {
       const { apiUrl, apiKey } = await getApiConfig();
-      const blob = await downloadTKDocx(apiUrl, apiKey, sessionId);
+      const blob = await downloadTKDocx(apiUrl, apiKey, sessionId, {
+        timeoutMs: DEFAULT_GENERATION_TIMEOUT_MS
+      });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
