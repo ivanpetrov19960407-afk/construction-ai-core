@@ -3,7 +3,7 @@ import { Store } from '@tauri-apps/plugin-store';
 import type { ChatResponseMeta } from '../api/coreClient';
 
 export type ChatRole = 'pto_engineer' | 'foreman' | 'tender_specialist' | 'admin';
-export type MessageRole = 'user' | 'assistant';
+export type MessageRole = 'user' | 'assistant' | 'system';
 
 export interface ChatMessage {
   id: string;

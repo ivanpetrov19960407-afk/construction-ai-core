@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from io import BytesIO
 from tempfile import NamedTemporaryFile
 
+from docx import Document
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from typing_extensions import TypedDict
 
@@ -42,20 +44,36 @@ async def rag_ingest(
     request: Request,
     file: UploadFile = File(...),
     source_name: str = Form(...),
+    session_id: str | None = Form(None),
 ) -> dict[str, int | str]:
-    """Загрузить PDF в RAG-индекс (доступно только admin)."""
+    """Загрузить PDF/DOCX в RAG-индекс (доступно только admin)."""
     _require_admin(request)
     filename = file.filename or source_name
-    if file.content_type != "application/pdf" and not filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Only PDF files are supported")
+    is_pdf = file.content_type == "application/pdf" or filename.lower().endswith(".pdf")
+    is_docx = (
+        file.content_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        or filename.lower().endswith(".docx")
+    )
+    if not is_pdf and not is_docx:
+        raise HTTPException(status_code=400, detail="Only PDF and DOCX files are supported")
 
     file_bytes = await file.read()
-    pdf_parser.parse(file_bytes, filename=filename)
+    metadata = {"session_id": session_id} if session_id else None
 
-    with NamedTemporaryFile(suffix=".pdf", delete=True) as tmp:
-        tmp.write(file_bytes)
-        tmp.flush()
-        chunks_added = get_rag_engine().ingest_pdf(tmp.name, source_name=source_name)
+    if is_pdf:
+        pdf_parser.parse(file_bytes, filename=filename)
+
+        with NamedTemporaryFile(suffix=".pdf", delete=True) as tmp:
+            tmp.write(file_bytes)
+            tmp.flush()
+            chunks_added = get_rag_engine().ingest_pdf(tmp.name, source_name=source_name, metadata=metadata)
+    else:
+        document = Document(BytesIO(file_bytes))
+        text = "\n".join(paragraph.text.strip() for paragraph in document.paragraphs if paragraph.text.strip())
+        if not text.strip():
+            raise HTTPException(status_code=400, detail="DOCX does not contain text")
+        chunks_added = get_rag_engine().ingest_text(text, source_name=source_name, metadata=metadata)
+
     return {"chunks_added": int(chunks_added), "source": source_name}
 
 

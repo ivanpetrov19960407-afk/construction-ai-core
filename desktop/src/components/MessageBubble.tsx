@@ -30,6 +30,7 @@ function getConfidenceBadge(confidence?: number) {
 
 export default function MessageBubble({ message, metadata, className }: Props) {
   const isUser = message.role === 'user';
+  const isSystem = message.role === 'system';
   const effectiveMetadata = metadata ?? message.metadata;
   const agents = effectiveMetadata?.agents ?? [];
   const confidenceBadge = getConfidenceBadge(effectiveMetadata?.confidence);
@@ -43,20 +44,26 @@ export default function MessageBubble({ message, metadata, className }: Props) {
   };
 
   return (
-    <div className={className} style={{ alignSelf: isUser ? 'flex-end' : 'flex-start', maxWidth: isUser ? '72%' : '80%' }}>
+    <div
+      className={className}
+      style={{
+        alignSelf: isUser ? 'flex-end' : 'flex-start',
+        maxWidth: isUser ? '72%' : isSystem ? '88%' : '80%'
+      }}
+    >
       <div
         style={{
-          background: isUser ? colors.primary : colors.bgCard,
-          border: isUser ? 'none' : `1px solid ${colors.border}`,
+          background: isUser ? colors.primary : isSystem ? '#eef6ff' : colors.bgCard,
+          border: isUser ? 'none' : `1px solid ${isSystem ? '#bfdbfe' : colors.border}`,
           color: isUser ? '#ffffff' : colors.textPrimary,
           borderRadius: isUser ? '16px 16px 4px 16px' : '4px 16px 16px 16px',
           padding: `${spacing.sm}px ${spacing.md}px`,
           boxShadow: shadows.sm
         }}
       >
-        <strong style={{ display: 'block', marginBottom: 4 }}>{isUser ? 'Вы' : 'Assistant'}</strong>
+        <strong style={{ display: 'block', marginBottom: 4 }}>{isUser ? 'Вы' : isSystem ? 'Система' : 'Assistant'}</strong>
         <span>{message.content}</span>
-        {!isUser && (
+        {!isUser && !isSystem && (
           <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
             {agents.map((agent) => (
               <span
