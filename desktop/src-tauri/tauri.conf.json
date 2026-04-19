@@ -25,7 +25,10 @@
   "plugins": {
     "shell": {
       "open": true
-    }
+    },
+    "fs": null,
+    "dialog": null,
+    "clipboard-manager": null
   },
   "bundle": {
     "active": true,
