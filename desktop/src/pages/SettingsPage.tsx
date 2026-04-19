@@ -225,7 +225,7 @@ export default function SettingsPage() {
                 const statusIcon = component.status === 'ok' || component.status === 'active' ? '✅' : '⚠️';
                 const details =
                   key === 'rag_engine'
-                    ? `${String(component.chunks_count ?? 0)} документов`
+                    ? `${String(component.sources ?? 0)} документов`
                     : key === 'llm_router' && component.provider
                       ? String(component.provider)
                       : '-';
@@ -242,7 +242,7 @@ export default function SettingsPage() {
               })}
             </tbody>
           </table>
-          {(health.components.rag_engine?.chunks_count as number | undefined) === 0 && (
+          {(health.components.rag_engine?.sources as number | undefined) === 0 && (
             <p style={{ marginBottom: 0, color: colors.warning }}>
               RAG база пуста. Нормативы (СП, ГОСТ) не загружены — качество ответов снижено.
             </p>

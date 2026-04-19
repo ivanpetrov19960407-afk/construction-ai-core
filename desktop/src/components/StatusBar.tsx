@@ -14,10 +14,11 @@ const ROLE_LABELS: Record<ChatRole, string> = {
 
 export default function StatusBar() {
   const role = useChatStore((state) => state.role);
-  const { isOnline, isChecking, serverVersion } = useServerStatusStore((state) => ({
+  const { isOnline, isChecking, serverVersion, documentsCount } = useServerStatusStore((state) => ({
     isOnline: state.isOnline,
     isChecking: state.isChecking,
-    serverVersion: state.serverVersion
+    serverVersion: state.serverVersion,
+    documentsCount: state.documentsCount
   }));
 
   const status = useMemo(() => {
@@ -70,7 +71,7 @@ export default function StatusBar() {
         app v{APP_VERSION} · server v{serverVersion || '—'}
       </div>
 
-      <div style={{ justifySelf: 'end' }}>Роль: {ROLE_LABELS[role]}</div>
+      <div style={{ justifySelf: 'end' }}>Документов: {documentsCount} · Роль: {ROLE_LABELS[role]}</div>
 
       <style>{`@keyframes statusbar-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }`}</style>
     </footer>

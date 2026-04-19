@@ -37,12 +37,36 @@ fn set_api_url(app: tauri::AppHandle, url: String) -> Result<(), String> {
   store.save().map_err(|e| e.to_string())
 }
 
+#[derive(serde::Serialize)]
+struct PickedPdfFile {
+  path: String,
+  name: String,
+  size: u64
+}
+
 #[tauri::command]
-fn open_file_dialog() -> Option<String> {
-  rfd::FileDialog::new()
+fn pick_pdf_file() -> Option<PickedPdfFile> {
+  let file = rfd::FileDialog::new()
     .add_filter("PDF", &["pdf"])
-    .pick_file()
-    .map(|p| p.display().to_string())
+    .pick_file()?;
+
+  let metadata = fs::metadata(&file).ok()?;
+  let name = file
+    .file_name()
+    .and_then(|n| n.to_str())
+    .map(str::to_string)
+    .unwrap_or_else(|| "document.pdf".to_string());
+
+  Some(PickedPdfFile {
+    path: file.display().to_string(),
+    name,
+    size: metadata.len()
+  })
+}
+
+#[tauri::command]
+fn read_pdf_file_bytes(path: String) -> Result<Vec<u8>, String> {
+  fs::read(path).map_err(|e| e.to_string())
 }
 
 fn ensure_store_defaults(app: &tauri::AppHandle) -> Result<(), String> {
@@ -70,7 +94,7 @@ fn main() {
         .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
       Ok(())
     })
-    .invoke_handler(tauri::generate_handler![get_api_url, set_api_url, open_file_dialog])
+    .invoke_handler(tauri::generate_handler![get_api_url, set_api_url, pick_pdf_file, read_pdf_file_bytes])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
 }
