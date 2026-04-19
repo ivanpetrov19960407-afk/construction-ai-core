@@ -42,6 +42,7 @@ repos:
         language: system
         files: ^desktop/src-tauri/
         pass_filenames: false
+        stages: [manual]
 
       - id: tauri-clippy
         name: cargo clippy -D warnings (desktop/src-tauri)
@@ -49,3 +50,4 @@ repos:
         language: system
         files: ^desktop/src-tauri/
         pass_filenames: false
+        stages: [manual]

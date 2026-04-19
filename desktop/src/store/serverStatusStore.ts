@@ -24,7 +24,7 @@ export const useServerStatusStore = create<ServerStatusState>((set) => ({
   setOnline: (value) =>
     set({
       isOnline: value,
-      lastChecked: new Date().toISOString()
+      lastChecked: new Date().toISOString(),
     }),
   setChecking: (value) => set({ isChecking: value }),
   updateFromHealth: (health) =>
@@ -33,6 +33,6 @@ export const useServerStatusStore = create<ServerStatusState>((set) => ({
       serverVersion: health.version,
       lastChecked: new Date().toISOString(),
       isChecking: false,
-      documentsCount: Number(health.components.rag_engine?.sources ?? 0)
-    })
+      documentsCount: Number(health.components.rag_engine?.sources ?? 0),
+    }),
 }));

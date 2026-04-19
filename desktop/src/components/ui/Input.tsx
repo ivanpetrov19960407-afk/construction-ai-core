@@ -8,7 +8,9 @@ type BaseProps = {
   type?: InputHTMLAttributes<HTMLInputElement>['type'] | 'textarea';
 };
 
-type InputProps = BaseProps & InputHTMLAttributes<HTMLInputElement> & TextareaHTMLAttributes<HTMLTextAreaElement>;
+type InputProps = BaseProps &
+  InputHTMLAttributes<HTMLInputElement> &
+  TextareaHTMLAttributes<HTMLTextAreaElement>;
 
 export default function Input({ label, error, hint, type = 'text', style, ...rest }: InputProps) {
   const [isFocused, setFocused] = useState(false);
@@ -27,13 +29,19 @@ export default function Input({ label, error, hint, type = 'text', style, ...res
     background: '#fff',
     transition: 'border-color 0.12s ease, box-shadow 0.12s ease',
     boxShadow: isFocused ? `0 0 0 3px ${colors.primary}22` : 'none',
-    ...style
+    ...style,
   } as const;
 
   return (
     <label style={{ display: 'grid', gap: spacing.xs }}>
       {label && (
-        <span style={{ color: colors.textPrimary, fontSize: typography.label.fontSize, fontWeight: typography.label.fontWeight }}>
+        <span
+          style={{
+            color: colors.textPrimary,
+            fontSize: typography.label.fontSize,
+            fontWeight: typography.label.fontWeight,
+          }}
+        >
           {label}
         </span>
       )}
@@ -66,7 +74,12 @@ export default function Input({ label, error, hint, type = 'text', style, ...res
         />
       )}
       {message && (
-        <span style={{ color: error ? colors.error : colors.textSecondary, fontSize: typography.small.fontSize }}>
+        <span
+          style={{
+            color: error ? colors.error : colors.textSecondary,
+            fontSize: typography.small.fontSize,
+          }}
+        >
           {message}
         </span>
       )}

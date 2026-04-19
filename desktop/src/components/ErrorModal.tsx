@@ -20,7 +20,7 @@ export default function ErrorModal({ isOpen, onClose, title, details, trace }: E
         background: 'rgba(15, 23, 42, 0.55)',
         display: 'grid',
         placeItems: 'center',
-        zIndex: zIndex.modal
+        zIndex: zIndex.modal,
       }}
       onClick={onClose}
     >
@@ -35,7 +35,7 @@ export default function ErrorModal({ isOpen, onClose, title, details, trace }: E
           border: `1px solid ${colors.border}`,
           borderRadius: 12,
           padding: spacing.lg,
-          boxShadow: '0 20px 45px rgba(2, 6, 23, 0.35)'
+          boxShadow: '0 20px 45px rgba(2, 6, 23, 0.35)',
         }}
         onClick={(event) => event.stopPropagation()}
       >
@@ -47,7 +47,9 @@ export default function ErrorModal({ isOpen, onClose, title, details, trace }: E
         {trace && (
           <>
             <p style={{ marginTop: spacing.md, color: colors.textSecondary }}>Trace:</p>
-            <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{trace}</pre>
+            <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+              {trace}
+            </pre>
           </>
         )}
         <div style={{ marginTop: spacing.md }}>

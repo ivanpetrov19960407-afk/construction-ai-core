@@ -4,7 +4,7 @@ const ROLES: Array<{ id: ChatRole; label: string }> = [
   { id: 'pto_engineer', label: 'ПТО' },
   { id: 'foreman', label: 'Прораб' },
   { id: 'tender_specialist', label: 'Тендеры' },
-  { id: 'admin', label: 'Админ' }
+  { id: 'admin', label: 'Админ' },
 ];
 
 export default function RoleSelector() {

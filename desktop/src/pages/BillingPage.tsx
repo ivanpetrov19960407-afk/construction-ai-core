@@ -32,18 +32,30 @@ export default function BillingPage() {
     <Card>
       <h2 style={{ marginTop: 0 }}>Биллинг</h2>
       <p style={{ marginTop: 0, color: colors.textSecondary }}>Главная / Админ / Биллинг</p>
-      <Button type="button" onClick={() => void load()} loading={loading}>{loading ? 'Обновление...' : 'Обновить квоты'}</Button>
+      <Button type="button" onClick={() => void load()} loading={loading}>
+        {loading ? 'Обновление...' : 'Обновить квоты'}
+      </Button>
       {error && <p style={{ color: colors.error }}>{error}</p>}
       {data && (
         <div style={{ marginTop: spacing.md }}>
-          <p><strong>Тариф:</strong> {data.plan ?? '—'}</p>
-          <p><strong>Остаток:</strong> {data.remaining_quota ?? 0}</p>
-          <p><strong>Использовано:</strong> {data.used_quota ?? 0}</p>
-          <p><strong>Сброс:</strong> {data.reset_at ?? '—'}</p>
+          <p>
+            <strong>Тариф:</strong> {data.plan ?? '—'}
+          </p>
+          <p>
+            <strong>Остаток:</strong> {data.remaining_quota ?? 0}
+          </p>
+          <p>
+            <strong>Использовано:</strong> {data.used_quota ?? 0}
+          </p>
+          <p>
+            <strong>Сброс:</strong> {data.reset_at ?? '—'}
+          </p>
           <h3>История</h3>
           <ul>
             {(data.history ?? []).map((item) => (
-              <li key={item.id}>{item.created_at}: {item.action} ({item.amount})</li>
+              <li key={item.id}>
+                {item.created_at}: {item.action} ({item.amount})
+              </li>
             ))}
           </ul>
         </div>

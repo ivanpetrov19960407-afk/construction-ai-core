@@ -18,5 +18,5 @@ interface BrandingState {
 
 export const useBrandingStore = create<BrandingState>((set) => ({
   branding: null,
-  setBranding: (branding) => set({ branding })
+  setBranding: (branding) => set({ branding }),
 }));

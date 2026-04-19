@@ -29,7 +29,7 @@ export default function TabLayout({ tabs, activeTab, onChange }: TabLayoutProps)
                 padding: '8px 12px',
                 background: isActive ? '#2563eb' : 'transparent',
                 color: isActive ? '#fff' : 'inherit',
-                fontWeight: isActive ? 700 : 500
+                fontWeight: isActive ? 700 : 500,
               }}
             >
               {tab.title}

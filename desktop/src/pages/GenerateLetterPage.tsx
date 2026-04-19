@@ -10,7 +10,7 @@ import {
   generateLetterStream,
   getApiConfig,
   SSEError,
-  type GenerationStage
+  type GenerationStage,
 } from '../api/coreClient';
 import { DEFAULT_GENERATION_TIMEOUT_MS } from '../lib/apiClient';
 import { validateLetter } from '../lib/validation';
@@ -19,7 +19,7 @@ const letterTypeMap: Record<string, 'запрос' | 'претензия' | 'у�
   Запрос: 'запрос',
   Претензия: 'претензия',
   Уведомление: 'уведомление',
-  Ответ: 'ответ'
+  Ответ: 'ответ',
 };
 
 const fields: DocumentField[] = [
@@ -27,11 +27,11 @@ const fields: DocumentField[] = [
     name: 'letter_type',
     label: 'Тип письма',
     type: 'select',
-    options: ['Запрос', 'Претензия', 'Уведомление', 'Ответ']
+    options: ['Запрос', 'Претензия', 'Уведомление', 'Ответ'],
   },
   { name: 'addressee', label: 'Адресат', type: 'text' },
   { name: 'subject', label: 'Тема', type: 'text' },
-  { name: 'body', label: 'Содержание', type: 'textarea' }
+  { name: 'body', label: 'Содержание', type: 'textarea' },
 ];
 
 export default function GenerateLetterPage() {
@@ -58,7 +58,7 @@ export default function GenerateLetterPage() {
     const validation = validateLetter({
       addressee: data.addressee ?? '',
       subject: data.subject ?? '',
-      body_points: bodyPoints
+      body_points: bodyPoints,
     });
     setValidationErrors(validation.fieldErrors);
 
@@ -87,14 +87,14 @@ export default function GenerateLetterPage() {
           letter_type: letterTypeMap[data.letter_type] ?? 'запрос',
           addressee: data.addressee?.trim() ?? '',
           subject: data.subject?.trim() ?? '',
-          body_points: bodyPoints
+          body_points: bodyPoints,
         },
         (event) => {
           setProgress(event.progress ?? 0);
           setStage(event.stage);
           setProgressMessage(event.message ?? '');
         },
-        { timeoutMs: DEFAULT_GENERATION_TIMEOUT_MS }
+        { timeoutMs: DEFAULT_GENERATION_TIMEOUT_MS },
       );
 
       const normalizedResult =
@@ -102,7 +102,7 @@ export default function GenerateLetterPage() {
       setResult(
         typeof normalizedResult === 'string'
           ? normalizedResult
-          : JSON.stringify(normalizedResult, null, 2)
+          : JSON.stringify(normalizedResult, null, 2),
       );
       setSessionId(String(response.session_id ?? ''));
       setSuccess(true);
@@ -131,7 +131,7 @@ export default function GenerateLetterPage() {
     try {
       const { apiUrl, apiKey } = await getApiConfig();
       const blob = await downloadLetterDocx(apiUrl, apiKey, sessionId, {
-        timeoutMs: DEFAULT_GENERATION_TIMEOUT_MS
+        timeoutMs: DEFAULT_GENERATION_TIMEOUT_MS,
       });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -170,10 +170,21 @@ export default function GenerateLetterPage() {
             {progressMessage || `Текущий шаг: ${stage} · ${progress}%`}
           </p>
         )}
-        {success && <p style={{ color: colors.success, fontWeight: 600 }}>✓ Письмо сгенерировано</p>}
+        {success && (
+          <p style={{ color: colors.success, fontWeight: 600 }}>✓ Письмо сгенерировано</p>
+        )}
         {error && <p style={{ color: colors.error }}>{error}</p>}
         {toastMessage && (
-          <div style={{ border: `1px solid ${colors.error}`, borderRadius: 8, padding: spacing.sm, display: 'flex', gap: spacing.sm, alignItems: 'center' }}>
+          <div
+            style={{
+              border: `1px solid ${colors.error}`,
+              borderRadius: 8,
+              padding: spacing.sm,
+              display: 'flex',
+              gap: spacing.sm,
+              alignItems: 'center',
+            }}
+          >
             <span style={{ color: colors.error, fontWeight: 600 }}>{toastMessage}</span>
             <Button type="button" variant="ghost" onClick={() => setIsErrorModalOpen(true)}>
               Подробнее
@@ -185,11 +196,18 @@ export default function GenerateLetterPage() {
             )}
           </div>
         )}
-        {sessionId && <p style={{ color: colors.textSecondary, fontSize: 12 }}>session_id: {sessionId}</p>}
+        {sessionId && (
+          <p style={{ color: colors.textSecondary, fontSize: 12 }}>session_id: {sessionId}</p>
+        )}
 
         <Input type="textarea" label="Результат" value={result} rows={12} readOnly />
 
-        <Button type="button" onClick={handleDownload} disabled={!sessionId || downloadLoading} loading={downloadLoading}>
+        <Button
+          type="button"
+          onClick={handleDownload}
+          disabled={!sessionId || downloadLoading}
+          loading={downloadLoading}
+        >
           {downloadLoading ? 'Скачивание...' : 'Скачать DOCX'}
         </Button>
         <ErrorModal

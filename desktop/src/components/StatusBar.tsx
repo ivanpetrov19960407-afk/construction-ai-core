@@ -3,13 +3,14 @@ import { useChatStore, type ChatRole } from '../store/chatStore';
 import { useServerStatusStore } from '../store/serverStatusStore';
 
 const APP_VERSION =
-  (import.meta as ImportMeta & { env?: { VITE_APP_VERSION?: string } }).env?.VITE_APP_VERSION || '0.5.0';
+  (import.meta as ImportMeta & { env?: { VITE_APP_VERSION?: string } }).env?.VITE_APP_VERSION ||
+  '0.5.0';
 
 const ROLE_LABELS: Record<ChatRole, string> = {
   pto_engineer: 'ПТО-инженер',
   foreman: 'Прораб',
   tender_specialist: 'Тендерный специалист',
-  admin: 'Администратор'
+  admin: 'Администратор',
 };
 
 export default function StatusBar() {
@@ -18,7 +19,7 @@ export default function StatusBar() {
     isOnline: state.isOnline,
     isChecking: state.isChecking,
     serverVersion: state.serverVersion,
-    documentsCount: state.documentsCount
+    documentsCount: state.documentsCount,
   }));
 
   const status = useMemo(() => {
@@ -49,7 +50,7 @@ export default function StatusBar() {
         alignItems: 'center',
         padding: '0 12px',
         zIndex: 1000,
-        borderTop: '1px solid rgba(255, 255, 255, 0.2)'
+        borderTop: '1px solid rgba(255, 255, 255, 0.2)',
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -57,7 +58,7 @@ export default function StatusBar() {
           style={{
             color: status.color,
             fontSize: 12,
-            animation: status.blink ? 'statusbar-blink 1s ease-in-out infinite' : undefined
+            animation: status.blink ? 'statusbar-blink 1s ease-in-out infinite' : undefined,
           }}
         >
           ●
@@ -71,7 +72,9 @@ export default function StatusBar() {
         app v{APP_VERSION} · server v{serverVersion || '—'}
       </div>
 
-      <div style={{ justifySelf: 'end' }}>Документов: {documentsCount} · Роль: {ROLE_LABELS[role]}</div>
+      <div style={{ justifySelf: 'end' }}>
+        Документов: {documentsCount} · Роль: {ROLE_LABELS[role]}
+      </div>
 
       <style>{`@keyframes statusbar-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }`}</style>
     </footer>

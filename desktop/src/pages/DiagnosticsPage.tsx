@@ -3,7 +3,12 @@ import { invoke } from '@tauri-apps/api/core';
 import { Store } from '@tauri-apps/plugin-store';
 import Button from '../components/ui/Button';
 import Card from '../components/ui/Card';
-import { checkHealth, DEFAULT_API_URL, normalizeApiUrl, type HealthResponse } from '../api/coreClient';
+import {
+  checkHealth,
+  DEFAULT_API_URL,
+  normalizeApiUrl,
+  type HealthResponse,
+} from '../api/coreClient';
 import { colors, spacing } from '../styles/tokens';
 import { getAppLogDir } from '../lib/logger';
 
@@ -13,7 +18,7 @@ const toneColor: Record<HealthTone, string> = {
   idle: colors.textSecondary,
   checking: colors.primary,
   ok: colors.success,
-  error: colors.error
+  error: colors.error,
 };
 
 export default function DiagnosticsPage() {
@@ -32,7 +37,10 @@ export default function DiagnosticsPage() {
 
   const loadApiUrl = useCallback(async () => {
     const store = await Store.load('settings.json');
-    const storedUrl = (await store.get<string>('api_url')) || (await invoke<string>('get_api_url')) || DEFAULT_API_URL;
+    const storedUrl =
+      (await store.get<string>('api_url')) ||
+      (await invoke<string>('get_api_url')) ||
+      DEFAULT_API_URL;
     const normalized = normalizeApiUrl(storedUrl);
     setApiUrl(normalized);
     return normalized;
@@ -67,7 +75,7 @@ export default function DiagnosticsPage() {
     } catch (error) {
       showFriendlyError(
         'Не удалось открыть папку логов. Проверьте системные разрешения и настройки sandbox.',
-        error
+        error,
       );
     }
   };
@@ -80,7 +88,7 @@ export default function DiagnosticsPage() {
     } catch (error) {
       showFriendlyError(
         'Не удалось скопировать лог. Проверьте доступ к буферу обмена и правам приложения.',
-        error
+        error,
       );
     }
   };
@@ -113,7 +121,7 @@ export default function DiagnosticsPage() {
               style={{
                 marginTop: 0,
                 marginBottom: spacing.xs,
-                color: health.llm.degraded ? colors.error : colors.success
+                color: health.llm.degraded ? colors.error : colors.success,
               }}
             >
               default: {health.llm.default}
@@ -133,7 +141,12 @@ export default function DiagnosticsPage() {
         <Button type="button" variant="secondary" onClick={onCopyLastLines}>
           Скопировать последние 200 строк
         </Button>
-        <Button type="button" variant="ghost" onClick={() => void refreshHealth()} loading={healthTone === 'checking'}>
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={() => void refreshHealth()}
+          loading={healthTone === 'checking'}
+        >
           {healthTone === 'checking' ? 'Проверка...' : 'Обновить /health'}
         </Button>
       </div>

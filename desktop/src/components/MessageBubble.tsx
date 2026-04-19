@@ -50,7 +50,7 @@ export default function MessageBubble({ message, metadata, className }: Props) {
       className={className}
       style={{
         alignSelf: isUser ? 'flex-end' : 'flex-start',
-        maxWidth: isUser ? '72%' : isSystem ? '88%' : '80%'
+        maxWidth: isUser ? '72%' : isSystem ? '88%' : '80%',
       }}
     >
       <div
@@ -60,10 +60,12 @@ export default function MessageBubble({ message, metadata, className }: Props) {
           color: isUser ? '#ffffff' : colors.textPrimary,
           borderRadius: isUser ? '16px 16px 4px 16px' : '4px 16px 16px 16px',
           padding: `${spacing.sm}px ${spacing.md}px`,
-          boxShadow: shadows.sm
+          boxShadow: shadows.sm,
         }}
       >
-        <strong style={{ display: 'block', marginBottom: 4 }}>{isUser ? 'Вы' : isSystem ? 'Система' : 'Assistant'}</strong>
+        <strong style={{ display: 'block', marginBottom: 4 }}>
+          {isUser ? 'Вы' : isSystem ? 'Система' : 'Assistant'}
+        </strong>
         {isUser ? (
           <span>{message.content}</span>
         ) : (
@@ -72,7 +74,15 @@ export default function MessageBubble({ message, metadata, className }: Props) {
           </div>
         )}
         {!isUser && !isSystem && (
-          <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+          <div
+            style={{
+              marginTop: 8,
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: 6,
+              alignItems: 'center',
+            }}
+          >
             {agents.map((agent) => (
               <span
                 key={agent}
@@ -82,7 +92,7 @@ export default function MessageBubble({ message, metadata, className }: Props) {
                   borderRadius: 999,
                   padding: '2px 8px',
                   fontSize: 11,
-                  fontWeight: 500
+                  fontWeight: 500,
                 }}
               >
                 {agent}
@@ -104,7 +114,7 @@ export default function MessageBubble({ message, metadata, className }: Props) {
                 border: '1px solid #d5d5d5',
                 borderRadius: 8,
                 cursor: 'pointer',
-                padding: '2px 8px'
+                padding: '2px 8px',
               }}
               aria-label="Копировать сообщение"
               title="Копировать"
@@ -122,10 +132,13 @@ export default function MessageBubble({ message, metadata, className }: Props) {
           fontSize: 11,
           color: isUser ? 'rgba(255,255,255,0.65)' : colors.textMuted,
           textAlign: isUser ? 'right' : 'left',
-          marginTop: 2
+          marginTop: 2,
         }}
       >
-        {new Date(message.createdAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+        {new Date(message.createdAt).toLocaleTimeString('ru-RU', {
+          hour: '2-digit',
+          minute: '2-digit',
+        })}
       </div>
     </div>
   );

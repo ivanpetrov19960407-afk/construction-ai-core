@@ -71,13 +71,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({
       sessions: [
         { id: prev.sessionId, title, createdAt: new Date().toISOString() },
-        ...prev.sessions
+        ...prev.sessions,
       ],
       sessionId: nextId,
       messages: [],
-      isTyping: false
+      isTyping: false,
     });
-  }
+  },
 }));
 
 void (async () => {

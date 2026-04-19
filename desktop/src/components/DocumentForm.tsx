@@ -36,7 +36,7 @@ export default function DocumentForm({
   isLoading,
   error,
   disabledOnLoading = true,
-  fieldErrors = {}
+  fieldErrors = {},
 }: DocumentFormProps) {
   const initialValues = useMemo(() => makeInitialValues(fields), [fields]);
   const [values, setValues] = useState<Record<string, string>>(initialValues);
@@ -44,7 +44,6 @@ export default function DocumentForm({
   useEffect(() => {
     setValues(initialValues);
   }, [initialValues]);
-
 
   useEffect(() => {
     onValuesChange?.(values);
@@ -76,7 +75,13 @@ export default function DocumentForm({
             />
           ) : field.type === 'select' ? (
             <label style={{ display: 'grid', gap: spacing.xs }}>
-              <span style={{ color: colors.textPrimary, fontSize: typography.label.fontSize, fontWeight: typography.label.fontWeight }}>
+              <span
+                style={{
+                  color: colors.textPrimary,
+                  fontSize: typography.label.fontSize,
+                  fontWeight: typography.label.fontWeight,
+                }}
+              >
                 {field.label}
               </span>
               <select
@@ -90,7 +95,7 @@ export default function DocumentForm({
                   border: `1px solid ${colors.border}`,
                   padding: `${spacing.sm}px ${spacing.md}px`,
                   fontFamily: typography.fontFamily,
-                  fontSize: typography.body.fontSize
+                  fontSize: typography.body.fontSize,
                 }}
               >
                 <option value="" disabled>
@@ -103,7 +108,9 @@ export default function DocumentForm({
                 ))}
               </select>
               {fieldErrors[field.name] && (
-                <span style={{ color: colors.error, fontSize: typography.small.fontSize }}>{fieldErrors[field.name]}</span>
+                <span style={{ color: colors.error, fontSize: typography.small.fontSize }}>
+                  {fieldErrors[field.name]}
+                </span>
               )}
             </label>
           ) : (
@@ -125,7 +132,12 @@ export default function DocumentForm({
         <Button type="submit" loading={isLoading} disabled={disabledOnLoading && isLoading}>
           {isLoading ? 'Сгенерировать...' : 'Сгенерировать'}
         </Button>
-        <Button type="button" variant="secondary" onClick={handleClear} disabled={disabledOnLoading && isLoading}>
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={handleClear}
+          disabled={disabledOnLoading && isLoading}
+        >
           Очистить
         </Button>
         {isLoading && <span role="status">⏳ Генерация...</span>}

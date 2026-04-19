@@ -10,7 +10,7 @@ import {
   listGlobalSources,
   listMySources,
   uploadChatDocument,
-  type RagSourceItem
+  type RagSourceItem,
 } from '../api/coreClient';
 import { useAuth } from '../context/AuthContext';
 import { colors, spacing } from '../styles/tokens';
@@ -24,7 +24,7 @@ const roleBadgeStyle = {
   border: `1px solid ${colors.border}`,
   padding: '4px 10px',
   fontSize: 13,
-  color: colors.textSecondary
+  color: colors.textSecondary,
 } as const;
 
 export default function KnowledgeBasePage() {
@@ -60,7 +60,9 @@ export default function KnowledgeBasePage() {
       setMessage('');
     } catch (error) {
       setMessageTone('error');
-      setMessage(error instanceof Error ? error.message : 'Не удалось загрузить источники базы знаний.');
+      setMessage(
+        error instanceof Error ? error.message : 'Не удалось загрузить источники базы знаний.',
+      );
     } finally {
       setIsLoading(false);
     }
@@ -135,10 +137,34 @@ export default function KnowledgeBasePage() {
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
           <tr>
-            <th style={{ textAlign: 'left', borderBottom: `1px solid ${colors.border}`, paddingBottom: spacing.xs }}>Источник</th>
-            <th style={{ textAlign: 'left', borderBottom: `1px solid ${colors.border}`, paddingBottom: spacing.xs }}>Чанков</th>
+            <th
+              style={{
+                textAlign: 'left',
+                borderBottom: `1px solid ${colors.border}`,
+                paddingBottom: spacing.xs,
+              }}
+            >
+              Источник
+            </th>
+            <th
+              style={{
+                textAlign: 'left',
+                borderBottom: `1px solid ${colors.border}`,
+                paddingBottom: spacing.xs,
+              }}
+            >
+              Чанков
+            </th>
             {allowDelete && (
-              <th style={{ textAlign: 'left', borderBottom: `1px solid ${colors.border}`, paddingBottom: spacing.xs }}>Действия</th>
+              <th
+                style={{
+                  textAlign: 'left',
+                  borderBottom: `1px solid ${colors.border}`,
+                  paddingBottom: spacing.xs,
+                }}
+              >
+                Действия
+              </th>
             )}
           </tr>
         </thead>
@@ -166,14 +192,14 @@ export default function KnowledgeBasePage() {
       {
         key: 'my',
         title: 'Моя база',
-        content: renderTable(mySources, false)
-      }
+        content: renderTable(mySources, false),
+      },
     ];
     if (isAdmin) {
       base.push({
         key: 'global',
         title: 'Глобальная база',
-        content: renderTable(globalSources, true)
+        content: renderTable(globalSources, true),
       });
     }
     return base;
@@ -182,12 +208,28 @@ export default function KnowledgeBasePage() {
   return (
     <Card>
       <div style={{ display: 'grid', gap: spacing.md }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: spacing.sm }}>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: spacing.sm,
+          }}
+        >
           <h2 style={{ margin: 0 }}>База знаний (KB)</h2>
           <span style={roleBadgeStyle}>Режим: {isAdmin ? 'Администратор' : 'ПТО-инженер'}</span>
         </div>
 
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: spacing.sm, flexWrap: 'wrap' }}>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: spacing.sm,
+            flexWrap: 'wrap',
+          }}
+        >
           <input
             ref={fileInputRef}
             type="file"
@@ -195,18 +237,36 @@ export default function KnowledgeBasePage() {
             style={{ display: 'none' }}
             onChange={onFileChange}
           />
-          <Button onClick={onSelectFile} disabled={isUploading || (activeTab === 'global' && !isAdmin)} loading={isUploading}>
+          <Button
+            onClick={onSelectFile}
+            disabled={isUploading || (activeTab === 'global' && !isAdmin)}
+            loading={isUploading}
+          >
             {isUploading ? 'Загрузка...' : 'Загрузить файл'}
           </Button>
         </div>
 
         {message && (
-          <p style={{ margin: 0, color: messageTone === 'success' ? colors.success : messageTone === 'warning' ? colors.warning : colors.error }}>
+          <p
+            style={{
+              margin: 0,
+              color:
+                messageTone === 'success'
+                  ? colors.success
+                  : messageTone === 'warning'
+                    ? colors.warning
+                    : colors.error,
+            }}
+          >
             {message}
           </p>
         )}
 
-        <TabLayout tabs={tabs} activeTab={activeTab} onChange={(tab) => setActiveTab(tab as Mode)} />
+        <TabLayout
+          tabs={tabs}
+          activeTab={activeTab}
+          onChange={(tab) => setActiveTab(tab as Mode)}
+        />
       </div>
     </Card>
   );

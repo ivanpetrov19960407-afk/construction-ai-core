@@ -5,7 +5,13 @@ import Card from '../components/ui/Card';
 import ErrorModal from '../components/ErrorModal';
 import Input from '../components/ui/Input';
 import { colors, spacing } from '../styles/tokens';
-import { downloadTKDocx, generateTKStream, getApiConfig, SSEError, type GenerationStage } from '../api/coreClient';
+import {
+  downloadTKDocx,
+  generateTKStream,
+  getApiConfig,
+  SSEError,
+  type GenerationStage,
+} from '../api/coreClient';
 import { DEFAULT_GENERATION_TIMEOUT_MS } from '../lib/apiClient';
 import { validateTK } from '../lib/validation';
 
@@ -17,8 +23,8 @@ const fields: DocumentField[] = [
     name: 'unit',
     label: 'Единица измерения',
     type: 'select',
-    options: ['м³', 'м²', 'пог.м.', 'шт.', 'т', 'кг']
-  }
+    options: ['м³', 'м²', 'пог.м.', 'шт.', 'т', 'кг'],
+  },
 ];
 
 export default function GenerateTKPage() {
@@ -41,7 +47,7 @@ export default function GenerateTKPage() {
       work_type: data.work_type ?? '',
       object_name: data.object_name ?? '',
       volume: Number(data.volume),
-      unit: data.unit ?? ''
+      unit: data.unit ?? '',
     };
     const validation = validateTK(normalizedData);
     setValidationErrors(validation.fieldErrors);
@@ -67,12 +73,12 @@ export default function GenerateTKPage() {
           work_type: normalizedData.work_type,
           object_name: normalizedData.object_name,
           volume: normalizedData.volume,
-          unit: normalizedData.unit
+          unit: normalizedData.unit,
         },
         (event) => {
           setProgress(event.progress ?? 0);
           setStage(event.stage);
-        }
+        },
       );
 
       const normalizedResult =
@@ -80,7 +86,7 @@ export default function GenerateTKPage() {
       setResult(
         typeof normalizedResult === 'string'
           ? normalizedResult
-          : JSON.stringify(normalizedResult, null, 2)
+          : JSON.stringify(normalizedResult, null, 2),
       );
       setDocumentJson(response.document ? JSON.stringify(response.document, null, 2) : '');
       setSessionId(String(response.session_id ?? ''));
@@ -110,7 +116,7 @@ export default function GenerateTKPage() {
     try {
       const { apiUrl, apiKey } = await getApiConfig();
       const blob = await downloadTKDocx(apiUrl, apiKey, sessionId, {
-        timeoutMs: DEFAULT_GENERATION_TIMEOUT_MS
+        timeoutMs: DEFAULT_GENERATION_TIMEOUT_MS,
       });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -148,14 +154,31 @@ export default function GenerateTKPage() {
           <div style={{ display: 'grid', gap: spacing.xs }}>
             <div style={{ color: colors.textSecondary }}>Текущий шаг: {stage}</div>
             <div style={{ width: '100%', height: 8, background: '#e5e7eb', borderRadius: 999 }}>
-              <div style={{ width: `${progress}%`, height: 8, background: colors.primary, borderRadius: 999, transition: 'width 200ms ease' }} />
+              <div
+                style={{
+                  width: `${progress}%`,
+                  height: 8,
+                  background: colors.primary,
+                  borderRadius: 999,
+                  transition: 'width 200ms ease',
+                }}
+              />
             </div>
           </div>
         )}
         {success && <p style={{ color: colors.success, fontWeight: 600 }}>✓ ТК сгенерирована</p>}
         {error && <p style={{ color: colors.error }}>{error}</p>}
         {toastMessage && (
-          <div style={{ border: `1px solid ${colors.error}`, borderRadius: 8, padding: spacing.sm, display: 'flex', gap: spacing.sm, alignItems: 'center' }}>
+          <div
+            style={{
+              border: `1px solid ${colors.error}`,
+              borderRadius: 8,
+              padding: spacing.sm,
+              display: 'flex',
+              gap: spacing.sm,
+              alignItems: 'center',
+            }}
+          >
             <span style={{ color: colors.error, fontWeight: 600 }}>{toastMessage}</span>
             <Button type="button" variant="ghost" onClick={() => setIsErrorModalOpen(true)}>
               Подробнее
@@ -167,13 +190,22 @@ export default function GenerateTKPage() {
             )}
           </div>
         )}
-        {sessionId && <p style={{ color: colors.textSecondary, fontSize: 12 }}>session_id: {sessionId}</p>}
+        {sessionId && (
+          <p style={{ color: colors.textSecondary, fontSize: 12 }}>session_id: {sessionId}</p>
+        )}
 
         <Input type="textarea" label="Результат" value={result} rows={12} readOnly />
 
-        {documentJson && <Input type="textarea" label="document (JSON)" value={documentJson} rows={10} readOnly />}
+        {documentJson && (
+          <Input type="textarea" label="document (JSON)" value={documentJson} rows={10} readOnly />
+        )}
 
-        <Button type="button" onClick={handleDownload} disabled={!sessionId || downloadLoading} loading={downloadLoading}>
+        <Button
+          type="button"
+          onClick={handleDownload}
+          disabled={!sessionId || downloadLoading}
+          loading={downloadLoading}
+        >
           {downloadLoading ? 'Скачивание...' : 'Скачать DOCX'}
         </Button>
         <ErrorModal
