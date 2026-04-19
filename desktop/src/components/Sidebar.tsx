@@ -28,6 +28,7 @@ const TKIcon = () => <BaseIcon><path strokeLinecap="round" strokeLinejoin="round
 const LetterIcon = () => <BaseIcon><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5v10.5H3.75V6.75Zm0 0 8.25 6 8.25-6" /></BaseIcon>;
 const KSIcon = () => <BaseIcon><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 5.25h15v13.5h-15V5.25Zm0 4.5h15M10.5 5.25v13.5" /></BaseIcon>;
 const HandoverIcon = () => <BaseIcon><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75m6 2.25a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></BaseIcon>;
+const KnowledgeBaseIcon = () => <BaseIcon><path strokeLinecap="round" strokeLinejoin="round" d="M6 4.5h9l3 3v12H6v-15Zm9 0v3h3M8.25 13.5h7.5m-7.5-3h7.5" /></BaseIcon>;
 
 const navItems: NavItem[] = [
   { path: '/', label: 'Чат', icon: <ChatIcon /> },
@@ -35,7 +36,8 @@ const navItems: NavItem[] = [
   { path: '/generate/tk', label: 'Генерация ТК', icon: <TKIcon /> },
   { path: '/generate/letter', label: 'Генерация письма', icon: <LetterIcon /> },
   { path: '/generate/ks', label: 'Генерация КС', icon: <KSIcon /> },
-  { path: '/handover', label: 'Сдача объекта', icon: <HandoverIcon /> }
+  { path: '/handover', label: 'Сдача объекта', icon: <HandoverIcon /> },
+  { path: '/knowledge-base', label: 'База знаний', icon: <KnowledgeBaseIcon /> }
 ];
 
 export default function Sidebar({ currentPath, onNavigate }: SidebarProps) {

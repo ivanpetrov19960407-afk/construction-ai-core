@@ -6,6 +6,7 @@ export interface ServerStatus {
   lastChecked: string | null;
   serverVersion: string | null;
   isChecking: boolean;
+  documentsCount: number;
 }
 
 interface ServerStatusState extends ServerStatus {
@@ -19,6 +20,7 @@ export const useServerStatusStore = create<ServerStatusState>((set) => ({
   lastChecked: null,
   serverVersion: null,
   isChecking: false,
+  documentsCount: 0,
   setOnline: (value) =>
     set({
       isOnline: value,
@@ -30,6 +32,7 @@ export const useServerStatusStore = create<ServerStatusState>((set) => ({
       isOnline: health.status === 'ok',
       serverVersion: health.version,
       lastChecked: new Date().toISOString(),
-      isChecking: false
+      isChecking: false,
+      documentsCount: Number(health.components.rag_engine?.sources ?? 0)
     })
 }));

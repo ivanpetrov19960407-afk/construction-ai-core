@@ -4,6 +4,7 @@ import GenerateKSPage from './pages/GenerateKSPage';
 import GenerateLetterPage from './pages/GenerateLetterPage';
 import GenerateTKPage from './pages/GenerateTKPage';
 import HandoverPage from './pages/HandoverPage';
+import KnowledgeBasePage from './pages/KnowledgeBasePage';
 import SettingsPage from './pages/SettingsPage';
 
 export function resolveRoute(path: string, onNavigateHome: () => void): ReactNode {
@@ -12,6 +13,8 @@ export function resolveRoute(path: string, onNavigateHome: () => void): ReactNod
       return <ChatPage />;
     case '/settings':
       return <SettingsPage />;
+    case '/knowledge-base':
+      return <KnowledgeBasePage />;
     case '/generate/tk':
       return <GenerateTKPage />;
     case '/generate/letter':
