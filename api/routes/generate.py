@@ -169,6 +169,11 @@ async def _emit_error(
     await queue.put(_sse_event("error", payload))
 
 
+def _extract_error_details(payload: dict[str, object]) -> dict | None:
+    details = payload.get("details")
+    return details if isinstance(details, dict) else None
+
+
 def _exception_to_http(exc: Exception) -> HTTPException:
     if isinstance(exc, AppError):
         message = exc.message
@@ -678,7 +683,7 @@ async def generate_tk(
                     queue,
                     code=str(err_payload.get("code", "internal")),
                     message=str(err_payload.get("message", "Ошибка генерации")),
-                    details=err_payload.get("details") if isinstance(err_payload.get("details"), dict) else None,
+                    details=_extract_error_details(err_payload),
                 )
                 yield await queue.get()
                 return
@@ -697,7 +702,7 @@ async def generate_tk(
                 queue,
                 code=str(err_payload.get("code", "internal")),
                 message=str(err_payload.get("message", "Ошибка генерации")),
-                details=err_payload.get("details") if isinstance(err_payload.get("details"), dict) else None,
+                details=_extract_error_details(err_payload),
             )
             yield await queue.get()
             return
@@ -825,7 +830,10 @@ async def generate_letter_v2(
             doc_type="letter",
             docx_bytes=docx_bytes if isinstance(docx_bytes, bytes) else None,
         )
-        await create_document_ready_notification_for_session(session_id=session_id, doc_type="letter")
+        await create_document_ready_notification_for_session(
+            session_id=session_id,
+            doc_type="letter",
+        )
 
         return LetterResponse(
             result=result_text,
@@ -859,7 +867,7 @@ async def generate_letter_v2(
                     queue,
                     code=str(err_payload.get("code", "internal")),
                     message=str(err_payload.get("message", "Ошибка генерации")),
-                    details=err_payload.get("details") if isinstance(err_payload.get("details"), dict) else None,
+                    details=_extract_error_details(err_payload),
                 )
                 yield await queue.get()
                 return
@@ -877,7 +885,7 @@ async def generate_letter_v2(
                 queue,
                 code=str(err_payload.get("code", "internal")),
                 message=str(err_payload.get("message", "Ошибка генерации")),
-                details=err_payload.get("details") if isinstance(err_payload.get("details"), dict) else None,
+                details=_extract_error_details(err_payload),
             )
             yield await queue.get()
             return
@@ -886,7 +894,10 @@ async def generate_letter_v2(
             await _emit_error(queue, code='internal', message='Unexpected generation error')
             yield await queue.get()
             return
-        yield _sse_event("done", {"stage": "done", "progress": 100, "result": response.model_dump()})
+        yield _sse_event(
+            "done",
+            {"stage": "done", "progress": 100, "result": response.model_dump()},
+        )
 
     return StreamingResponse(_stream(), media_type="text/event-stream")
 
@@ -1192,14 +1203,18 @@ async def generate_ks(
                     queue,
                     code=str(err_payload.get("code", "internal")),
                     message=str(err_payload.get("message", "Ошибка генерации")),
-                    details=err_payload.get("details") if isinstance(err_payload.get("details"), dict) else None,
+                    details=_extract_error_details(err_payload),
                 )
                 yield await queue.get()
                 return
             except Exception:
                 yield _sse_event(
                     "error",
-                    {"stage": "error", "message": "Unexpected generation error", "code": "internal"},
+                    {
+                        "stage": "error",
+                        "message": "Unexpected generation error",
+                        "code": "internal",
+                    },
                 )
                 return
 
@@ -1212,7 +1227,7 @@ async def generate_ks(
                 queue,
                 code=str(err_payload.get("code", "internal")),
                 message=str(err_payload.get("message", "Ошибка генерации")),
-                details=err_payload.get("details") if isinstance(err_payload.get("details"), dict) else None,
+                details=_extract_error_details(err_payload),
             )
             yield await queue.get()
             return
