@@ -29,6 +29,7 @@ const LetterIcon = () => <BaseIcon><path strokeLinecap="round" strokeLinejoin="r
 const KSIcon = () => <BaseIcon><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 5.25h15v13.5h-15V5.25Zm0 4.5h15M10.5 5.25v13.5" /></BaseIcon>;
 const HandoverIcon = () => <BaseIcon><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75m6 2.25a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></BaseIcon>;
 const KnowledgeBaseIcon = () => <BaseIcon><path strokeLinecap="round" strokeLinejoin="round" d="M6 4.5h9l3 3v12H6v-15Zm9 0v3h3M8.25 13.5h7.5m-7.5-3h7.5" /></BaseIcon>;
+const DiagnosticsIcon = () => <BaseIcon><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 18.75h15M6.75 15.75v-3m3.75 3v-6m3.75 6V8.25m3.75 7.5V6.75M4.5 4.5h15" /></BaseIcon>;
 
 const navItems: NavItem[] = [
   { path: '/', label: 'Чат', icon: <ChatIcon /> },
@@ -37,7 +38,8 @@ const navItems: NavItem[] = [
   { path: '/generate/letter', label: 'Генерация письма', icon: <LetterIcon /> },
   { path: '/generate/ks', label: 'Генерация КС', icon: <KSIcon /> },
   { path: '/handover', label: 'Сдача объекта', icon: <HandoverIcon /> },
-  { path: '/knowledge-base', label: 'База знаний', icon: <KnowledgeBaseIcon /> }
+  { path: '/knowledge-base', label: 'База знаний', icon: <KnowledgeBaseIcon /> },
+  { path: '/diagnostics', label: 'Диагностика', icon: <DiagnosticsIcon /> }
 ];
 
 export default function Sidebar({ currentPath, onNavigate }: SidebarProps) {
