@@ -5,6 +5,7 @@ import asyncio
 import httpx
 
 from config.settings import settings
+from core.errors import LLMProviderNotConfiguredError
 from core.llm_router import LLMProvider, LLMRouter
 
 
@@ -113,3 +114,18 @@ def test_intent_cache_key_is_stable_hash():
     assert isinstance(key1, str)
     assert key1.startswith("llm:")
     assert len(key1) == 68
+
+
+def test_query_raises_when_requested_provider_not_configured(monkeypatch):
+    router = LLMRouter(default_provider=LLMProvider.OPENAI)
+    monkeypatch.setattr(settings, "openai_api_key", "")
+
+    async def _run():
+        await router.query("test prompt", provider=LLMProvider.OPENAI)
+
+    try:
+        asyncio.run(_run())
+        raise AssertionError("Expected LLMProviderNotConfiguredError")
+    except LLMProviderNotConfiguredError as exc:
+        assert exc.code == "llm_not_configured"
+        assert exc.status_code == 503

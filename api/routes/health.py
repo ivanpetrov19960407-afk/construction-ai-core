@@ -6,16 +6,59 @@ from fastapi import APIRouter, Request
 
 from config.settings import settings
 from core.database import get_db, init_db
-from core.llm_router import PROVIDER_CONFIG, LLMProvider
+from core.llm_router import LLMProvider
 from core.rag_engine import RAGEngine
 
 router = APIRouter()
+
+LLM_PROVIDER_TO_SETTING = {
+    "perplexity": "perplexity_api_key",
+    "openai": "openai_api_key",
+    "anthropic": "anthropic_api_key",
+    "gigachat": "gigachat_credentials",
+    "yandexgpt": "yandexgpt_api_key",
+    "deepseek": "deepseek_api_key",
+}
+
+
+def _check_llm_router() -> dict[str, object]:
+    provider_name = settings.default_llm_provider
+    available = settings.configured_llm_providers
+    missing_keys = [name for name in LLM_PROVIDER_TO_SETTING if name not in available]
+
+    try:
+        _ = LLMProvider(provider_name)
+        default_supported = True
+    except Exception:
+        default_supported = False
+
+    default_configured = provider_name in available
+    is_degraded = not default_supported or not default_configured
+
+    status = "ok"
+    if is_degraded:
+        status = "degraded" if default_supported else "error"
+
+    check: dict[str, object] = {
+        "status": status,
+        "provider": provider_name,
+        "default_supported": default_supported,
+        "default_configured": default_configured,
+        "available_providers": available,
+        "missing_keys": missing_keys,
+    }
+    if not default_supported:
+        check["reason"] = "unsupported_default_provider"
+    elif not default_configured:
+        check["reason"] = "missing_default_provider_key"
+
+    return check
 
 
 @router.get("/health")
 async def health_check(request: Request):
     """Проверка состояния сервиса."""
-    components: dict[str, dict[str, str | int]] = {}
+    components: dict[str, dict[str, str | int | list[str] | bool]] = {}
 
     # database
     db_status = "ok"
@@ -50,17 +93,8 @@ async def health_check(request: Request):
     }
 
     # llm router
-    llm_status = "ok"
-    provider_name = settings.default_llm_provider
-    try:
-        provider = LLMProvider(provider_name)
-        _ = PROVIDER_CONFIG[provider]
-    except Exception:
-        llm_status = "error"
-    components["llm_router"] = {
-        "status": llm_status,
-        "provider": provider_name,
-    }
+    llm_check = _check_llm_router()
+    components["llm_router"] = llm_check
 
     # telegram webhook
     telegram_configured = bool(settings.telegram_webhook_url and settings.bot_token)
@@ -75,10 +109,12 @@ async def health_check(request: Request):
     }
 
     service_status = "ok"
-    if components["database"]["status"] == "error" or components["llm_router"]["status"] == "error":
+    if components["database"]["status"] == "error" or llm_check["status"] == "error":
         service_status = "error"
-    elif rag_status == "error" or (
-        telegram_configured and components["telegram_webhook"]["status"] == "inactive"
+    elif (
+        rag_status == "error"
+        or llm_check["status"] == "degraded"
+        or (telegram_configured and components["telegram_webhook"]["status"] == "inactive")
     ):
         service_status = "degraded"
 
@@ -88,10 +124,18 @@ async def health_check(request: Request):
         now = datetime.now(timezone.utc)  # noqa: UP017
         uptime_seconds = max(0.0, (now - started_at).total_seconds())
 
+    llm = {
+        "default": settings.default_llm_provider,
+        "available": settings.configured_llm_providers,
+        "degraded": bool(llm_check["status"] != "ok"),
+    }
+
     return {
         "status": service_status,
         "service": "construction-ai-core",
         "version": "0.1.0",
         "uptime_seconds": round(uptime_seconds, 1),
+        "checks": components,
         "components": components,
+        "llm": llm,
     }

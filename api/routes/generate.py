@@ -23,6 +23,7 @@ from config.settings import settings
 from core.billing import require_quota
 from core.branding import BrandingConfig, get_branding
 from core.cache import RedisCache
+from core.errors import LLMProviderNotConfiguredError
 from core.export.onec_exporter import OneCExporter
 from core.llm_router import LLMRouter
 from core.multitenancy import get_tenant_id
@@ -134,6 +135,15 @@ async def _ensure_cleanup_task_started() -> None:
 
 def _sse_event(event: str, payload: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+def _http_exception_payload(exc: HTTPException) -> dict[str, str]:
+    detail = exc.detail
+    if isinstance(detail, dict):
+        message = str(detail.get("message", "Ошибка генерации"))
+        code = str(detail.get("code", "generation_error"))
+        return {"stage": "error", "message": message, "code": code}
+    return {"stage": "error", "message": str(detail), "code": "generation_error"}
 
 
 def _is_sse_requested(request: Request, stream: bool) -> bool:
@@ -523,6 +533,11 @@ async def _generate_tk_response(payload: TKRequest) -> TKResponse:
         )
     except Exception as exc:
         logger.exception("generate_tk_llm_error", session_id=session_id, error=str(exc))
+        if isinstance(exc, LLMProviderNotConfiguredError):
+            raise HTTPException(
+                status_code=exc.status_code,
+                detail={"message": exc.message, "code": exc.code},
+            ) from exc
         raise HTTPException(
             status_code=503,
             detail="LLM временно недоступен, попробуйте позже",
@@ -618,22 +633,33 @@ async def generate_tk(
             except TimeoutError:
                 continue
             except HTTPException as exc:
-                yield _sse_event("error", {"stage": "error", "message": str(exc.detail)})
+                yield _sse_event("error", _http_exception_payload(exc))
                 return
             except Exception:
                 yield _sse_event(
                     "error",
-                    {"stage": "error", "message": "Unexpected generation error"},
+                    {
+                        "stage": "error",
+                        "message": "Unexpected generation error",
+                        "code": "generation_error",
+                    },
                 )
                 return
 
         try:
             response = await task
         except HTTPException as exc:
-            yield _sse_event("error", {"stage": "error", "message": str(exc.detail)})
+            yield _sse_event("error", _http_exception_payload(exc))
             return
         except Exception:
-            yield _sse_event("error", {"stage": "error", "message": "Unexpected generation error"})
+            yield _sse_event(
+                "error",
+                {
+                    "stage": "error",
+                    "message": "Unexpected generation error",
+                    "code": "generation_error",
+                },
+            )
             return
 
         yield _sse_event(

@@ -108,6 +108,7 @@ export interface GenerationStreamEvent {
   stage: GenerationStage;
   progress: number;
   message?: string;
+  code?: string;
   result?: GenerateDocumentResponse;
 }
 
@@ -121,6 +122,11 @@ export interface HealthResponse {
   service: string;
   version: string;
   uptime_seconds: number;
+  llm: {
+    default: string;
+    available: string[];
+    degraded: boolean;
+  };
   components: Record<string, { status: string; [key: string]: unknown }>;
 }
 
@@ -251,6 +257,9 @@ async function postJsonSSE<TRequest>(
         onEvent(fullEvent);
 
         if (event === 'error') {
+          if (parsed.code === 'llm_not_configured') {
+            throw new Error(parsed.message ?? 'LLM-провайдер не настроен в .env');
+          }
           throw new Error(parsed.message ?? 'Ошибка генерации');
         }
         if (event === 'done' && parsed.result) {

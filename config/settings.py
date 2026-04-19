@@ -1,5 +1,6 @@
 """Настройки приложения — загружаются из .env."""
 
+from pydantic import computed_field
 from pydantic_settings import BaseSettings
 
 
@@ -28,6 +29,8 @@ class Settings(BaseSettings):
     perplexity_api_key: str = ""
     openai_api_key: str = ""
     anthropic_api_key: str = ""
+    gigachat_credentials: str = ""
+    yandexgpt_api_key: str = ""
     deepseek_api_key: str = ""
     default_llm_provider: str = "perplexity"
 
@@ -91,6 +94,20 @@ class Settings(BaseSettings):
         "env_file_encoding": "utf-8",
         "extra": "ignore",
     }
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def configured_llm_providers(self) -> list[str]:
+        """Список LLM-провайдеров, для которых настроены ключи/учётные данные."""
+        providers: dict[str, str] = {
+            "perplexity": self.perplexity_api_key,
+            "openai": self.openai_api_key,
+            "anthropic": self.anthropic_api_key,
+            "gigachat": self.gigachat_credentials,
+            "yandexgpt": self.yandexgpt_api_key,
+            "deepseek": self.deepseek_api_key,
+        }
+        return [name for name, token in providers.items() if token.strip()]
 
     def validate_jwt_secret(self) -> None:
         """Ensure JWT secret is explicitly configured and strong enough."""

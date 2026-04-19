@@ -1,3 +1,8 @@
+## [0.2.1] - 2026-04-19
+
+### Fixed
+- fix(health): honest LLM status
+
 ## [0.2.0] - 2026-04-14
 
 ### Added
