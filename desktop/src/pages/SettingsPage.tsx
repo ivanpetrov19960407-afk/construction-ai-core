@@ -12,6 +12,7 @@ import {
   type HealthResponse
 } from '../api/coreClient';
 import { useChatStore, type ChatRole } from '../store/chatStore';
+import { useServerStatusStore } from '../store/serverStatusStore';
 
 type ConnectionStatus = {
   tone: 'idle' | 'checking' | 'success' | 'warning' | 'error';
@@ -45,6 +46,7 @@ const APP_VERSION =
 
 export default function SettingsPage() {
   const setDefaultRole = useChatStore((state) => state.setDefaultRole);
+  const documentsCount = useServerStatusStore((state) => state.documentsCount);
   const [apiUrl, setApiUrl] = useState(DEFAULT_API_URL);
   const [apiKey, setApiKey] = useState('');
   const [defaultRole, setDefaultRoleValue] = useState<ChatRole>('pto_engineer');
@@ -165,6 +167,11 @@ export default function SettingsPage() {
     }
   };
 
+  const openKnowledgeBase = () => {
+    window.history.pushState({}, '', '/knowledge-base');
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  };
+
   return (
     <Card>
       <form onSubmit={onSave} style={{ display: 'grid', gap: spacing.md, maxWidth: 640 }}>
@@ -205,6 +212,31 @@ export default function SettingsPage() {
         <p style={{ color: statusColor[connectionStatus.tone], margin: 0 }}>
           {connectionStatus.message}
         </p>
+
+        {documentsCount === 0 && (
+          <Card
+            padding="md"
+            style={{
+              border: `1px solid ${colors.warning}`,
+              backgroundColor: `${colors.warning}14`
+            }}
+          >
+            <p style={{ marginTop: 0, marginBottom: spacing.sm, color: colors.warning, fontWeight: 600 }}>
+              Нормативы не загружены — качество ответов снижено.
+            </p>
+            <p style={{ marginTop: 0, marginBottom: spacing.sm, color: colors.textPrimary }}>
+              Чтобы улучшить ответы, добавьте PDF в Базу знаний:
+            </p>
+            <ol style={{ marginTop: 0, marginBottom: spacing.md, paddingLeft: spacing.lg, color: colors.textPrimary }}>
+              <li>Откройте раздел «База знаний».</li>
+              <li>Нажмите «Загрузить PDF» и выберите файл с нормативами (СП, ГОСТ).</li>
+              <li>Дождитесь сообщения об успешной загрузке и вернитесь в чат.</li>
+            </ol>
+            <Button type="button" variant="secondary" onClick={openKnowledgeBase}>
+              Перейти в Базу знаний
+            </Button>
+          </Card>
+        )}
       </form>
       {health && (
         <Card padding="md" style={{ marginTop: spacing.lg }}>
@@ -244,7 +276,7 @@ export default function SettingsPage() {
           </table>
           {(health.components.rag_engine?.sources as number | undefined) === 0 && (
             <p style={{ marginBottom: 0, color: colors.warning }}>
-              RAG база пуста. Нормативы (СП, ГОСТ) не загружены — качество ответов снижено.
+              Нормативы (СП, ГОСТ) не загружены — качество ответов снижено.
             </p>
           )}
         </Card>
