@@ -1,9 +1,9 @@
-import { FormEvent, useEffect, useRef, useState } from 'react';
+import { ChangeEvent, FormEvent, useEffect, useRef, useState } from 'react';
 import MessageBubble from './MessageBubble';
 import Input from './ui/Input';
 import Button from './ui/Button';
 import { useChatStore } from '../store/chatStore';
-import { sendChatMessage } from '../api/coreClient';
+import { sendChatMessage, uploadChatDocument } from '../api/coreClient';
 import type { ChatResponseMeta } from '../api/coreClient';
 import { Store } from '@tauri-apps/plugin-store';
 import { colors, radius, spacing } from '../styles/tokens';
@@ -19,6 +19,7 @@ export default function ChatWindow() {
   const isTyping = useChatStore((s) => s.isTyping);
   const setTyping = useChatStore((s) => s.setTyping);
   const containerRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -70,6 +71,41 @@ export default function ChatWindow() {
     }
   };
 
+  const openFilePicker = () => {
+    fileInputRef.current?.click();
+  };
+
+  const onDocumentPicked = async (event: ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = event.target.files?.[0];
+    event.target.value = '';
+    if (!selectedFile) return;
+
+    setError(null);
+    setTyping(true);
+
+    try {
+      const settings = await Store.load('settings.json');
+      const apiUrl = (await settings.get<string>('api_url')) || 'https://vanekpetrov1997.fvds.ru';
+      const apiKey = (await settings.get<string>('api_key')) || '';
+
+      await uploadChatDocument(apiUrl, apiKey, {
+        file: selectedFile,
+        sessionId
+      });
+
+      addMessage({
+        id: crypto.randomUUID(),
+        role: 'system',
+        content: 'Документ загружен и будет учтён в ответах',
+        createdAt: new Date().toISOString()
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Ошибка загрузки документа');
+    } finally {
+      setTyping(false);
+    }
+  };
+
   return (
     <section style={{ display: 'flex', flexDirection: 'column', gap: spacing.sm, flex: 1 }}>
       <div
@@ -102,7 +138,17 @@ export default function ChatWindow() {
 
       <div style={{ borderTop: `1px solid ${colors.border}`, paddingTop: spacing.md, marginTop: spacing.sm }}>
         <form onSubmit={onSubmit} style={{ display: 'flex', gap: spacing.sm, alignItems: 'center' }}>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            onChange={onDocumentPicked}
+            style={{ display: 'none' }}
+          />
           <Input value={text} onChange={(e) => setText(e.target.value)} placeholder="Введите сообщение" style={{ flex: 1 }} />
+          <Button type="button" onClick={openFilePicker} title="Прикрепить документ">
+            📎
+          </Button>
           <Button type="submit">Отправить</Button>
         </form>
       </div>

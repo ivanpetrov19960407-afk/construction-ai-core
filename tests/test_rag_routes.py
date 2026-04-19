@@ -31,7 +31,16 @@ class _DummyRAGEngine:
     def ingest_pdf(self, filepath: str, source_name: str, metadata: dict | None = None) -> int:
         assert filepath.endswith(".pdf")
         assert source_name == "sp_48.pdf"
+        if metadata is not None:
+            assert metadata.get("session_id") == "chat-123"
         return 7
+
+    def ingest_text(self, text: str, source_name: str, metadata: dict | None = None) -> int:
+        assert source_name == "spec.docx"
+        assert "Техническое задание" in text
+        if metadata is not None:
+            assert metadata.get("session_id") == "chat-docx"
+        return 3
 
 
 def test_rag_ingest_pdf_success(monkeypatch):
@@ -59,6 +68,7 @@ def test_rag_ingest_pdf_success(monkeypatch):
                 files={
                     "file": ("sp_48.pdf", b"%PDF-1.4 fake", "application/pdf"),
                     "source_name": (None, "sp_48.pdf"),
+                    "session_id": (None, "chat-123"),
                 },
                 headers={"X-API-Key": "admin-key"},
             )
@@ -69,6 +79,112 @@ def test_rag_ingest_pdf_success(monkeypatch):
     assert response.status_code == 200
     assert response.json() == {"chunks_added": 7, "source": "sp_48.pdf"}
     assert parse_called["ok"] is True
+
+
+def test_rag_ingest_docx_success(monkeypatch):
+    from docx import Document
+
+    old_api_keys = settings.api_keys
+    old_admin_keys = settings.admin_api_keys
+    settings.api_keys = ["admin-key"]
+    settings.admin_api_keys = ["admin-key"]
+
+    monkeypatch.setattr(rag_routes, "get_rag_engine", lambda: _DummyRAGEngine())
+
+    doc = Document()
+    doc.add_paragraph("Техническое задание")
+    doc.add_paragraph("Проверка загрузки DOCX")
+
+    import io
+
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    docx_bytes = buffer.getvalue()
+
+    try:
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/rag/ingest",
+                files={
+                    "file": (
+                        "spec.docx",
+                        docx_bytes,
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    ),
+                    "source_name": (None, "spec.docx"),
+                    "session_id": (None, "chat-docx"),
+                },
+                headers={"X-API-Key": "admin-key"},
+            )
+    finally:
+        settings.api_keys = old_api_keys
+        settings.admin_api_keys = old_admin_keys
+
+    assert response.status_code == 200
+    assert response.json() == {"chunks_added": 3, "source": "spec.docx"}
+
+
+def test_rag_chat_upload_allows_non_admin_key(monkeypatch):
+    old_api_keys = settings.api_keys
+    old_admin_keys = settings.admin_api_keys
+    settings.api_keys = ["user-key"]
+    settings.admin_api_keys = []
+
+    class _ChatUploadRAG:
+        def __init__(self):
+            self.collection = _DummyCollection([])
+
+        def ingest_pdf(self, filepath: str, source_name: str, metadata: dict | None = None) -> int:
+            assert filepath.endswith(".pdf")
+            assert source_name == "chat-file.pdf"
+            assert metadata == {"session_id": "chat-456"}
+            return 5
+
+    monkeypatch.setattr(rag_routes, "get_rag_engine", lambda: _ChatUploadRAG())
+    monkeypatch.setattr(rag_routes.pdf_parser, "parse", lambda file_bytes, filename: object())
+
+    try:
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/rag/chat-upload",
+                files={
+                    "file": ("chat-file.pdf", b"%PDF-1.4 fake", "application/pdf"),
+                    "session_id": (None, "chat-456"),
+                },
+                headers={"X-API-Key": "user-key"},
+            )
+    finally:
+        settings.api_keys = old_api_keys
+        settings.admin_api_keys = old_admin_keys
+
+    assert response.status_code == 200
+    assert response.json() == {"chunks_added": 5, "source": "chat-file.pdf"}
+
+
+def test_rag_ingest_docx_invalid_payload_returns_400(monkeypatch):
+    old_api_keys = settings.api_keys
+    old_admin_keys = settings.admin_api_keys
+    settings.api_keys = ["admin-key"]
+    settings.admin_api_keys = ["admin-key"]
+
+    monkeypatch.setattr(rag_routes, "get_rag_engine", lambda: _DummyRAGEngine())
+
+    try:
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/rag/ingest",
+                files={
+                    "file": ("broken.docx", b"not-a-real-docx", rag_routes.DOCX_MIME_TYPE),
+                    "source_name": (None, "broken.docx"),
+                },
+                headers={"X-API-Key": "admin-key"},
+            )
+    finally:
+        settings.api_keys = old_api_keys
+        settings.admin_api_keys = old_admin_keys
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Invalid DOCX file"}
 
 
 def test_rag_sources_requires_admin_and_returns_counts(monkeypatch):

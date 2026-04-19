@@ -92,6 +92,11 @@ export interface ApiCallOptions {
   signal?: AbortSignal;
 }
 
+export interface UploadChatDocumentResponse {
+  chunks_added: number;
+  source: string;
+}
+
 export const DEFAULT_API_URL = 'https://vanekpetrov1997.fvds.ru';
 
 const LEGACY_DEFAULT_API_URL = 'http://vanekpetrov1997.fvds.ru';
@@ -239,6 +244,34 @@ export async function sendChatMessage(
   });
 
   return (await response.json()) as ChatResponse;
+}
+
+export async function uploadChatDocument(
+  apiUrl: string,
+  apiKey: string,
+  payload: {
+    file: File;
+    sessionId: string;
+  },
+  { timeoutMs = DEFAULT_GENERATION_TIMEOUT_MS, signal }: ApiCallOptions = {}
+): Promise<UploadChatDocumentResponse> {
+  const endpoint = '/api/rag/chat-upload';
+  const formData = new FormData();
+  formData.append('file', payload.file, payload.file.name);
+  formData.append('source_name', payload.file.name);
+  formData.append('session_id', payload.sessionId);
+
+  const response = await apiRequest(normalizeApiUrl(apiUrl), endpoint, {
+    method: 'POST',
+    headers: {
+      'X-API-Key': apiKey.trim()
+    },
+    body: formData,
+    timeoutMs,
+    signal
+  });
+
+  return (await response.json()) as UploadChatDocumentResponse;
 }
 
 export async function checkHealth(apiUrl: string, { timeoutMs, signal }: ApiCallOptions = {}): Promise<HealthResponse> {
