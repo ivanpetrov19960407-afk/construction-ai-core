@@ -83,9 +83,7 @@ async def create_project(
     members = sorted(set(payload.members + [user.username]))
 
     with session_local() as session:
-        max_short_id = session.query(
-            func.coalesce(func.max(Project.short_id), 0)
-        ).scalar()
+        max_short_id = session.query(func.coalesce(func.max(Project.short_id), 0)).scalar()
         next_short_id = int(max_short_id or 0) + 1
         project = Project(
             name=payload.name,

@@ -20,8 +20,6 @@ from core.projects import Project, ProjectDocument, get_projects_sessionmaker
 UTC = getattr(dt, "UTC", dt.timezone(dt.timedelta(0)))
 
 
-
-
 def _bind_api_key_user(api_key: str, username: str) -> None:
     users_db = Path(settings.users_db_path)
     users_db.parent.mkdir(parents=True, exist_ok=True)
@@ -39,6 +37,7 @@ def _bind_api_key_user(api_key: str, username: str) -> None:
             (api_key, username),
         )
         connection.commit()
+
 
 def _make_bearer(username: str, role: str = "pto_engineer") -> str:
     payload = {
