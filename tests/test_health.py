@@ -49,7 +49,7 @@ def test_health_llm_degraded_when_keys_missing(monkeypatch):
         assert data["llm"]["available"] == []
         assert set(data["checks"]["llm_router"]["missing_keys"]) == {
             "openai",
-            "anthropic",
+            "claude",
             "gigachat",
             "yandexgpt",
             "deepseek",

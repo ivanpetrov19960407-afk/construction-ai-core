@@ -15,7 +15,7 @@ router = APIRouter()
 LLM_PROVIDER_TO_SETTING = {
     "perplexity": "perplexity_api_key",
     "openai": "openai_api_key",
-    "anthropic": "anthropic_api_key",
+    "claude": "anthropic_api_key",
     "gigachat": "gigachat_credentials",
     "yandexgpt": "yandexgpt_api_key",
     "deepseek": "deepseek_api_key",

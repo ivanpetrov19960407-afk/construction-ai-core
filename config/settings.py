@@ -102,7 +102,7 @@ class Settings(BaseSettings):
         providers: dict[str, str] = {
             "perplexity": self.perplexity_api_key,
             "openai": self.openai_api_key,
-            "anthropic": self.anthropic_api_key,
+            "claude": self.anthropic_api_key,
             "gigachat": self.gigachat_credentials,
             "yandexgpt": self.yandexgpt_api_key,
             "deepseek": self.deepseek_api_key,
