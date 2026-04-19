@@ -1,9 +1,15 @@
 import type { ChatMessage } from '../store/chatStore';
+import ReactMarkdown from 'react-markdown';
+import rehypeHighlight from 'rehype-highlight';
+import rehypeSanitize from 'rehype-sanitize';
+import remarkGfm from 'remark-gfm';
 import { colors, shadows, spacing } from '../styles/tokens';
+import MessageSources from './MessageSources';
 
 export interface MessageMetadata {
   agents?: string[];
   confidence?: number;
+  sources?: Array<{ title: string; page: number; score: number }>;
 }
 
 interface Props {
@@ -62,7 +68,18 @@ export default function MessageBubble({ message, metadata, className }: Props) {
         }}
       >
         <strong style={{ display: 'block', marginBottom: 4 }}>{isUser ? 'Вы' : isSystem ? 'Система' : 'Assistant'}</strong>
-        <span>{message.content}</span>
+        {isUser ? (
+          <span>{message.content}</span>
+        ) : (
+          <div style={{ lineHeight: 1.5, overflowX: 'auto' }}>
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              rehypePlugins={[rehypeHighlight, rehypeSanitize]}
+            >
+              {message.content}
+            </ReactMarkdown>
+          </div>
+        )}
         {!isUser && !isSystem && (
           <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
             {agents.map((agent) => (
@@ -105,6 +122,9 @@ export default function MessageBubble({ message, metadata, className }: Props) {
             </button>
           </div>
         )}
+        {!isUser && !isSystem && effectiveMetadata?.sources?.length ? (
+          <MessageSources sources={effectiveMetadata.sources} />
+        ) : null}
       </div>
       <div
         style={{

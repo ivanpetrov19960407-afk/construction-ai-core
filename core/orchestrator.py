@@ -28,6 +28,8 @@ from agents.verifier import VerifierAgent
 from api.metrics import PIPELINE_DURATION
 from core.errors import AppError, LLMProviderNotConfiguredError
 from core.llm_router import LLMRouter
+from core.pipelines.chat_rag import ChatRagPipeline
+from core.rag_engine import RAGEngine
 from core.session_memory import SessionMemory
 from core.tk_bridge import TKGeneratorBridge
 
@@ -62,6 +64,7 @@ class Orchestrator:
         self.llm_router = LLMRouter()
         self.session_memory = SessionMemory()
         self.tk_bridge = TKGeneratorBridge()
+        self.chat_rag = ChatRagPipeline(rag_engine=RAGEngine(), llm_router=self.llm_router)
         self.agents: dict[str, dict] = {agent["id"]: agent for agent in self.config["agents"]}
 
     def _load_config(self) -> dict:
@@ -334,6 +337,7 @@ class Orchestrator:
         message: str,
         session_id: str | None = None,
         role: str = "pto_engineer",
+        user_id: str = "anonymous",
         intent: str | None = None,
         include_legal_expert: bool = True,
         extra_state: dict[str, Any] | None = None,
@@ -377,21 +381,21 @@ class Orchestrator:
                 )
             return result
 
-        # TODO: Фаза 1 — базовый чат через LLM Router
-        # Пока без полноценного pipeline, просто прямой запрос к LLM
         system_prompt = self._build_system_prompt(role)
 
         try:
-            response = await self.llm_router.query(
-                prompt=message,
-                system_prompt=system_prompt,
+            rag_result = await self.chat_rag.run(
+                message=message,
+                user_id=user_id,
+                role_system_prompt=system_prompt,
             )
-            clean_reply = self._clean_reply(response.text)
+            clean_reply = self._clean_reply(str(rag_result.get("reply", "")))
             await self.session_memory.add(session_id, role="assistant", content=clean_reply)
             return {
                 "reply": clean_reply,
                 "session_id": session_id,
-                "agents_used": ["researcher"],  # базовый режим
+                "agents_used": list(rag_result.get("agents_used", [])),
+                "sources": list(rag_result.get("sources", [])),
                 "confidence": None,
             }
         except Exception as e:

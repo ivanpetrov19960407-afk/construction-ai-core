@@ -7,6 +7,7 @@
 - fix(tauri): add missing permissions for logs folder
 
 ### Added
+- feat(chat): markdown render + real RAG pipeline
 - feat(kb): split personal vs global knowledge base
 - feat(api): SSE for letter
 - feat(compliance): accept short_id, fix 422→404

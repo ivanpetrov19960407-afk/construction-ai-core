@@ -36,8 +36,10 @@ def test_request_with_valid_api_key_returns_200(monkeypatch: pytest.MonkeyPatch)
     async def _run() -> None:
         old_keys = settings.api_keys
         settings.api_keys = ["valid-key"]
+        captured_user_id: dict[str, str] = {}
 
-        async def _fake_process(message: str, session_id: str, role: str):
+        async def _fake_process(message: str, session_id: str, role: str, user_id: str = "u"):
+            captured_user_id["value"] = user_id
             return {
                 "reply": f"echo: {message}",
                 "session_id": session_id,
@@ -62,6 +64,8 @@ def test_request_with_valid_api_key_returns_200(monkeypatch: pytest.MonkeyPatch)
         data = response.json()
         assert data["reply"] == "echo: ping"
         assert data["agents_used"] == ["mock"]
+        assert captured_user_id["value"].startswith("api-key:")
+        assert captured_user_id["value"] != "anonymous"
 
     asyncio.run(_run())
 
