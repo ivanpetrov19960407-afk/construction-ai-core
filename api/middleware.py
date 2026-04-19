@@ -35,6 +35,7 @@ EXCLUDED_PATHS = {
 PUBLIC_AUTH_PATHS = {"/auth/register", "/auth/login"}
 API_KEY_IDENTITY_PATHS = {
     "/api/me",
+    "/api/chat",
     "/api/rag/chat-upload",
     "/api/rag/my-sources",
 }

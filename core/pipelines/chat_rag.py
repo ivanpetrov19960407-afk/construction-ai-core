@@ -79,6 +79,18 @@ class ChatRagPipeline:
             for chunk in chunks
         ]
 
+    def _query_global(self, message: str, top_k: int) -> list[dict[str, Any]]:
+        """Find top_k global chunks even when personal docs dominate nearest neighbors."""
+        requested = max(top_k * 2, 12)
+        max_requested = 120
+
+        while True:
+            candidates = self._query(message, n_results=requested, where=None)
+            global_only = [item for item in candidates if not item.get("username")]
+            if len(global_only) >= top_k or requested >= max_requested:
+                return global_only[:top_k]
+            requested = min(max_requested, requested * 2)
+
     async def run(
         self,
         *,
@@ -95,8 +107,7 @@ class ChatRagPipeline:
 
         if not chunks:
             # fallback на глобальную базу (документы без username)
-            global_candidates = self._query(message, n_results=top_k * 2, where=None)
-            chunks = [item for item in global_candidates if not item.get("username")][:top_k]
+            chunks = self._query_global(message, top_k=top_k)
 
         context_block = self._context_block(chunks[:top_k]) if chunks else ""
         system_prompt = role_system_prompt

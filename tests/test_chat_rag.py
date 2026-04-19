@@ -60,6 +60,51 @@ class _FakeRagEngine:
         return [[0.01, 0.02, 0.03]]
 
 
+class _CrowdedGlobalCollection(_FakeCollection):
+    def __init__(self):
+        super().__init__()
+        self.global_docs = [
+            {
+                "text": f"GLOBAL-{idx}",
+                "source": f"global-{idx}.pdf",
+                "page": idx,
+                "username": "",
+            }
+            for idx in range(1, 8)
+        ]
+
+    def query(self, query_embeddings=None, n_results=6, include=None, where=None):
+        _ = query_embeddings, include, where
+        crowded = [
+            {
+                "text": f"PERSONAL-{idx}",
+                "source": f"personal-{idx}.pdf",
+                "page": idx,
+                "username": f"user-{idx}",
+            }
+            for idx in range(1, 32)
+        ]
+        rows = (crowded + self.global_docs)[:n_results]
+        metadatas = [
+            {
+                "source": row["source"],
+                "page": row["page"],
+                "username": row["username"],
+            }
+            for row in rows
+        ]
+        return {
+            "documents": [[row["text"] for row in rows]],
+            "metadatas": [metadatas],
+            "distances": [[0.1 for _ in rows]],
+        }
+
+
+class _CrowdedGlobalRagEngine(_FakeRagEngine):
+    def __init__(self):
+        self.collection = _CrowdedGlobalCollection()
+
+
 def test_chat_rag_prefers_personal_sources():
     llm_router = SimpleNamespace(query=AsyncMock(return_value=SimpleNamespace(text="Ответ [S1]")))
     pipeline = ChatRagPipeline(rag_engine=_FakeRagEngine(), llm_router=llm_router)
@@ -92,3 +137,20 @@ def test_chat_rag_falls_back_to_global_when_personal_empty():
     )
 
     assert result["sources"][0]["title"] == "gost_21.pdf"
+
+
+def test_chat_rag_global_fallback_expands_window_if_personal_docs_dominate():
+    llm_router = SimpleNamespace(query=AsyncMock(return_value=SimpleNamespace(text="Ответ [S1]")))
+    pipeline = ChatRagPipeline(rag_engine=_CrowdedGlobalRagEngine(), llm_router=llm_router)
+
+    result = asyncio.run(
+        pipeline.run(
+            message="Что такое СП?",
+            user_id="unknown-user",
+            role_system_prompt="role prompt",
+            top_k=6,
+        )
+    )
+
+    assert len(result["sources"]) == 6
+    assert all(item["title"].startswith("global-") for item in result["sources"])

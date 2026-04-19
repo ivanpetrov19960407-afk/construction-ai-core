@@ -2,6 +2,7 @@
 
 import json
 import uuid
+from hashlib import sha256
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import StreamingResponse
@@ -45,6 +46,19 @@ def _sse_event(event: str, payload: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
+def _resolve_chat_user_id(request: Request) -> str:
+    state_username = getattr(request.state, "username", None)
+    if state_username:
+        return str(state_username)
+
+    api_key = request.headers.get("X-API-Key")
+    if api_key:
+        digest = sha256(api_key.encode("utf-8")).hexdigest()
+        return f"api-key:{digest}"
+
+    return "anonymous"
+
+
 @router.post(
     "/chat",
     response_model=ChatResponse,
@@ -78,10 +92,11 @@ async def chat(
         message=payload.message,
         session_id=session_id,
         role=payload.role,
-        user_id=str(getattr(request.state, "username", "anonymous")),
+        user_id=_resolve_chat_user_id(request),
     )
 
     if stream or "text/event-stream" in request.headers.get("Accept", ""):
+
         async def _stream():
             yield _sse_event("progress", {"stage": "retrieval", "progress": 35})
             for source in list(result.get("sources", [])):
