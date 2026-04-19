@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+import { create } from "zustand";
 
 export interface BrandingConfig {
   org_id: string;
@@ -18,5 +18,5 @@ interface BrandingState {
 
 export const useBrandingStore = create<BrandingState>((set) => ({
   branding: null,
-  setBranding: (branding) => set({ branding })
+  setBranding: (branding) => set({ branding }),
 }));

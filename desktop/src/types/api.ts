@@ -5,7 +5,7 @@ export interface GeneratePprRequest {
 }
 
 export interface GenerateEstimateRequest {
-  base: 'ГЭСН' | 'ФЕР';
+  base: "ГЭСН" | "ФЕР";
   boq_file_name?: string;
   boq_text?: string;
 }
@@ -55,7 +55,7 @@ export interface ComplianceCheckResponse {
   violations?: Array<{
     code: string;
     message: string;
-    severity?: 'low' | 'medium' | 'high';
+    severity?: "low" | "medium" | "high";
   }>;
   details?: string;
   [key: string]: unknown;

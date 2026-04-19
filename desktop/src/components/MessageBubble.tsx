@@ -1,6 +1,6 @@
-import type { ChatMessage } from '../store/chatStore';
-import { colors, shadows, spacing } from '../styles/tokens';
-import MessageSources from './MessageSources';
+import type { ChatMessage } from "../store/chatStore";
+import { colors, shadows, spacing } from "../styles/tokens";
+import MessageSources from "./MessageSources";
 
 export interface MessageMetadata {
   agents?: string[];
@@ -15,24 +15,24 @@ interface Props {
 }
 
 function getConfidenceBadge(confidence?: number) {
-  if (typeof confidence !== 'number') {
+  if (typeof confidence !== "number") {
     return null;
   }
 
   if (confidence >= 0.8) {
-    return { label: '✓ Высокая', color: '#2e7d32' };
+    return { label: "✓ Высокая", color: "#2e7d32" };
   }
 
   if (confidence >= 0.5) {
-    return { label: '~ Средняя', color: '#f9a825' };
+    return { label: "~ Средняя", color: "#f9a825" };
   }
 
-  return { label: '? Низкая', color: '#9e9e9e' };
+  return { label: "? Низкая", color: "#9e9e9e" };
 }
 
 export default function MessageBubble({ message, metadata, className }: Props) {
-  const isUser = message.role === 'user';
-  const isSystem = message.role === 'system';
+  const isUser = message.role === "user";
+  const isSystem = message.role === "system";
   const effectiveMetadata = metadata ?? message.metadata;
   const agents = effectiveMetadata?.agents ?? [];
   const confidenceBadge = getConfidenceBadge(effectiveMetadata?.confidence);
@@ -49,40 +49,62 @@ export default function MessageBubble({ message, metadata, className }: Props) {
     <div
       className={className}
       style={{
-        alignSelf: isUser ? 'flex-end' : 'flex-start',
-        maxWidth: isUser ? '72%' : isSystem ? '88%' : '80%'
+        alignSelf: isUser ? "flex-end" : "flex-start",
+        maxWidth: isUser ? "72%" : isSystem ? "88%" : "80%",
       }}
     >
       <div
         style={{
-          background: isUser ? colors.primary : isSystem ? '#eef6ff' : colors.bgCard,
-          border: isUser ? 'none' : `1px solid ${isSystem ? '#bfdbfe' : colors.border}`,
-          color: isUser ? '#ffffff' : colors.textPrimary,
-          borderRadius: isUser ? '16px 16px 4px 16px' : '4px 16px 16px 16px',
+          background: isUser
+            ? colors.primary
+            : isSystem
+              ? "#eef6ff"
+              : colors.bgCard,
+          border: isUser
+            ? "none"
+            : `1px solid ${isSystem ? "#bfdbfe" : colors.border}`,
+          color: isUser ? "#ffffff" : colors.textPrimary,
+          borderRadius: isUser ? "16px 16px 4px 16px" : "4px 16px 16px 16px",
           padding: `${spacing.sm}px ${spacing.md}px`,
-          boxShadow: shadows.sm
+          boxShadow: shadows.sm,
         }}
       >
-        <strong style={{ display: 'block', marginBottom: 4 }}>{isUser ? 'Вы' : isSystem ? 'Система' : 'Assistant'}</strong>
+        <strong style={{ display: "block", marginBottom: 4 }}>
+          {isUser ? "Вы" : isSystem ? "Система" : "Assistant"}
+        </strong>
         {isUser ? (
           <span>{message.content}</span>
         ) : (
-          <div style={{ lineHeight: 1.5, overflowX: 'auto', whiteSpace: 'pre-wrap' }}>
+          <div
+            style={{
+              lineHeight: 1.5,
+              overflowX: "auto",
+              whiteSpace: "pre-wrap",
+            }}
+          >
             {message.content}
           </div>
         )}
         {!isUser && !isSystem && (
-          <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+          <div
+            style={{
+              marginTop: 8,
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 6,
+              alignItems: "center",
+            }}
+          >
             {agents.map((agent) => (
               <span
                 key={agent}
                 style={{
-                  background: '#f3f4f6',
-                  color: '#4b5563',
+                  background: "#f3f4f6",
+                  color: "#4b5563",
                   borderRadius: 999,
-                  padding: '2px 8px',
+                  padding: "2px 8px",
                   fontSize: 11,
-                  fontWeight: 500
+                  fontWeight: 500,
                 }}
               >
                 {agent}
@@ -97,14 +119,14 @@ export default function MessageBubble({ message, metadata, className }: Props) {
               type="button"
               onClick={onCopy}
               style={{
-                marginLeft: 'auto',
+                marginLeft: "auto",
                 fontSize: 12,
-                color: '#666',
-                background: 'transparent',
-                border: '1px solid #d5d5d5',
+                color: "#666",
+                background: "transparent",
+                border: "1px solid #d5d5d5",
                 borderRadius: 8,
-                cursor: 'pointer',
-                padding: '2px 8px'
+                cursor: "pointer",
+                padding: "2px 8px",
               }}
               aria-label="Копировать сообщение"
               title="Копировать"
@@ -120,12 +142,15 @@ export default function MessageBubble({ message, metadata, className }: Props) {
       <div
         style={{
           fontSize: 11,
-          color: isUser ? 'rgba(255,255,255,0.65)' : colors.textMuted,
-          textAlign: isUser ? 'right' : 'left',
-          marginTop: 2
+          color: isUser ? "rgba(255,255,255,0.65)" : colors.textMuted,
+          textAlign: isUser ? "right" : "left",
+          marginTop: 2,
         }}
       >
-        {new Date(message.createdAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+        {new Date(message.createdAt).toLocaleTimeString("ru-RU", {
+          hour: "2-digit",
+          minute: "2-digit",
+        })}
       </div>
     </div>
   );

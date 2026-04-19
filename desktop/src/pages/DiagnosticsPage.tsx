@@ -1,57 +1,72 @@
-import { useCallback, useEffect, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
-import { Store } from '@tauri-apps/plugin-store';
-import Button from '../components/ui/Button';
-import Card from '../components/ui/Card';
-import { checkHealth, DEFAULT_API_URL, normalizeApiUrl, type HealthResponse } from '../api/coreClient';
-import { colors, spacing } from '../styles/tokens';
-import { getAppLogDir } from '../lib/logger';
+import { useCallback, useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { Store } from "@tauri-apps/plugin-store";
+import Button from "../components/ui/Button";
+import Card from "../components/ui/Card";
+import {
+  checkHealth,
+  DEFAULT_API_URL,
+  normalizeApiUrl,
+  type HealthResponse,
+} from "../api/coreClient";
+import { colors, spacing } from "../styles/tokens";
+import { getAppLogDir } from "../lib/logger";
 
-type HealthTone = 'idle' | 'checking' | 'ok' | 'error';
+type HealthTone = "idle" | "checking" | "ok" | "error";
 
 const toneColor: Record<HealthTone, string> = {
   idle: colors.textSecondary,
   checking: colors.primary,
   ok: colors.success,
-  error: colors.error
+  error: colors.error,
 };
 
 export default function DiagnosticsPage() {
   const [apiUrl, setApiUrl] = useState(DEFAULT_API_URL);
   const [health, setHealth] = useState<HealthResponse | null>(null);
-  const [healthTone, setHealthTone] = useState<HealthTone>('idle');
-  const [healthMessage, setHealthMessage] = useState('Проверка /health ещё не запускалась.');
-  const [copyMessage, setCopyMessage] = useState('');
+  const [healthTone, setHealthTone] = useState<HealthTone>("idle");
+  const [healthMessage, setHealthMessage] = useState(
+    "Проверка /health ещё не запускалась.",
+  );
+  const [copyMessage, setCopyMessage] = useState("");
 
-  const showFriendlyError = useCallback(async (fallback: string, error: unknown) => {
-    const reason = error instanceof Error ? error.message : fallback;
-    const friendlyMessage = `${fallback}\n\n${reason}`;
-    setCopyMessage(friendlyMessage);
-    return friendlyMessage;
-  }, []);
+  const showFriendlyError = useCallback(
+    async (fallback: string, error: unknown) => {
+      const reason = error instanceof Error ? error.message : fallback;
+      const friendlyMessage = `${fallback}\n\n${reason}`;
+      setCopyMessage(friendlyMessage);
+      return friendlyMessage;
+    },
+    [],
+  );
 
   const loadApiUrl = useCallback(async () => {
-    const store = await Store.load('settings.json');
-    const storedUrl = (await store.get<string>('api_url')) || (await invoke<string>('get_api_url')) || DEFAULT_API_URL;
+    const store = await Store.load("settings.json");
+    const storedUrl =
+      (await store.get<string>("api_url")) ||
+      (await invoke<string>("get_api_url")) ||
+      DEFAULT_API_URL;
     const normalized = normalizeApiUrl(storedUrl);
     setApiUrl(normalized);
     return normalized;
   }, []);
 
   const refreshHealth = useCallback(async () => {
-    setHealthTone('checking');
-    setHealthMessage('Проверяю /health...');
+    setHealthTone("checking");
+    setHealthMessage("Проверяю /health...");
 
     try {
       const normalizedUrl = await loadApiUrl();
       const response = await checkHealth(normalizedUrl);
       setHealth(response);
-      setHealthTone('ok');
+      setHealthTone("ok");
       setHealthMessage(`Сервер доступен: ${response.status}`);
     } catch (error) {
       setHealth(null);
-      setHealthTone('error');
-      setHealthMessage(error instanceof Error ? error.message : 'Ошибка при проверке /health.');
+      setHealthTone("error");
+      setHealthMessage(
+        error instanceof Error ? error.message : "Ошибка при проверке /health.",
+      );
     }
   }, [loadApiUrl]);
 
@@ -61,26 +76,26 @@ export default function DiagnosticsPage() {
 
   const onOpenLogsFolder = async () => {
     try {
-      await invoke('open_logs_folder');
+      await invoke("open_logs_folder");
       const logsDir = await getAppLogDir();
       setCopyMessage(`Папка логов открыта: ${logsDir}`);
     } catch (error) {
       showFriendlyError(
-        'Не удалось открыть папку логов. Проверьте системные разрешения и настройки sandbox.',
-        error
+        "Не удалось открыть папку логов. Проверьте системные разрешения и настройки sandbox.",
+        error,
       );
     }
   };
 
   const onCopyLastLines = async () => {
     try {
-      const lines = await invoke<string>('copy_last_log_lines', { lines: 200 });
-      await navigator.clipboard.writeText(lines || 'Лог-файл пока пуст.');
-      setCopyMessage('Скопировано: последние 200 строк app.log');
+      const lines = await invoke<string>("copy_last_log_lines", { lines: 200 });
+      await navigator.clipboard.writeText(lines || "Лог-файл пока пуст.");
+      setCopyMessage("Скопировано: последние 200 строк app.log");
     } catch (error) {
       showFriendlyError(
-        'Не удалось скопировать лог. Проверьте доступ к буферу обмена и правам приложения.',
-        error
+        "Не удалось скопировать лог. Проверьте доступ к буферу обмена и правам приложения.",
+        error,
       );
     }
   };
@@ -101,7 +116,8 @@ export default function DiagnosticsPage() {
         </p>
         {health && (
           <p style={{ marginBottom: spacing.xs }}>
-            Версия сервера: {health.version} · uptime: {Math.round(health.uptime_seconds)}s
+            Версия сервера: {health.version} · uptime:{" "}
+            {Math.round(health.uptime_seconds)}s
           </p>
         )}
         {health && (
@@ -113,33 +129,53 @@ export default function DiagnosticsPage() {
               style={{
                 marginTop: 0,
                 marginBottom: spacing.xs,
-                color: health.llm.degraded ? colors.error : colors.success
+                color: health.llm.degraded ? colors.error : colors.success,
               }}
             >
               default: {health.llm.default}
-              {health.llm.degraded ? ' (не настроен)' : ' (настроен)'}
+              {health.llm.degraded ? " (не настроен)" : " (настроен)"}
             </p>
-            <p style={{ marginTop: 0, marginBottom: 0, color: colors.textSecondary }}>
-              available: {health.llm.available.length ? health.llm.available.join(', ') : 'нет'}
+            <p
+              style={{
+                marginTop: 0,
+                marginBottom: 0,
+                color: colors.textSecondary,
+              }}
+            >
+              available:{" "}
+              {health.llm.available.length
+                ? health.llm.available.join(", ")
+                : "нет"}
             </p>
           </div>
         )}
       </Card>
 
-      <div style={{ display: 'flex', gap: spacing.sm, flexWrap: 'wrap' }}>
+      <div style={{ display: "flex", gap: spacing.sm, flexWrap: "wrap" }}>
         <Button type="button" onClick={onOpenLogsFolder}>
           Открыть папку логов
         </Button>
         <Button type="button" variant="secondary" onClick={onCopyLastLines}>
           Скопировать последние 200 строк
         </Button>
-        <Button type="button" variant="ghost" onClick={() => void refreshHealth()} loading={healthTone === 'checking'}>
-          {healthTone === 'checking' ? 'Проверка...' : 'Обновить /health'}
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={() => void refreshHealth()}
+          loading={healthTone === "checking"}
+        >
+          {healthTone === "checking" ? "Проверка..." : "Обновить /health"}
         </Button>
       </div>
 
       {copyMessage && (
-        <p style={{ marginTop: spacing.md, marginBottom: 0, color: colors.textSecondary }}>
+        <p
+          style={{
+            marginTop: spacing.md,
+            marginBottom: 0,
+            color: colors.textSecondary,
+          }}
+        >
           {copyMessage}
         </p>
       )}

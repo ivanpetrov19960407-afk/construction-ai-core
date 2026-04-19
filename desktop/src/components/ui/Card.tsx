@@ -1,5 +1,5 @@
-import { type PropsWithChildren } from 'react';
-import { colors, radius, spacing } from '../../styles/tokens';
+import { type PropsWithChildren } from "react";
+import { colors, radius, spacing } from "../../styles/tokens";
 
 interface CardProps extends PropsWithChildren {
   padding?: keyof typeof spacing;
@@ -7,7 +7,12 @@ interface CardProps extends PropsWithChildren {
   style?: React.CSSProperties;
 }
 
-export default function Card({ children, padding = 'lg', shadow = true, style }: CardProps) {
+export default function Card({
+  children,
+  padding = "lg",
+  shadow = true,
+  style,
+}: CardProps) {
   return (
     <section
       style={{
@@ -15,8 +20,8 @@ export default function Card({ children, padding = 'lg', shadow = true, style }:
         border: `1px solid ${colors.border}`,
         borderRadius: radius.lg,
         padding: spacing[padding],
-        boxShadow: shadow ? '0 6px 16px rgba(15, 23, 42, 0.08)' : 'none',
-        ...style
+        boxShadow: shadow ? "0 6px 16px rgba(15, 23, 42, 0.08)" : "none",
+        ...style,
       }}
     >
       {children}

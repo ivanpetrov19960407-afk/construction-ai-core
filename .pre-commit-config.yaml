@@ -3,17 +3,18 @@ repos:
     rev: v0.14.1
     hooks:
       - id: ruff
-        args: ["--fix", "--disable-error-code=misc", "--disable-error-code=untyped-decorator", "--disable-error-code=return-value", "core", "api"]
+        args: ["--fix"]
+        files: ^(core|api)/
       - id: ruff-format
-        args: ["--disable-error-code=misc", "--disable-error-code=untyped-decorator", "--disable-error-code=return-value", "core", "api"]
+        files: ^(core|api)/
 
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.18.2
+    rev: v1.20.1
     hooks:
       - id: mypy
         name: mypy (strict core/api)
         files: ^(core|api)/
-        args: ["--strict", "--follow-imports=skip", "--ignore-missing-imports", "--disable-error-code=type-arg", "--disable-error-code=no-any-return", "--disable-error-code=no-untyped-def", "--disable-error-code=no-untyped-call", "--disable-error-code=unused-ignore", "--disable-error-code=arg-type", "--disable-error-code=no-redef", "--disable-error-code=import-untyped", "--disable-error-code=misc", "--disable-error-code=untyped-decorator", "--disable-error-code=return-value", "core", "api"]
+        args: ["--strict", "--follow-imports=skip", "--ignore-missing-imports", "--disable-error-code=type-arg", "--disable-error-code=no-any-return", "--disable-error-code=no-untyped-def", "--disable-error-code=no-untyped-call", "--disable-error-code=unused-ignore", "--disable-error-code=arg-type", "--disable-error-code=no-redef", "--disable-error-code=import-untyped", "--disable-error-code=misc", "--disable-error-code=untyped-decorator", "--disable-error-code=return-value"]
         additional_dependencies:
           - pydantic
           - fastapi
@@ -24,6 +25,7 @@ repos:
     hooks:
       - id: prettier
         files: ^desktop/.*\.(ts|tsx|js|jsx|json|css|md|html)$
+        exclude: ^desktop/(node_modules|dist|src-tauri/(target|gen|Cargo\.lock))
 
   - repo: https://github.com/pre-commit/mirrors-eslint
     rev: v9.39.1

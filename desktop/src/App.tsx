@@ -1,34 +1,42 @@
-import { useEffect, useMemo, useState } from 'react';
-import { checkHealth, fetchNotifications, getApiConfig, type DesktopNotification } from './api/coreClient';
-import Sidebar from './components/Sidebar';
-import StatusBar from './components/StatusBar';
-import { AuthProvider } from './context/AuthContext';
-import { resolveRoute } from './router';
-import { colors, spacing, typography } from './styles/tokens';
-import type { BrandingConfig } from './store/brandingStore';
-import { useBrandingStore } from './store/brandingStore';
-import { useServerStatusStore } from './store/serverStatusStore';
+import { useEffect, useMemo, useState } from "react";
+import {
+  checkHealth,
+  fetchNotifications,
+  getApiConfig,
+  type DesktopNotification,
+} from "./api/coreClient";
+import Sidebar from "./components/Sidebar";
+import StatusBar from "./components/StatusBar";
+import { AuthProvider } from "./context/AuthContext";
+import { resolveRoute } from "./router";
+import { colors, spacing, typography } from "./styles/tokens";
+import type { BrandingConfig } from "./store/brandingStore";
+import { useBrandingStore } from "./store/brandingStore";
+import { useServerStatusStore } from "./store/serverStatusStore";
 
-const normalizePath = (path: string) => path.replace(/\/$/, '') || '/';
+const normalizePath = (path: string) => path.replace(/\/$/, "") || "/";
 
 const APP_THEME_BASE = {
-  minHeight: '100vh',
+  minHeight: "100vh",
   fontFamily: typography.fontFamily,
-  display: 'flex',
+  display: "flex",
   background: colors.bgPage,
-  overflow: 'hidden'
+  overflow: "hidden",
 } as const;
 
 export default function App() {
-  const [currentPath, setCurrentPath] = useState(() => normalizePath(window.location.pathname));
+  const [currentPath, setCurrentPath] = useState(() =>
+    normalizePath(window.location.pathname),
+  );
   const [toasts, setToasts] = useState<DesktopNotification[]>([]);
   const branding = useBrandingStore((state) => state.branding);
   const setBranding = useBrandingStore((state) => state.setBranding);
 
   useEffect(() => {
-    const onPopState = () => setCurrentPath(normalizePath(window.location.pathname));
-    window.addEventListener('popstate', onPopState);
-    return () => window.removeEventListener('popstate', onPopState);
+    const onPopState = () =>
+      setCurrentPath(normalizePath(window.location.pathname));
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
   }, []);
 
   useEffect(() => {
@@ -37,7 +45,7 @@ export default function App() {
     const pollNotifications = async () => {
       try {
         const { apiUrl, apiKey } = await getApiConfig();
-        const storageKey = 'desktop_user_id';
+        const storageKey = "desktop_user_id";
         const existingUserId = localStorage.getItem(storageKey);
         const userId = existingUserId || `desktop-${crypto.randomUUID()}`;
         if (!existingUserId) {
@@ -83,12 +91,15 @@ export default function App() {
     async function loadBranding(): Promise<void> {
       try {
         const { apiUrl, apiKey } = await getApiConfig();
-        const response = await fetch(`${apiUrl.replace(/\/$/, '')}/api/branding`, {
-          method: 'GET',
-          headers: {
-            'X-API-Key': apiKey
-          }
-        });
+        const response = await fetch(
+          `${apiUrl.replace(/\/$/, "")}/api/branding`,
+          {
+            method: "GET",
+            headers: {
+              "X-API-Key": apiKey,
+            },
+          },
+        );
         if (!response.ok) {
           return;
         }
@@ -110,7 +121,8 @@ export default function App() {
 
   useEffect(() => {
     let isDisposed = false;
-    const { setChecking, setOnline, updateFromHealth } = useServerStatusStore.getState();
+    const { setChecking, setOnline, updateFromHealth } =
+      useServerStatusStore.getState();
 
     const refreshServerStatus = async () => {
       setChecking(true);
@@ -148,16 +160,16 @@ export default function App() {
       return;
     }
 
-    window.history.pushState({}, '', nextPath);
+    window.history.pushState({}, "", nextPath);
     setCurrentPath(nextPath);
   };
 
   const appTheme = useMemo(
     () => ({
       ...APP_THEME_BASE,
-      borderTop: `4px solid ${branding?.primary_color ?? '#2563eb'}`,
+      borderTop: `4px solid ${branding?.primary_color ?? "#2563eb"}`,
     }),
-    [branding?.primary_color]
+    [branding?.primary_color],
   );
 
   return (
@@ -165,14 +177,28 @@ export default function App() {
       <style>{`*, *::before, *::after { box-sizing: border-box; } body { margin: 0; }`}</style>
       <main style={appTheme}>
         <Sidebar currentPath={currentPath} onNavigate={navigate} />
-        <section style={{ flex: 1, padding: spacing.lg, paddingBottom: spacing.xxl }}>
-          <div className="page-content" style={{ maxWidth: 920, width: '100%' }}>
-            {resolveRoute(currentPath, () => navigate('/'))}
+        <section
+          style={{ flex: 1, padding: spacing.lg, paddingBottom: spacing.xxl }}
+        >
+          <div
+            className="page-content"
+            style={{ maxWidth: 920, width: "100%" }}
+          >
+            {resolveRoute(currentPath, () => navigate("/"))}
           </div>
         </section>
       </main>
       <StatusBar />
-      <div style={{ position: 'fixed', right: spacing.lg, bottom: spacing.xl, zIndex: 1000, display: 'grid', gap: spacing.sm }}>
+      <div
+        style={{
+          position: "fixed",
+          right: spacing.lg,
+          bottom: spacing.xl,
+          zIndex: 1000,
+          display: "grid",
+          gap: spacing.sm,
+        }}
+      >
         {toasts.map((toast) => (
           <div
             key={toast.id}
@@ -182,12 +208,16 @@ export default function App() {
               background: colors.bgCard,
               border: `1px solid ${colors.border}`,
               borderRadius: 10,
-              boxShadow: '0 8px 28px rgba(2, 6, 23, 0.25)',
-              padding: spacing.md
+              boxShadow: "0 8px 28px rgba(2, 6, 23, 0.25)",
+              padding: spacing.md,
             }}
           >
-            <strong style={{ display: 'block', marginBottom: spacing.xs }}>{toast.title}</strong>
-            <span style={{ color: colors.textSecondary, fontSize: 13 }}>{toast.body}</span>
+            <strong style={{ display: "block", marginBottom: spacing.xs }}>
+              {toast.title}
+            </strong>
+            <span style={{ color: colors.textSecondary, fontSize: 13 }}>
+              {toast.body}
+            </span>
           </div>
         ))}
       </div>

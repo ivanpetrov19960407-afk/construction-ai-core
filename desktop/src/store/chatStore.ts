@@ -1,9 +1,13 @@
-import { create } from 'zustand';
-import { Store } from '@tauri-apps/plugin-store';
-import type { ChatResponseMeta } from '../api/coreClient';
+import { create } from "zustand";
+import { Store } from "@tauri-apps/plugin-store";
+import type { ChatResponseMeta } from "../api/coreClient";
 
-export type ChatRole = 'pto_engineer' | 'foreman' | 'tender_specialist' | 'admin';
-export type MessageRole = 'user' | 'assistant' | 'system';
+export type ChatRole =
+  | "pto_engineer"
+  | "foreman"
+  | "tender_specialist"
+  | "admin";
+export type MessageRole = "user" | "assistant" | "system";
 
 export interface ChatMessage {
   id: string;
@@ -38,8 +42,8 @@ const createSessionId = () => crypto.randomUUID();
 
 export const useChatStore = create<ChatState>((set, get) => ({
   sessionId: createSessionId(),
-  role: 'pto_engineer',
-  defaultRole: 'pto_engineer',
+  role: "pto_engineer",
+  defaultRole: "pto_engineer",
   messages: [],
   sessions: [],
   isTyping: false,
@@ -66,23 +70,23 @@ export const useChatStore = create<ChatState>((set, get) => ({
   resetSession: () => {
     const prev = get();
     const nextId = createSessionId();
-    const title = prev.messages[0]?.content?.slice(0, 30) || 'Новая сессия';
+    const title = prev.messages[0]?.content?.slice(0, 30) || "Новая сессия";
 
     set({
       sessions: [
         { id: prev.sessionId, title, createdAt: new Date().toISOString() },
-        ...prev.sessions
+        ...prev.sessions,
       ],
       sessionId: nextId,
       messages: [],
-      isTyping: false
+      isTyping: false,
     });
-  }
+  },
 }));
 
 void (async () => {
-  const store = await Store.load('settings.json');
-  const defaultRole = await store.get<ChatRole>('default_role');
+  const store = await Store.load("settings.json");
+  const defaultRole = await store.get<ChatRole>("default_role");
 
   if (defaultRole) {
     useChatStore.setState({ defaultRole, role: defaultRole });

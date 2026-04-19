@@ -1,7 +1,7 @@
-import { type ChangeEvent, useEffect, useMemo, useRef, useState } from 'react';
-import Card from '../components/ui/Card';
-import Button from '../components/ui/Button';
-import TabLayout, { type TabItem } from '../components/TabLayout';
+import { type ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
+import Card from "../components/ui/Card";
+import Button from "../components/ui/Button";
+import TabLayout, { type TabItem } from "../components/TabLayout";
 import {
   deleteGlobalSource,
   ForbiddenError,
@@ -10,37 +10,39 @@ import {
   listGlobalSources,
   listMySources,
   uploadChatDocument,
-  type RagSourceItem
-} from '../api/coreClient';
-import { useAuth } from '../context/AuthContext';
-import { colors, spacing } from '../styles/tokens';
+  type RagSourceItem,
+} from "../api/coreClient";
+import { useAuth } from "../context/AuthContext";
+import { colors, spacing } from "../styles/tokens";
 
-type Mode = 'my' | 'global';
+type Mode = "my" | "global";
 
 const roleBadgeStyle = {
-  display: 'inline-flex',
-  alignItems: 'center',
+  display: "inline-flex",
+  alignItems: "center",
   borderRadius: 999,
   border: `1px solid ${colors.border}`,
-  padding: '4px 10px',
+  padding: "4px 10px",
   fontSize: 13,
-  color: colors.textSecondary
+  color: colors.textSecondary,
 } as const;
 
 export default function KnowledgeBasePage() {
   const { isAdmin } = useAuth();
-  const [activeTab, setActiveTab] = useState<Mode>('my');
+  const [activeTab, setActiveTab] = useState<Mode>("my");
   const [mySources, setMySources] = useState<RagSourceItem[]>([]);
   const [globalSources, setGlobalSources] = useState<RagSourceItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
-  const [message, setMessage] = useState('');
-  const [messageTone, setMessageTone] = useState<'success' | 'warning' | 'error'>('success');
+  const [message, setMessage] = useState("");
+  const [messageTone, setMessageTone] = useState<
+    "success" | "warning" | "error"
+  >("success");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (!isAdmin) {
-      setActiveTab('my');
+      setActiveTab("my");
     }
   }, [isAdmin]);
 
@@ -57,10 +59,14 @@ export default function KnowledgeBasePage() {
       } else {
         setGlobalSources([]);
       }
-      setMessage('');
+      setMessage("");
     } catch (error) {
-      setMessageTone('error');
-      setMessage(error instanceof Error ? error.message : 'Не удалось загрузить источники базы знаний.');
+      setMessageTone("error");
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "Не удалось загрузить источники базы знаний.",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -76,24 +82,26 @@ export default function KnowledgeBasePage() {
 
   const onUpload = async (file: File) => {
     setIsUploading(true);
-    setMessage('');
+    setMessage("");
     try {
       const { apiUrl, apiKey } = await getApiConfig();
-      if (activeTab === 'global') {
+      if (activeTab === "global") {
         await ingestGlobal(apiUrl, apiKey, { file, sourceName: file.name });
       } else {
         const sessionId = `kb-${crypto.randomUUID()}`;
         await uploadChatDocument(apiUrl, apiKey, { file, sessionId });
       }
       await loadSources();
-      setMessageTone('success');
+      setMessageTone("success");
       setMessage(`Файл «${file.name}» загружен.`);
     } catch (error) {
-      setMessageTone('error');
+      setMessageTone("error");
       if (error instanceof ForbiddenError) {
         setMessage(error.message);
       } else {
-        setMessage(error instanceof Error ? error.message : 'Ошибка загрузки файла.');
+        setMessage(
+          error instanceof Error ? error.message : "Ошибка загрузки файла.",
+        );
       }
     } finally {
       setIsUploading(false);
@@ -106,7 +114,7 @@ export default function KnowledgeBasePage() {
       return;
     }
     await onUpload(file);
-    event.target.value = '';
+    event.target.value = "";
   };
 
   const onDeleteSource = async (source: string) => {
@@ -114,11 +122,13 @@ export default function KnowledgeBasePage() {
       const { apiUrl, apiKey } = await getApiConfig();
       await deleteGlobalSource(apiUrl, apiKey, source);
       await loadSources();
-      setMessageTone('success');
+      setMessageTone("success");
       setMessage(`Источник «${source}» удалён.`);
     } catch (error) {
-      setMessageTone('error');
-      setMessage(error instanceof Error ? error.message : 'Не удалось удалить источник.');
+      setMessageTone("error");
+      setMessage(
+        error instanceof Error ? error.message : "Не удалось удалить источник.",
+      );
     }
   };
 
@@ -128,17 +138,45 @@ export default function KnowledgeBasePage() {
     }
 
     if (!sources.length) {
-      return <p style={{ margin: 0, color: colors.warning }}>Источники ещё не загружены.</p>;
+      return (
+        <p style={{ margin: 0, color: colors.warning }}>
+          Источники ещё не загружены.
+        </p>
+      );
     }
 
     return (
-      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+      <table style={{ width: "100%", borderCollapse: "collapse" }}>
         <thead>
           <tr>
-            <th style={{ textAlign: 'left', borderBottom: `1px solid ${colors.border}`, paddingBottom: spacing.xs }}>Источник</th>
-            <th style={{ textAlign: 'left', borderBottom: `1px solid ${colors.border}`, paddingBottom: spacing.xs }}>Чанков</th>
+            <th
+              style={{
+                textAlign: "left",
+                borderBottom: `1px solid ${colors.border}`,
+                paddingBottom: spacing.xs,
+              }}
+            >
+              Источник
+            </th>
+            <th
+              style={{
+                textAlign: "left",
+                borderBottom: `1px solid ${colors.border}`,
+                paddingBottom: spacing.xs,
+              }}
+            >
+              Чанков
+            </th>
             {allowDelete && (
-              <th style={{ textAlign: 'left', borderBottom: `1px solid ${colors.border}`, paddingBottom: spacing.xs }}>Действия</th>
+              <th
+                style={{
+                  textAlign: "left",
+                  borderBottom: `1px solid ${colors.border}`,
+                  paddingBottom: spacing.xs,
+                }}
+              >
+                Действия
+              </th>
             )}
           </tr>
         </thead>
@@ -149,7 +187,10 @@ export default function KnowledgeBasePage() {
               <td style={{ paddingTop: spacing.xs }}>{source.chunks}</td>
               {allowDelete && (
                 <td style={{ paddingTop: spacing.xs }}>
-                  <Button variant="ghost" onClick={() => onDeleteSource(source.source)}>
+                  <Button
+                    variant="ghost"
+                    onClick={() => onDeleteSource(source.source)}
+                  >
                     Удалить источник
                   </Button>
                 </td>
@@ -164,16 +205,16 @@ export default function KnowledgeBasePage() {
   const tabs = useMemo<TabItem[]>(() => {
     const base: TabItem[] = [
       {
-        key: 'my',
-        title: 'Моя база',
-        content: renderTable(mySources, false)
-      }
+        key: "my",
+        title: "Моя база",
+        content: renderTable(mySources, false),
+      },
     ];
     if (isAdmin) {
       base.push({
-        key: 'global',
-        title: 'Глобальная база',
-        content: renderTable(globalSources, true)
+        key: "global",
+        title: "Глобальная база",
+        content: renderTable(globalSources, true),
       });
     }
     return base;
@@ -181,32 +222,68 @@ export default function KnowledgeBasePage() {
 
   return (
     <Card>
-      <div style={{ display: 'grid', gap: spacing.md }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: spacing.sm }}>
+      <div style={{ display: "grid", gap: spacing.md }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: spacing.sm,
+          }}
+        >
           <h2 style={{ margin: 0 }}>База знаний (KB)</h2>
-          <span style={roleBadgeStyle}>Режим: {isAdmin ? 'Администратор' : 'ПТО-инженер'}</span>
+          <span style={roleBadgeStyle}>
+            Режим: {isAdmin ? "Администратор" : "ПТО-инженер"}
+          </span>
         </div>
 
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: spacing.sm, flexWrap: 'wrap' }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: spacing.sm,
+            flexWrap: "wrap",
+          }}
+        >
           <input
             ref={fileInputRef}
             type="file"
             accept=".pdf,.doc,.docx,.xls,.xlsx"
-            style={{ display: 'none' }}
+            style={{ display: "none" }}
             onChange={onFileChange}
           />
-          <Button onClick={onSelectFile} disabled={isUploading || (activeTab === 'global' && !isAdmin)} loading={isUploading}>
-            {isUploading ? 'Загрузка...' : 'Загрузить файл'}
+          <Button
+            onClick={onSelectFile}
+            disabled={isUploading || (activeTab === "global" && !isAdmin)}
+            loading={isUploading}
+          >
+            {isUploading ? "Загрузка..." : "Загрузить файл"}
           </Button>
         </div>
 
         {message && (
-          <p style={{ margin: 0, color: messageTone === 'success' ? colors.success : messageTone === 'warning' ? colors.warning : colors.error }}>
+          <p
+            style={{
+              margin: 0,
+              color:
+                messageTone === "success"
+                  ? colors.success
+                  : messageTone === "warning"
+                    ? colors.warning
+                    : colors.error,
+            }}
+          >
             {message}
           </p>
         )}
 
-        <TabLayout tabs={tabs} activeTab={activeTab} onChange={(tab) => setActiveTab(tab as Mode)} />
+        <TabLayout
+          tabs={tabs}
+          activeTab={activeTab}
+          onChange={(tab) => setActiveTab(tab as Mode)}
+        />
       </div>
     </Card>
   );

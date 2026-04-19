@@ -1,4 +1,4 @@
-export type GSNSectionCode = 'AR' | 'KZH' | 'KM' | 'OV' | 'VK' | 'EM';
+export type GSNSectionCode = "AR" | "KZH" | "KM" | "OV" | "VK" | "EM";
 
 export interface GSNSectionStatus {
   section: GSNSectionCode | string;
@@ -15,7 +15,7 @@ export interface GSNChecklist {
 
 export interface ScheduleRisk {
   title: string;
-  level: 'high' | 'medium' | 'low' | string;
+  level: "high" | "medium" | "low" | string;
   details?: string;
 }
 
@@ -27,4 +27,4 @@ export interface ScheduleForecast {
   recommendations: string[];
 }
 
-export type SignStatus = 'draft' | 'approved' | 'signed';
+export type SignStatus = "draft" | "approved" | "signed";

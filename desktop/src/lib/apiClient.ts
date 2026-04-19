@@ -1,29 +1,44 @@
 export const DEFAULT_CHAT_TIMEOUT_MS = 120_000;
 export const DEFAULT_GENERATION_TIMEOUT_MS = 300_000;
 
-export type ApiErrorCode = 'timeout' | 'cancelled' | 'auth' | 'server' | 'http' | 'network';
+export type ApiErrorCode =
+  | "timeout"
+  | "cancelled"
+  | "auth"
+  | "server"
+  | "http"
+  | "network";
 
 export class ApiRequestError extends Error {
   code: ApiErrorCode;
   endpoint: string;
   status?: number;
 
-  constructor(message: string, code: ApiErrorCode, endpoint: string, status?: number) {
+  constructor(
+    message: string,
+    code: ApiErrorCode,
+    endpoint: string,
+    status?: number,
+  ) {
     super(message);
-    this.name = 'ApiRequestError';
+    this.name = "ApiRequestError";
     this.code = code;
     this.endpoint = endpoint;
     this.status = status;
   }
 }
 
-interface ApiRequestOptions extends Omit<RequestInit, 'signal'> {
+interface ApiRequestOptions extends Omit<RequestInit, "signal"> {
   timeoutMs?: number;
   signal?: AbortSignal;
 }
 
-function combineSignals(...signals: Array<AbortSignal | undefined>): AbortSignal | undefined {
-  const activeSignals = signals.filter((signal): signal is AbortSignal => Boolean(signal));
+function combineSignals(
+  ...signals: Array<AbortSignal | undefined>
+): AbortSignal | undefined {
+  const activeSignals = signals.filter((signal): signal is AbortSignal =>
+    Boolean(signal),
+  );
   if (!activeSignals.length) return undefined;
 
   const controller = new AbortController();
@@ -40,7 +55,7 @@ function combineSignals(...signals: Array<AbortSignal | undefined>): AbortSignal
       return controller.signal;
     }
 
-    signal.addEventListener('abort', abort, { once: true });
+    signal.addEventListener("abort", abort, { once: true });
   }
 
   return controller.signal;
@@ -49,47 +64,54 @@ function combineSignals(...signals: Array<AbortSignal | undefined>): AbortSignal
 async function readResponseBody(response: Response): Promise<string> {
   try {
     const text = await response.text();
-    return text.trim() || '<пустой ответ>';
+    return text.trim() || "<пустой ответ>";
   } catch {
-    return '<пустой ответ>';
+    return "<пустой ответ>";
   }
 }
 
 function formatNetworkMessage(endpoint: string, details?: string): string {
-  const suffix = details ? ` Детали: ${details}` : '';
+  const suffix = details ? ` Детали: ${details}` : "";
   return `Ошибка сети при обращении к ${endpoint}: проверьте интернет, API URL и доступность сервера.${suffix}`;
 }
 
-async function toHttpError(response: Response, endpoint: string): Promise<ApiRequestError> {
+async function toHttpError(
+  response: Response,
+  endpoint: string,
+): Promise<ApiRequestError> {
   const body = await readResponseBody(response);
 
   if (response.status === 401 || response.status === 403) {
     return new ApiRequestError(
       `Ошибка авторизации (${response.status}) для ${endpoint}. Проверьте API Key в настройках клиента и на сервере.`,
-      'auth',
+      "auth",
       endpoint,
-      response.status
+      response.status,
     );
   }
 
   if (response.status >= 500) {
     return new ApiRequestError(
       `Ошибка сервера (${response.status}) для ${endpoint}. Попробуйте повторить запрос позже. Ответ: ${body}`,
-      'server',
+      "server",
       endpoint,
-      response.status
+      response.status,
     );
   }
 
   return new ApiRequestError(
     `HTTP ${response.status} для ${endpoint}. Ответ сервера: ${body}`,
-    'http',
+    "http",
     endpoint,
-    response.status
+    response.status,
   );
 }
 
-export async function apiRequest(apiUrl: string, endpoint: string, options: ApiRequestOptions = {}): Promise<Response> {
+export async function apiRequest(
+  apiUrl: string,
+  endpoint: string,
+  options: ApiRequestOptions = {},
+): Promise<Response> {
   const { timeoutMs, signal, ...init } = options;
   const controller = new AbortController();
   const mergedSignal = combineSignals(signal, controller.signal);
@@ -97,7 +119,7 @@ export async function apiRequest(apiUrl: string, endpoint: string, options: ApiR
   let timeoutId: number | null = null;
   let timedOut = false;
 
-  if (typeof timeoutMs === 'number' && timeoutMs > 0) {
+  if (typeof timeoutMs === "number" && timeoutMs > 0) {
     timeoutId = window.setTimeout(() => {
       timedOut = true;
       controller.abort();
@@ -107,7 +129,7 @@ export async function apiRequest(apiUrl: string, endpoint: string, options: ApiR
   try {
     const response = await fetch(`${apiUrl}${endpoint}`, {
       ...init,
-      signal: mergedSignal
+      signal: mergedSignal,
     });
 
     if (!response.ok) {
@@ -120,20 +142,28 @@ export async function apiRequest(apiUrl: string, endpoint: string, options: ApiR
       throw error;
     }
 
-    if (error instanceof DOMException && error.name === 'AbortError') {
+    if (error instanceof DOMException && error.name === "AbortError") {
       if (timedOut) {
         throw new ApiRequestError(
           `Превышено время ожидания ответа (${Math.round((timeoutMs ?? 0) / 1000)} c) для ${endpoint}.`,
-          'timeout',
-          endpoint
+          "timeout",
+          endpoint,
         );
       }
 
-      throw new ApiRequestError(`Запрос к ${endpoint} был отменён.`, 'cancelled', endpoint);
+      throw new ApiRequestError(
+        `Запрос к ${endpoint} был отменён.`,
+        "cancelled",
+        endpoint,
+      );
     }
 
     const details = error instanceof Error ? error.message : undefined;
-    throw new ApiRequestError(formatNetworkMessage(endpoint, details), 'network', endpoint);
+    throw new ApiRequestError(
+      formatNetworkMessage(endpoint, details),
+      "network",
+      endpoint,
+    );
   } finally {
     if (timeoutId !== null) {
       window.clearTimeout(timeoutId);

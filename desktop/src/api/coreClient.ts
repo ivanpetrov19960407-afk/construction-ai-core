@@ -1,11 +1,11 @@
-import { invoke } from '@tauri-apps/api/core';
-import { Store } from '@tauri-apps/plugin-store';
+import { invoke } from "@tauri-apps/api/core";
+import { Store } from "@tauri-apps/plugin-store";
 import {
   ApiRequestError,
   apiRequest,
   DEFAULT_CHAT_TIMEOUT_MS,
-  DEFAULT_GENERATION_TIMEOUT_MS
-} from '../lib/apiClient';
+  DEFAULT_GENERATION_TIMEOUT_MS,
+} from "../lib/apiClient";
 import type {
   AnalyticsSummaryResponse,
   AuthLoginRequest,
@@ -17,11 +17,11 @@ import type {
   ComplianceRule,
   GenerateEstimateRequest,
   GenerateExecAlbumRequest,
-  GeneratePprRequest
-} from '../types/api';
-import type { ChatRole } from '../store/chatStore';
-import { logError } from '../lib/logger';
-import { parseSSEEvent } from './sseEvents';
+  GeneratePprRequest,
+} from "../types/api";
+import type { ChatRole } from "../store/chatStore";
+import { logError } from "../lib/logger";
+import { parseSSEEvent } from "./sseEvents";
 
 export interface ChatRequest {
   message: string;
@@ -60,7 +60,7 @@ export interface TKRequest {
 }
 
 export interface LetterRequest {
-  letter_type: 'запрос' | 'претензия' | 'уведомление' | 'ответ';
+  letter_type: "запрос" | "претензия" | "уведомление" | "ответ";
   addressee: string;
   subject: string;
   body_points: string[];
@@ -127,7 +127,15 @@ export interface GenerateDocumentResponse {
   session_id?: string;
   [key: string]: unknown;
 }
-export type GenerationStage = 'queued' | 'research' | 'draft' | 'critic' | 'verify' | 'format' | 'done' | 'error';
+export type GenerationStage =
+  | "queued"
+  | "research"
+  | "draft"
+  | "critic"
+  | "verify"
+  | "format"
+  | "done"
+  | "error";
 
 export interface GenerationStreamEvent {
   event: GenerationStage;
@@ -183,27 +191,31 @@ export interface MyProjectItem {
   name: string;
 }
 
-
 export class ForbiddenError extends Error {
   status = 403;
 
-  constructor(message = 'Недостаточно прав. Войдите как admin или используйте “Мою базу”') {
+  constructor(
+    message = "Недостаточно прав. Войдите как admin или используйте “Мою базу”",
+  ) {
     super(message);
-    this.name = 'ForbiddenError';
+    this.name = "ForbiddenError";
   }
 }
 export class SSEError extends Error {
   code: string;
   details?: Record<string, unknown>;
 
-  constructor(code: string, message: string, details?: Record<string, unknown>) {
+  constructor(
+    code: string,
+    message: string,
+    details?: Record<string, unknown>,
+  ) {
     super(message);
-    this.name = 'SSEError';
+    this.name = "SSEError";
     this.code = code;
     this.details = details;
   }
 }
-
 
 export interface TelegramLinkResponse {
   ok: boolean;
@@ -223,17 +235,17 @@ export interface DesktopNotification {
   created_at: string;
 }
 
-export const DEFAULT_API_URL = 'https://vanekpetrov1997.fvds.ru';
+export const DEFAULT_API_URL = "https://vanekpetrov1997.fvds.ru";
 
-const LEGACY_DEFAULT_API_URL = 'http://vanekpetrov1997.fvds.ru';
+const LEGACY_DEFAULT_API_URL = "http://vanekpetrov1997.fvds.ru";
 
 export const normalizeApiUrl = (apiUrl: string) => {
-  const trimmedUrl = apiUrl.trim().replace(/\/+$/, '');
+  const trimmedUrl = apiUrl.trim().replace(/\/+$/, "");
 
   if (
     !trimmedUrl ||
     trimmedUrl === LEGACY_DEFAULT_API_URL ||
-    trimmedUrl === 'http://vanekpetrov1997.fvds.ru'
+    trimmedUrl === "http://vanekpetrov1997.fvds.ru"
   ) {
     return DEFAULT_API_URL;
   }
@@ -246,17 +258,17 @@ async function postJson<TRequest>(
   apiKey: string,
   endpoint: string,
   payload: TRequest,
-  { timeoutMs = DEFAULT_GENERATION_TIMEOUT_MS, signal }: ApiCallOptions = {}
+  { timeoutMs = DEFAULT_GENERATION_TIMEOUT_MS, signal }: ApiCallOptions = {},
 ): Promise<GenerateDocumentResponse> {
   const response = await apiRequest(normalizeApiUrl(apiUrl), endpoint, {
-    method: 'POST',
+    method: "POST",
     headers: {
-      'Content-Type': 'application/json',
-      'X-API-Key': apiKey.trim()
+      "Content-Type": "application/json",
+      "X-API-Key": apiKey.trim(),
     },
     body: JSON.stringify(payload),
     timeoutMs,
-    signal
+    signal,
   });
 
   return (await response.json()) as GenerateDocumentResponse;
@@ -267,16 +279,16 @@ async function postForm(
   apiKey: string,
   endpoint: string,
   payload: FormData,
-  { timeoutMs = DEFAULT_GENERATION_TIMEOUT_MS, signal }: ApiCallOptions = {}
+  { timeoutMs = DEFAULT_GENERATION_TIMEOUT_MS, signal }: ApiCallOptions = {},
 ): Promise<GenerateDocumentResponse> {
   const response = await apiRequest(normalizeApiUrl(apiUrl), endpoint, {
-    method: 'POST',
+    method: "POST",
     headers: {
-      'X-API-Key': apiKey.trim()
+      "X-API-Key": apiKey.trim(),
     },
     body: payload,
     timeoutMs,
-    signal
+    signal,
   });
 
   return (await response.json()) as GenerateDocumentResponse;
@@ -291,7 +303,7 @@ function parseError(error: unknown): never {
     throw error;
   }
 
-  throw new Error('Неизвестная ошибка запроса.');
+  throw new Error("Неизвестная ошибка запроса.");
 }
 
 async function postJsonSSE<TRequest>(
@@ -300,29 +312,33 @@ async function postJsonSSE<TRequest>(
   endpoint: string,
   payload: TRequest,
   onEvent: (event: GenerationStreamEvent) => void,
-  { timeoutMs, signal }: ApiCallOptions = {}
+  { timeoutMs, signal }: ApiCallOptions = {},
 ): Promise<GenerateDocumentResponse> {
   const controller = new AbortController();
   const timeoutId =
-    typeof timeoutMs === 'number' && timeoutMs > 0 ? window.setTimeout(() => controller.abort(), timeoutMs) : null;
+    typeof timeoutMs === "number" && timeoutMs > 0
+      ? window.setTimeout(() => controller.abort(), timeoutMs)
+      : null;
   if (signal) {
     if (signal.aborted) {
       controller.abort();
     } else {
-      signal.addEventListener('abort', () => controller.abort(), { once: true });
+      signal.addEventListener("abort", () => controller.abort(), {
+        once: true,
+      });
     }
   }
 
   try {
     const response = await fetch(`${normalizeApiUrl(apiUrl)}${endpoint}`, {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
-        Accept: 'text/event-stream',
-        'X-API-Key': apiKey.trim()
+        "Content-Type": "application/json",
+        Accept: "text/event-stream",
+        "X-API-Key": apiKey.trim(),
       },
       body: JSON.stringify(payload),
-      signal: controller.signal
+      signal: controller.signal,
     });
 
     if (!response.ok || !response.body) {
@@ -331,15 +347,15 @@ async function postJsonSSE<TRequest>(
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
-    let buffer = '';
+    let buffer = "";
 
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
 
-      while (buffer.includes('\n\n')) {
-        const splitAt = buffer.indexOf('\n\n');
+      while (buffer.includes("\n\n")) {
+        const splitAt = buffer.indexOf("\n\n");
         const rawEvent = buffer.slice(0, splitAt);
         buffer = buffer.slice(splitAt + 2);
 
@@ -348,25 +364,30 @@ async function postJsonSSE<TRequest>(
           continue;
         }
 
-        if (parsedEvent.event === 'error') {
-          logError('sse_error_event', {
+        if (parsedEvent.event === "error") {
+          logError("sse_error_event", {
             code: parsedEvent.code,
             message: parsedEvent.message,
             details: parsedEvent.details,
-            endpoint
+            endpoint,
           });
-          throw new SSEError(parsedEvent.code, parsedEvent.message, parsedEvent.details);
+          throw new SSEError(
+            parsedEvent.code,
+            parsedEvent.message,
+            parsedEvent.details,
+          );
         }
 
-        const stage = (parsedEvent.stage ?? parsedEvent.event) as GenerationStage;
+        const stage = (parsedEvent.stage ??
+          parsedEvent.event) as GenerationStage;
         onEvent({
           event: stage,
           stage,
           progress: parsedEvent.progress ?? 0,
-          message: parsedEvent.message
+          message: parsedEvent.message,
         });
 
-        if (parsedEvent.event === 'done' && parsedEvent.result) {
+        if (parsedEvent.event === "done" && parsedEvent.result) {
           return parsedEvent.result;
         }
       }
@@ -375,20 +396,21 @@ async function postJsonSSE<TRequest>(
     if (timeoutId !== null) window.clearTimeout(timeoutId);
   }
 
-  throw new SSEError('internal', 'Поток генерации завершился без результата');
+  throw new SSEError("internal", "Поток генерации завершился без результата");
 }
 
-
 export async function getApiConfig(): Promise<ApiConfig> {
-  const store = await Store.load('settings.json');
-  const savedUrl = await store.get<string>('api_url');
-  const fallbackUrl = (await invoke<string>('get_api_url')) || DEFAULT_API_URL;
+  const store = await Store.load("settings.json");
+  const savedUrl = await store.get<string>("api_url");
+  const fallbackUrl = (await invoke<string>("get_api_url")) || DEFAULT_API_URL;
   const apiUrl = normalizeApiUrl(savedUrl || fallbackUrl || DEFAULT_API_URL);
-  const apiKey = ((await store.get<string>('api_key')) || '').trim();
+  const apiKey = ((await store.get<string>("api_key")) || "").trim();
 
-  const isDev = Boolean((import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV);
+  const isDev = Boolean(
+    (import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV,
+  );
   if (isDev) {
-    console.debug('[API] url=', apiUrl, 'keyLen=', apiKey.length);
+    console.debug("[API] url=", apiUrl, "keyLen=", apiKey.length);
   }
 
   return { apiUrl, apiKey };
@@ -398,18 +420,18 @@ export async function sendChatMessage(
   apiUrl: string,
   apiKey: string,
   payload: ChatRequest,
-  { timeoutMs = DEFAULT_CHAT_TIMEOUT_MS, signal }: ApiCallOptions = {}
+  { timeoutMs = DEFAULT_CHAT_TIMEOUT_MS, signal }: ApiCallOptions = {},
 ): Promise<ChatResponse> {
-  const endpoint = '/api/chat';
+  const endpoint = "/api/chat";
   const response = await apiRequest(normalizeApiUrl(apiUrl), endpoint, {
-    method: 'POST',
+    method: "POST",
     headers: {
-      'Content-Type': 'application/json',
-      'X-API-Key': apiKey.trim()
+      "Content-Type": "application/json",
+      "X-API-Key": apiKey.trim(),
     },
     body: JSON.stringify(payload),
     timeoutMs,
-    signal
+    signal,
   });
 
   return (await response.json()) as ChatResponse;
@@ -419,31 +441,38 @@ export async function sendChatMessageStream(
   apiUrl: string,
   apiKey: string,
   payload: ChatRequest,
-  onEvent: (event: import('./sseEvents').SSEEvent) => void,
-  { timeoutMs = DEFAULT_CHAT_TIMEOUT_MS, signal }: ApiCallOptions = {}
+  onEvent: (event: import("./sseEvents").SSEEvent) => void,
+  { timeoutMs = DEFAULT_CHAT_TIMEOUT_MS, signal }: ApiCallOptions = {},
 ): Promise<ChatResponse> {
   const controller = new AbortController();
   const timeoutId =
-    typeof timeoutMs === 'number' && timeoutMs > 0 ? window.setTimeout(() => controller.abort(), timeoutMs) : null;
+    typeof timeoutMs === "number" && timeoutMs > 0
+      ? window.setTimeout(() => controller.abort(), timeoutMs)
+      : null;
   if (signal) {
     if (signal.aborted) {
       controller.abort();
     } else {
-      signal.addEventListener('abort', () => controller.abort(), { once: true });
+      signal.addEventListener("abort", () => controller.abort(), {
+        once: true,
+      });
     }
   }
 
   try {
-    const response = await fetch(`${normalizeApiUrl(apiUrl)}/api/chat?stream=true`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'text/event-stream',
-        'X-API-Key': apiKey.trim()
+    const response = await fetch(
+      `${normalizeApiUrl(apiUrl)}/api/chat?stream=true`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "text/event-stream",
+          "X-API-Key": apiKey.trim(),
+        },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
       },
-      body: JSON.stringify(payload),
-      signal: controller.signal
-    });
+    );
 
     if (!response.ok || !response.body) {
       throw new Error(`SSE HTTP error: ${response.status}`);
@@ -451,15 +480,15 @@ export async function sendChatMessageStream(
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
-    let buffer = '';
+    let buffer = "";
 
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
 
-      while (buffer.includes('\n\n')) {
-        const splitAt = buffer.indexOf('\n\n');
+      while (buffer.includes("\n\n")) {
+        const splitAt = buffer.indexOf("\n\n");
         const rawEvent = buffer.slice(0, splitAt);
         buffer = buffer.slice(splitAt + 2);
 
@@ -467,10 +496,14 @@ export async function sendChatMessageStream(
         if (!parsedEvent) continue;
         onEvent(parsedEvent);
 
-        if (parsedEvent.event === 'error') {
-          throw new SSEError(parsedEvent.code, parsedEvent.message, parsedEvent.details);
+        if (parsedEvent.event === "error") {
+          throw new SSEError(
+            parsedEvent.code,
+            parsedEvent.message,
+            parsedEvent.details,
+          );
         }
-        if (parsedEvent.event === 'done' && parsedEvent.result) {
+        if (parsedEvent.event === "done" && parsedEvent.result) {
           return parsedEvent.result as unknown as ChatResponse;
         }
       }
@@ -479,7 +512,7 @@ export async function sendChatMessageStream(
     if (timeoutId !== null) window.clearTimeout(timeoutId);
   }
 
-  throw new SSEError('internal', 'Поток чата завершился без результата');
+  throw new SSEError("internal", "Поток чата завершился без результата");
 }
 
 export async function uploadChatDocument(
@@ -489,23 +522,23 @@ export async function uploadChatDocument(
     file: File;
     sessionId: string;
   },
-  { timeoutMs = DEFAULT_GENERATION_TIMEOUT_MS, signal }: ApiCallOptions = {}
+  { timeoutMs = DEFAULT_GENERATION_TIMEOUT_MS, signal }: ApiCallOptions = {},
 ): Promise<UploadChatDocumentResponse> {
   try {
-    const endpoint = '/api/rag/chat-upload';
+    const endpoint = "/api/rag/chat-upload";
     const formData = new FormData();
-    formData.append('file', payload.file, payload.file.name);
-    formData.append('source_name', payload.file.name);
-    formData.append('session_id', payload.sessionId);
+    formData.append("file", payload.file, payload.file.name);
+    formData.append("source_name", payload.file.name);
+    formData.append("session_id", payload.sessionId);
 
     const response = await apiRequest(normalizeApiUrl(apiUrl), endpoint, {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'X-API-Key': apiKey.trim()
+        "X-API-Key": apiKey.trim(),
       },
       body: formData,
       timeoutMs,
-      signal
+      signal,
     });
 
     return (await response.json()) as UploadChatDocumentResponse;
@@ -521,22 +554,22 @@ export async function ingestGlobal(
     file: File;
     sourceName?: string;
   },
-  { timeoutMs = DEFAULT_GENERATION_TIMEOUT_MS, signal }: ApiCallOptions = {}
+  { timeoutMs = DEFAULT_GENERATION_TIMEOUT_MS, signal }: ApiCallOptions = {},
 ): Promise<UploadChatDocumentResponse> {
   try {
-    const endpoint = '/api/rag/ingest';
+    const endpoint = "/api/rag/ingest";
     const formData = new FormData();
-    formData.append('file', payload.file, payload.file.name);
-    formData.append('source_name', payload.sourceName || payload.file.name);
+    formData.append("file", payload.file, payload.file.name);
+    formData.append("source_name", payload.sourceName || payload.file.name);
 
     const response = await apiRequest(normalizeApiUrl(apiUrl), endpoint, {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'X-API-Key': apiKey.trim()
+        "X-API-Key": apiKey.trim(),
       },
       body: formData,
       timeoutMs,
-      signal
+      signal,
     });
     return (await response.json()) as UploadChatDocumentResponse;
   } catch (error) {
@@ -547,17 +580,21 @@ export async function ingestGlobal(
 export async function listMySources(
   apiUrl: string,
   apiKey: string,
-  { timeoutMs, signal }: ApiCallOptions = {}
+  { timeoutMs, signal }: ApiCallOptions = {},
 ): Promise<RagSourceItem[]> {
   try {
-    const response = await apiRequest(normalizeApiUrl(apiUrl), '/api/rag/my-sources', {
-      method: 'GET',
-      headers: {
-        'X-API-Key': apiKey.trim()
+    const response = await apiRequest(
+      normalizeApiUrl(apiUrl),
+      "/api/rag/my-sources",
+      {
+        method: "GET",
+        headers: {
+          "X-API-Key": apiKey.trim(),
+        },
+        timeoutMs,
+        signal,
       },
-      timeoutMs,
-      signal
-    });
+    );
     const payload = (await response.json()) as { sources?: RagSourceItem[] };
     return Array.isArray(payload.sources) ? payload.sources : [];
   } catch (error) {
@@ -568,17 +605,21 @@ export async function listMySources(
 export async function listGlobalSources(
   apiUrl: string,
   apiKey: string,
-  { timeoutMs, signal }: ApiCallOptions = {}
+  { timeoutMs, signal }: ApiCallOptions = {},
 ): Promise<RagSourceItem[]> {
   try {
-    const response = await apiRequest(normalizeApiUrl(apiUrl), '/api/rag/sources', {
-      method: 'GET',
-      headers: {
-        'X-API-Key': apiKey.trim()
+    const response = await apiRequest(
+      normalizeApiUrl(apiUrl),
+      "/api/rag/sources",
+      {
+        method: "GET",
+        headers: {
+          "X-API-Key": apiKey.trim(),
+        },
+        timeoutMs,
+        signal,
       },
-      timeoutMs,
-      signal
-    });
+    );
     const payload = (await response.json()) as { sources?: RagSourceItem[] };
     return Array.isArray(payload.sources) ? payload.sources : [];
   } catch (error) {
@@ -590,17 +631,17 @@ export async function deleteGlobalSource(
   apiUrl: string,
   apiKey: string,
   source: string,
-  { timeoutMs, signal }: ApiCallOptions = {}
+  { timeoutMs, signal }: ApiCallOptions = {},
 ): Promise<{ deleted: number; source: string }> {
   try {
     const endpoint = `/api/rag/sources/${encodeURIComponent(source)}`;
     const response = await apiRequest(normalizeApiUrl(apiUrl), endpoint, {
-      method: 'DELETE',
+      method: "DELETE",
       headers: {
-        'X-API-Key': apiKey.trim()
+        "X-API-Key": apiKey.trim(),
       },
       timeoutMs,
-      signal
+      signal,
     });
     return (await response.json()) as { deleted: number; source: string };
   } catch (error) {
@@ -611,16 +652,16 @@ export async function deleteGlobalSource(
 export async function getMe(
   apiUrl: string,
   apiKey: string,
-  { timeoutMs, signal }: ApiCallOptions = {}
+  { timeoutMs, signal }: ApiCallOptions = {},
 ): Promise<MeResponse> {
   try {
-    const response = await apiRequest(normalizeApiUrl(apiUrl), '/api/me', {
-      method: 'GET',
+    const response = await apiRequest(normalizeApiUrl(apiUrl), "/api/me", {
+      method: "GET",
       headers: {
-        'X-API-Key': apiKey.trim()
+        "X-API-Key": apiKey.trim(),
       },
       timeoutMs,
-      signal
+      signal,
     });
     return (await response.json()) as MeResponse;
   } catch (error) {
@@ -628,28 +669,34 @@ export async function getMe(
   }
 }
 
-
 export async function listMyProjects(
   apiUrl: string,
   apiKey: string,
-  { timeoutMs, signal }: ApiCallOptions = {}
+  { timeoutMs, signal }: ApiCallOptions = {},
 ): Promise<MyProjectItem[]> {
-  const response = await apiRequest(normalizeApiUrl(apiUrl), '/api/projects/mine', {
-    method: 'GET',
-    headers: {
-      'X-API-Key': apiKey.trim()
+  const response = await apiRequest(
+    normalizeApiUrl(apiUrl),
+    "/api/projects/mine",
+    {
+      method: "GET",
+      headers: {
+        "X-API-Key": apiKey.trim(),
+      },
+      timeoutMs,
+      signal,
     },
-    timeoutMs,
-    signal
-  });
+  );
   const payload = (await response.json()) as { projects?: MyProjectItem[] };
   return Array.isArray(payload.projects) ? payload.projects : [];
 }
 
-export async function checkHealth(apiUrl: string, { timeoutMs, signal }: ApiCallOptions = {}): Promise<HealthResponse> {
-  const response = await apiRequest(normalizeApiUrl(apiUrl), '/health', {
+export async function checkHealth(
+  apiUrl: string,
+  { timeoutMs, signal }: ApiCallOptions = {},
+): Promise<HealthResponse> {
+  const response = await apiRequest(normalizeApiUrl(apiUrl), "/health", {
     timeoutMs,
-    signal
+    signal,
   });
   return (await response.json()) as HealthResponse;
 }
@@ -658,18 +705,22 @@ export async function linkTelegramAccount(
   apiUrl: string,
   apiKey: string,
   payload: { code: string; user_id: string; session_id: string },
-  { timeoutMs, signal }: ApiCallOptions = {}
+  { timeoutMs, signal }: ApiCallOptions = {},
 ): Promise<TelegramLinkResponse> {
-  const response = await apiRequest(normalizeApiUrl(apiUrl), '/api/link/telegram', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-API-Key': apiKey.trim()
+  const response = await apiRequest(
+    normalizeApiUrl(apiUrl),
+    "/api/link/telegram",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-API-Key": apiKey.trim(),
+      },
+      body: JSON.stringify(payload),
+      timeoutMs,
+      signal,
     },
-    body: JSON.stringify(payload),
-    timeoutMs,
-    signal
-  });
+  );
   return (await response.json()) as TelegramLinkResponse;
 }
 
@@ -677,41 +728,55 @@ export async function fetchNotifications(
   apiUrl: string,
   apiKey: string,
   userId: string,
-  { timeoutMs, signal }: ApiCallOptions = {}
+  { timeoutMs, signal }: ApiCallOptions = {},
 ): Promise<DesktopNotification[]> {
   const endpoint = `/api/notifications?user_id=${encodeURIComponent(userId)}`;
   const response = await apiRequest(normalizeApiUrl(apiUrl), endpoint, {
-    method: 'GET',
+    method: "GET",
     headers: {
-      'X-API-Key': apiKey.trim()
+      "X-API-Key": apiKey.trim(),
     },
     timeoutMs,
-    signal
+    signal,
   });
-  const data = (await response.json()) as { notifications?: DesktopNotification[] };
+  const data = (await response.json()) as {
+    notifications?: DesktopNotification[];
+  };
   return Array.isArray(data.notifications) ? data.notifications : [];
 }
 
-export function generateTK(apiUrl: string, apiKey: string, payload: TKRequest, options?: ApiCallOptions) {
-  return postJson(apiUrl, apiKey, '/api/generate/tk', payload, options);
+export function generateTK(
+  apiUrl: string,
+  apiKey: string,
+  payload: TKRequest,
+  options?: ApiCallOptions,
+) {
+  return postJson(apiUrl, apiKey, "/api/generate/tk", payload, options);
 }
 export function generateTKStream(
   apiUrl: string,
   apiKey: string,
   payload: TKRequest,
   onEvent: (event: GenerationStreamEvent) => void,
-  options?: ApiCallOptions
+  options?: ApiCallOptions,
 ) {
-  return postJsonSSE(apiUrl, apiKey, '/api/generate/tk?stream=true', payload, onEvent, options);
+  return postJsonSSE(
+    apiUrl,
+    apiKey,
+    "/api/generate/tk?stream=true",
+    payload,
+    onEvent,
+    options,
+  );
 }
 
 export function generateLetter(
   apiUrl: string,
   apiKey: string,
   payload: LetterRequest,
-  options?: ApiCallOptions
+  options?: ApiCallOptions,
 ) {
-  return postJson(apiUrl, apiKey, '/api/generate/letter', payload, options);
+  return postJson(apiUrl, apiKey, "/api/generate/letter", payload, options);
 }
 
 export function generateLetterStream(
@@ -719,38 +784,63 @@ export function generateLetterStream(
   apiKey: string,
   payload: LetterRequest,
   onEvent: (event: GenerationStreamEvent) => void,
-  options?: ApiCallOptions
+  options?: ApiCallOptions,
 ) {
-  return postJsonSSE(apiUrl, apiKey, '/api/generate/letter?stream=true', payload, onEvent, options);
+  return postJsonSSE(
+    apiUrl,
+    apiKey,
+    "/api/generate/letter?stream=true",
+    payload,
+    onEvent,
+    options,
+  );
 }
 
-export function generateKS(apiUrl: string, apiKey: string, payload: KSRequest, options?: ApiCallOptions) {
-  return postJson(apiUrl, apiKey, '/api/generate/ks', payload, options) as Promise<KSGenerationResponse>;
+export function generateKS(
+  apiUrl: string,
+  apiKey: string,
+  payload: KSRequest,
+  options?: ApiCallOptions,
+) {
+  return postJson(
+    apiUrl,
+    apiKey,
+    "/api/generate/ks",
+    payload,
+    options,
+  ) as Promise<KSGenerationResponse>;
 }
 export function generateKSStream(
   apiUrl: string,
   apiKey: string,
   payload: KSRequest,
   onEvent: (event: GenerationStreamEvent) => void,
-  options?: ApiCallOptions
+  options?: ApiCallOptions,
 ) {
-  return postJsonSSE(apiUrl, apiKey, '/api/generate/ks?stream=true', payload, onEvent, options) as Promise<KSGenerationResponse>;
+  return postJsonSSE(
+    apiUrl,
+    apiKey,
+    "/api/generate/ks?stream=true",
+    payload,
+    onEvent,
+    options,
+  ) as Promise<KSGenerationResponse>;
 }
 
 export async function downloadTKDocx(
   apiUrl: string,
   apiKey: string,
   sessionId: string,
-  { timeoutMs, signal }: ApiCallOptions = {}
+  { timeoutMs, signal }: ApiCallOptions = {},
 ): Promise<Blob> {
   const endpoint = `/api/generate/tk/${encodeURIComponent(sessionId)}/download`;
   const response = await apiRequest(normalizeApiUrl(apiUrl), endpoint, {
-    method: 'GET',
+    method: "GET",
     headers: {
-      'X-API-Key': apiKey.trim()
+      "X-API-Key": apiKey.trim(),
     },
     timeoutMs,
-    signal
+    signal,
   });
 
   return await response.blob();
@@ -760,16 +850,16 @@ export async function downloadLetterDocx(
   apiUrl: string,
   apiKey: string,
   sessionId: string,
-  { timeoutMs, signal }: ApiCallOptions = {}
+  { timeoutMs, signal }: ApiCallOptions = {},
 ): Promise<Blob> {
   const endpoint = `/api/generate/letter/${encodeURIComponent(sessionId)}/download`;
   const response = await apiRequest(normalizeApiUrl(apiUrl), endpoint, {
-    method: 'GET',
+    method: "GET",
     headers: {
-      'X-API-Key': apiKey.trim()
+      "X-API-Key": apiKey.trim(),
     },
     timeoutMs,
-    signal
+    signal,
   });
 
   return await response.blob();
@@ -779,16 +869,16 @@ export async function downloadKSDocx(
   apiUrl: string,
   apiKey: string,
   sessionId: string,
-  { timeoutMs, signal }: ApiCallOptions = {}
+  { timeoutMs, signal }: ApiCallOptions = {},
 ): Promise<Blob> {
   const endpoint = `/api/generate/ks/${encodeURIComponent(sessionId)}/download`;
   const response = await apiRequest(normalizeApiUrl(apiUrl), endpoint, {
-    method: 'GET',
+    method: "GET",
     headers: {
-      'X-API-Key': apiKey.trim()
+      "X-API-Key": apiKey.trim(),
     },
     timeoutMs,
-    signal
+    signal,
   });
 
   return await response.blob();
@@ -799,9 +889,16 @@ export function generatePpr(
   apiKey: string,
   payload: GeneratePprRequest,
   onEvent: (event: GenerationStreamEvent) => void,
-  options?: ApiCallOptions
+  options?: ApiCallOptions,
 ) {
-  return postJsonSSE(apiUrl, apiKey, '/api/generate/ppr?stream=true', payload, onEvent, options);
+  return postJsonSSE(
+    apiUrl,
+    apiKey,
+    "/api/generate/ppr?stream=true",
+    payload,
+    onEvent,
+    options,
+  );
 }
 
 export function generateEstimate(
@@ -809,20 +906,30 @@ export function generateEstimate(
   apiKey: string,
   payload: GenerateEstimateRequest,
   onEvent: (event: GenerationStreamEvent) => void,
-  options?: ApiCallOptions
+  options?: ApiCallOptions,
 ) {
-  return postJsonSSE(apiUrl, apiKey, '/api/generate/estimate?stream=true', payload, onEvent, options);
+  return postJsonSSE(
+    apiUrl,
+    apiKey,
+    "/api/generate/estimate?stream=true",
+    payload,
+    onEvent,
+    options,
+  );
 }
 
 export async function analyzeDocument(
   apiUrl: string,
   apiKey: string,
   file: File,
-  { timeoutMs = DEFAULT_GENERATION_TIMEOUT_MS, signal }: ApiCallOptions = {}
+  { timeoutMs = DEFAULT_GENERATION_TIMEOUT_MS, signal }: ApiCallOptions = {},
 ) {
   const form = new FormData();
-  form.append('file', file, file.name);
-  return postForm(apiUrl, apiKey, '/api/analyze/document', form, { timeoutMs, signal });
+  form.append("file", file, file.name);
+  return postForm(apiUrl, apiKey, "/api/analyze/document", form, {
+    timeoutMs,
+    signal,
+  });
 }
 
 export function generateExecAlbum(
@@ -830,109 +937,147 @@ export function generateExecAlbum(
   apiKey: string,
   payload: GenerateExecAlbumRequest,
   onEvent: (event: GenerationStreamEvent) => void,
-  options?: ApiCallOptions
+  options?: ApiCallOptions,
 ) {
-  return postJsonSSE(apiUrl, apiKey, '/api/generate/exec-album?stream=true', payload, onEvent, options);
+  return postJsonSSE(
+    apiUrl,
+    apiKey,
+    "/api/generate/exec-album?stream=true",
+    payload,
+    onEvent,
+    options,
+  );
 }
 
 export async function getAnalyticsSummary(
   apiUrl: string,
   apiKey: string,
-  { timeoutMs, signal }: ApiCallOptions = {}
+  { timeoutMs, signal }: ApiCallOptions = {},
 ): Promise<AnalyticsSummaryResponse> {
-  const response = await apiRequest(normalizeApiUrl(apiUrl), '/api/analytics/summary', {
-    method: 'GET',
-    headers: {
-      'X-API-Key': apiKey.trim()
+  const response = await apiRequest(
+    normalizeApiUrl(apiUrl),
+    "/api/analytics/summary",
+    {
+      method: "GET",
+      headers: {
+        "X-API-Key": apiKey.trim(),
+      },
+      timeoutMs,
+      signal,
     },
-    timeoutMs,
-    signal
-  });
+  );
   return (await response.json()) as AnalyticsSummaryResponse;
 }
 
 export async function listCompliance(
   apiUrl: string,
   apiKey: string,
-  { timeoutMs, signal }: ApiCallOptions = {}
+  { timeoutMs, signal }: ApiCallOptions = {},
 ): Promise<ComplianceRule[]> {
-  const response = await apiRequest(normalizeApiUrl(apiUrl), '/api/compliance/rules', {
-    method: 'GET',
-    headers: {
-      'X-API-Key': apiKey.trim()
+  const response = await apiRequest(
+    normalizeApiUrl(apiUrl),
+    "/api/compliance/rules",
+    {
+      method: "GET",
+      headers: {
+        "X-API-Key": apiKey.trim(),
+      },
+      timeoutMs,
+      signal,
     },
-    timeoutMs,
-    signal
-  });
-  const payload = (await response.json()) as { items?: ComplianceRule[]; rules?: ComplianceRule[] };
-  return Array.isArray(payload.items) ? payload.items : Array.isArray(payload.rules) ? payload.rules : [];
+  );
+  const payload = (await response.json()) as {
+    items?: ComplianceRule[];
+    rules?: ComplianceRule[];
+  };
+  return Array.isArray(payload.items)
+    ? payload.items
+    : Array.isArray(payload.rules)
+      ? payload.rules
+      : [];
 }
 
 export async function checkCompliance(
   apiUrl: string,
   apiKey: string,
   payload: ComplianceCheckRequest,
-  { timeoutMs = DEFAULT_GENERATION_TIMEOUT_MS, signal }: ApiCallOptions = {}
+  { timeoutMs = DEFAULT_GENERATION_TIMEOUT_MS, signal }: ApiCallOptions = {},
 ): Promise<ComplianceCheckResponse> {
-  const response = await apiRequest(normalizeApiUrl(apiUrl), '/api/compliance/check', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-API-Key': apiKey.trim()
+  const response = await apiRequest(
+    normalizeApiUrl(apiUrl),
+    "/api/compliance/check",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-API-Key": apiKey.trim(),
+      },
+      body: JSON.stringify(payload),
+      timeoutMs,
+      signal,
     },
-    body: JSON.stringify(payload),
-    timeoutMs,
-    signal
-  });
+  );
   return (await response.json()) as ComplianceCheckResponse;
 }
 
 export async function login(
   apiUrl: string,
   payload: AuthLoginRequest,
-  { timeoutMs, signal }: ApiCallOptions = {}
+  { timeoutMs, signal }: ApiCallOptions = {},
 ): Promise<AuthTokenResponse> {
-  const response = await apiRequest(normalizeApiUrl(apiUrl), '/api/auth/login', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
+  const response = await apiRequest(
+    normalizeApiUrl(apiUrl),
+    "/api/auth/login",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+      timeoutMs,
+      signal,
     },
-    body: JSON.stringify(payload),
-    timeoutMs,
-    signal
-  });
+  );
   return (await response.json()) as AuthTokenResponse;
 }
 
 export async function register(
   apiUrl: string,
   payload: AuthRegisterRequest,
-  { timeoutMs, signal }: ApiCallOptions = {}
+  { timeoutMs, signal }: ApiCallOptions = {},
 ): Promise<AuthTokenResponse> {
-  const response = await apiRequest(normalizeApiUrl(apiUrl), '/api/auth/register', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
+  const response = await apiRequest(
+    normalizeApiUrl(apiUrl),
+    "/api/auth/register",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+      timeoutMs,
+      signal,
     },
-    body: JSON.stringify(payload),
-    timeoutMs,
-    signal
-  });
+  );
   return (await response.json()) as AuthTokenResponse;
 }
 
 export async function getQuotas(
   apiUrl: string,
   apiKey: string,
-  { timeoutMs, signal }: ApiCallOptions = {}
+  { timeoutMs, signal }: ApiCallOptions = {},
 ): Promise<BillingQuotaResponse> {
-  const response = await apiRequest(normalizeApiUrl(apiUrl), '/api/billing/quotas', {
-    method: 'GET',
-    headers: {
-      'X-API-Key': apiKey.trim()
+  const response = await apiRequest(
+    normalizeApiUrl(apiUrl),
+    "/api/billing/quotas",
+    {
+      method: "GET",
+      headers: {
+        "X-API-Key": apiKey.trim(),
+      },
+      timeoutMs,
+      signal,
     },
-    timeoutMs,
-    signal
-  });
+  );
   return (await response.json()) as BillingQuotaResponse;
 }
