@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from datetime import datetime, timezone
 
 from api.security import JWTError, decode_jwt, encode_jwt
@@ -13,6 +14,8 @@ if hasattr(datetime, "UTC"):
 else:  # pragma: no cover
     UTC = timezone.utc  # noqa: UP017
 
+TELEGRAM_LINK_TOKEN_TTL_SECONDS = 10 * 60
+
 
 class InvalidTelegramLinkTokenError(ValueError):
     """Raised when telegram link token cannot be validated."""
@@ -20,10 +23,13 @@ class InvalidTelegramLinkTokenError(ValueError):
 
 def issue_telegram_link_token(telegram_user_id: int, session_id: str) -> str:
     """Create a short-lived token that desktop can exchange via /api/link/telegram."""
+    now = int(time.time())
     payload: dict[str, object] = {
         "kind": "telegram_link",
         "telegram_user_id": str(telegram_user_id),
         "session_id": session_id,
+        "iat": now,
+        "exp": now + TELEGRAM_LINK_TOKEN_TTL_SECONDS,
     }
     return encode_jwt(payload, settings.jwt_secret)
 
@@ -97,10 +103,10 @@ async def create_document_ready_notification_for_session(*, session_id: str, doc
             """
             SELECT telegram_user_id, user_id, session_id
             FROM telegram_session_links
-            WHERE telegram_user_id = ? OR session_id = ?
+            WHERE telegram_user_id = ?
             LIMIT 1
             """,
-            (session_id, session_id),
+            (session_id,),
         )
         row = await cursor.fetchone()
 
