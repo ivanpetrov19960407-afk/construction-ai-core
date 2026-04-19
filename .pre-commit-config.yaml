@@ -1,0 +1,53 @@
+default_stages: [pre-commit]
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        name: ruff (core/api)
+        files: ^(core|api)/.*\.py$
+      - id: ruff-format
+        name: ruff-format (core/api)
+        files: ^(core|api)/.*\.py$
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.11.2
+    hooks:
+      - id: mypy
+        name: mypy --strict (core/api)
+        files: ^(core|api)/.*\.py$
+        args: [core/, api/]
+        pass_filenames: false
+
+  - repo: local
+    hooks:
+      - id: desktop-prettier
+        name: prettier (desktop)
+        entry: npm --prefix desktop run format:check
+        language: system
+        files: ^desktop/.*\.(js|jsx|ts|tsx|json|css|scss|md|html)$
+        pass_filenames: false
+
+      - id: desktop-eslint
+        name: eslint (desktop)
+        entry: npm --prefix desktop run lint:eslint
+        language: system
+        files: ^desktop/.*\.(ts|tsx|js|jsx)$
+        pass_filenames: false
+
+      - id: tauri-fmt
+        name: cargo fmt --check (desktop/src-tauri)
+        entry: bash -c 'cd desktop/src-tauri && cargo fmt --all -- --check'
+        language: system
+        files: ^desktop/src-tauri/
+        pass_filenames: false
+        stages: [manual]
+
+      - id: tauri-clippy
+        name: cargo clippy -D warnings (desktop/src-tauri)
+        entry: bash -c 'cd desktop/src-tauri && cargo clippy -- -D warnings'
+        language: system
+        files: ^desktop/src-tauri/
+        pass_filenames: false
+        stages: [manual]

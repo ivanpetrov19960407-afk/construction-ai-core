@@ -10,7 +10,7 @@ import {
   checkHealth,
   linkTelegramAccount,
   normalizeApiUrl,
-  type HealthResponse
+  type HealthResponse,
 } from '../api/coreClient';
 import { useChatStore, type ChatRole } from '../store/chatStore';
 import { useServerStatusStore } from '../store/serverStatusStore';
@@ -26,25 +26,26 @@ const statusColor: Record<ConnectionStatus['tone'], string> = {
   checking: colors.primary,
   success: colors.success,
   warning: colors.warning,
-  error: colors.error
+  error: colors.error,
 };
 
 const ROLE_OPTIONS: Array<{ value: ChatRole; label: string }> = [
   { value: 'pto_engineer', label: 'ПТО-инженер' },
   { value: 'foreman', label: 'Прораб' },
   { value: 'tender_specialist', label: 'Тендерный специалист' },
-  { value: 'admin', label: 'Администратор' }
+  { value: 'admin', label: 'Администратор' },
 ];
 
 const COMPONENT_LABELS: Record<string, string> = {
   database: 'База данных',
   rag_engine: 'RAG движок',
   llm_router: 'LLM роутер',
-  telegram_webhook: 'Telegram'
+  telegram_webhook: 'Telegram',
 };
 
 const APP_VERSION =
-  (import.meta as ImportMeta & { env?: { VITE_APP_VERSION?: string } }).env?.VITE_APP_VERSION || '0.5.0';
+  (import.meta as ImportMeta & { env?: { VITE_APP_VERSION?: string } }).env?.VITE_APP_VERSION ||
+  '0.5.0';
 
 export default function SettingsPage() {
   const { me, isAdmin } = useAuth();
@@ -60,14 +61,16 @@ export default function SettingsPage() {
   const [lastCheckedAt, setLastCheckedAt] = useState<string | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>({
     tone: 'idle',
-    message: 'Проверка соединения ещё не выполнялась.'
+    message: 'Проверка соединения ещё не выполнялась.',
   });
 
   useEffect(() => {
     const load = async () => {
       const store = await Store.load('settings.json');
       const url = normalizeApiUrl(
-        (await store.get<string>('api_url')) || (await invoke<string>('get_api_url')) || DEFAULT_API_URL
+        (await store.get<string>('api_url')) ||
+          (await invoke<string>('get_api_url')) ||
+          DEFAULT_API_URL,
       );
       const key = (await store.get<string>('api_key')) || '';
       const storedDefaultRole = (await store.get<ChatRole>('default_role')) || 'pto_engineer';
@@ -79,7 +82,11 @@ export default function SettingsPage() {
     void load();
   }, []);
 
-  const persistSettings = async (normalizedUrl: string, trimmedKey: string, nextDefaultRole: ChatRole) => {
+  const persistSettings = async (
+    normalizedUrl: string,
+    trimmedKey: string,
+    nextDefaultRole: ChatRole,
+  ) => {
     const store = await Store.load('settings.json');
     await store.set('api_url', normalizedUrl);
     await store.set('api_key', trimmedKey);
@@ -104,7 +111,7 @@ export default function SettingsPage() {
     } catch (error) {
       setConnectionStatus({
         tone: 'error',
-        message: error instanceof Error ? error.message : 'Не удалось сохранить настройки API.'
+        message: error instanceof Error ? error.message : 'Не удалось сохранить настройки API.',
       });
     }
   };
@@ -125,7 +132,7 @@ export default function SettingsPage() {
         setConnectionStatus({
           tone: 'warning',
           message:
-            'Сервер доступен, но API Key пустой. Для Chat и генерации документов укажите ключ из API_KEYS в серверном .env.'
+            'Сервер доступен, но API Key пустой. Для Chat и генерации документов укажите ключ из API_KEYS в серверном .env.',
         });
         return;
       }
@@ -136,10 +143,14 @@ export default function SettingsPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-API-Key': trimmedKey
+          'X-API-Key': trimmedKey,
         },
-        body: JSON.stringify({ message: 'ping', role: 'pto_engineer', session_id: 'settings-check' }),
-        signal: AbortSignal.timeout(10000)
+        body: JSON.stringify({
+          message: 'ping',
+          role: 'pto_engineer',
+          session_id: 'settings-check',
+        }),
+        signal: AbortSignal.timeout(10000),
       });
 
       // 200 или 422 (validation error) — оба означают что ключ принят
@@ -147,7 +158,7 @@ export default function SettingsPage() {
       if (testResponse.status === 401 || testResponse.status === 403) {
         setConnectionStatus({
           tone: 'error',
-          message: `Неверный API Key (HTTP ${testResponse.status}). Проверьте значение API_KEYS в .env на сервере.`
+          message: `Неверный API Key (HTTP ${testResponse.status}). Проверьте значение API_KEYS в .env на сервере.`,
         });
         return;
       }
@@ -161,14 +172,14 @@ export default function SettingsPage() {
 
       setConnectionStatus({
         tone: 'success',
-        message: 'Сервер доступен, API Key принят. Desktop готов к работе с серверным API.'
+        message: 'Сервер доступен, API Key принят. Desktop готов к работе с серверным API.',
       });
     } catch (error) {
       setHealth(null);
       setLastCheckedAt(new Date().toISOString());
       setConnectionStatus({
         tone: 'error',
-        message: error instanceof Error ? error.message : 'Не удалось проверить соединение с API.'
+        message: error instanceof Error ? error.message : 'Не удалось проверить соединение с API.',
       });
     }
   };
@@ -197,7 +208,7 @@ export default function SettingsPage() {
       await linkTelegramAccount(normalizedUrl, trimmedKey, {
         code,
         user_id: userId,
-        session_id: desktopSessionId
+        session_id: desktopSessionId,
       });
       setLinkStatus('Telegram успешно привязан. Уведомления теперь будут приходить в desktop.');
       setTelegramCode('');
@@ -215,7 +226,7 @@ export default function SettingsPage() {
     <Card>
       <form onSubmit={onSave} style={{ display: 'grid', gap: spacing.md, maxWidth: 640 }}>
         <p style={{ margin: 0, color: colors.textSecondary }}>
-          Текущая роль: {isAdmin ? 'Администратор' : me?.role ?? 'не определена'}
+          Текущая роль: {isAdmin ? 'Администратор' : (me?.role ?? 'не определена')}
         </p>
         <Input label="API URL" value={apiUrl} onChange={(e) => setApiUrl(e.target.value)} />
         <Input label="API Key" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
@@ -234,7 +245,7 @@ export default function SettingsPage() {
               border: `1px solid ${colors.border}`,
               borderRadius: 8,
               padding: `${spacing.sm}px ${spacing.md}px`,
-              color: colors.textPrimary
+              color: colors.textPrimary,
             }}
           >
             {ROLE_OPTIONS.map((roleOption) => (
@@ -270,16 +281,30 @@ export default function SettingsPage() {
             padding="md"
             style={{
               border: `1px solid ${colors.warning}`,
-              backgroundColor: `${colors.warning}14`
+              backgroundColor: `${colors.warning}14`,
             }}
           >
-            <p style={{ marginTop: 0, marginBottom: spacing.sm, color: colors.warning, fontWeight: 600 }}>
+            <p
+              style={{
+                marginTop: 0,
+                marginBottom: spacing.sm,
+                color: colors.warning,
+                fontWeight: 600,
+              }}
+            >
               Нормативы не загружены — качество ответов снижено.
             </p>
             <p style={{ marginTop: 0, marginBottom: spacing.sm, color: colors.textPrimary }}>
               Чтобы улучшить ответы, добавьте PDF в Базу знаний:
             </p>
-            <ol style={{ marginTop: 0, marginBottom: spacing.md, paddingLeft: spacing.lg, color: colors.textPrimary }}>
+            <ol
+              style={{
+                marginTop: 0,
+                marginBottom: spacing.md,
+                paddingLeft: spacing.lg,
+                color: colors.textPrimary,
+              }}
+            >
               <li>Откройте раздел «База знаний».</li>
               <li>Нажмите «Загрузить PDF» и выберите файл с нормативами (СП, ГОСТ).</li>
               <li>Дождитесь сообщения об успешной загрузке и вернитесь в чат.</li>
@@ -299,14 +324,21 @@ export default function SettingsPage() {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr>
-                <th style={{ textAlign: 'left', borderBottom: `1px solid ${colors.border}` }}>Компонент</th>
-                <th style={{ textAlign: 'left', borderBottom: `1px solid ${colors.border}` }}>Статус</th>
-                <th style={{ textAlign: 'left', borderBottom: `1px solid ${colors.border}` }}>Детали</th>
+                <th style={{ textAlign: 'left', borderBottom: `1px solid ${colors.border}` }}>
+                  Компонент
+                </th>
+                <th style={{ textAlign: 'left', borderBottom: `1px solid ${colors.border}` }}>
+                  Статус
+                </th>
+                <th style={{ textAlign: 'left', borderBottom: `1px solid ${colors.border}` }}>
+                  Детали
+                </th>
               </tr>
             </thead>
             <tbody>
               {Object.entries(health.components).map(([key, component]) => {
-                const statusIcon = component.status === 'ok' || component.status === 'active' ? '✅' : '⚠️';
+                const statusIcon =
+                  component.status === 'ok' || component.status === 'active' ? '✅' : '⚠️';
                 const details =
                   key === 'rag_engine'
                     ? `${String(component.sources ?? 0)} документов`

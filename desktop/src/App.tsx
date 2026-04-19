@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { checkHealth, fetchNotifications, getApiConfig, type DesktopNotification } from './api/coreClient';
+import {
+  checkHealth,
+  fetchNotifications,
+  getApiConfig,
+  type DesktopNotification,
+} from './api/coreClient';
 import Sidebar from './components/Sidebar';
 import StatusBar from './components/StatusBar';
 import { AuthProvider } from './context/AuthContext';
@@ -16,7 +21,7 @@ const APP_THEME_BASE = {
   fontFamily: typography.fontFamily,
   display: 'flex',
   background: colors.bgPage,
-  overflow: 'hidden'
+  overflow: 'hidden',
 } as const;
 
 export default function App() {
@@ -86,8 +91,8 @@ export default function App() {
         const response = await fetch(`${apiUrl.replace(/\/$/, '')}/api/branding`, {
           method: 'GET',
           headers: {
-            'X-API-Key': apiKey
-          }
+            'X-API-Key': apiKey,
+          },
         });
         if (!response.ok) {
           return;
@@ -157,7 +162,7 @@ export default function App() {
       ...APP_THEME_BASE,
       borderTop: `4px solid ${branding?.primary_color ?? '#2563eb'}`,
     }),
-    [branding?.primary_color]
+    [branding?.primary_color],
   );
 
   return (
@@ -172,7 +177,16 @@ export default function App() {
         </section>
       </main>
       <StatusBar />
-      <div style={{ position: 'fixed', right: spacing.lg, bottom: spacing.xl, zIndex: 1000, display: 'grid', gap: spacing.sm }}>
+      <div
+        style={{
+          position: 'fixed',
+          right: spacing.lg,
+          bottom: spacing.xl,
+          zIndex: 1000,
+          display: 'grid',
+          gap: spacing.sm,
+        }}
+      >
         {toasts.map((toast) => (
           <div
             key={toast.id}
@@ -183,7 +197,7 @@ export default function App() {
               border: `1px solid ${colors.border}`,
               borderRadius: 10,
               boxShadow: '0 8px 28px rgba(2, 6, 23, 0.25)',
-              padding: spacing.md
+              padding: spacing.md,
             }}
           >
             <strong style={{ display: 'block', marginBottom: spacing.xs }}>{toast.title}</strong>

@@ -45,18 +45,31 @@ export default function RegisterPage() {
   return (
     <Card>
       <h2 style={{ marginTop: 0 }}>Регистрация</h2>
-      <p style={{ marginTop: 0, color: colors.textSecondary }}>Главная / Авторизация / Регистрация</p>
+      <p style={{ marginTop: 0, color: colors.textSecondary }}>
+        Главная / Авторизация / Регистрация
+      </p>
       <form onSubmit={onSubmit} style={{ display: 'grid', gap: spacing.md }}>
         <Input label="Логин" value={username} onChange={(e) => setUsername(e.target.value)} />
-        <Input label="Пароль" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+        <Input
+          label="Пароль"
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
         <label>
           Роль
-          <select value={role} onChange={(e) => setRole(e.target.value)} style={{ width: '100%', marginTop: spacing.xs, padding: spacing.sm }}>
+          <select
+            value={role}
+            onChange={(e) => setRole(e.target.value)}
+            style={{ width: '100%', marginTop: spacing.xs, padding: spacing.sm }}
+          >
             <option value="pto_engineer">pto_engineer</option>
             <option value="admin">admin</option>
           </select>
         </label>
-        <Button type="submit" loading={loading}>{loading ? 'Регистрация...' : 'Зарегистрироваться'}</Button>
+        <Button type="submit" loading={loading}>
+          {loading ? 'Регистрация...' : 'Зарегистрироваться'}
+        </Button>
       </form>
       {error && <p style={{ color: colors.error }}>{error}</p>}
     </Card>

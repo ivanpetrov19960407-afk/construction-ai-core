@@ -16,7 +16,7 @@ export default function Card({ children, padding = 'lg', shadow = true, style }:
         borderRadius: radius.lg,
         padding: spacing[padding],
         boxShadow: shadow ? '0 6px 16px rgba(15, 23, 42, 0.08)' : 'none',
-        ...style
+        ...style,
       }}
     >
       {children}

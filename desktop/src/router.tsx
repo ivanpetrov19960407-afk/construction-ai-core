@@ -18,7 +18,13 @@ import RegisterPage from './pages/RegisterPage';
 import BillingPage from './pages/BillingPage';
 import { useAuth } from './context/AuthContext';
 
-function RequireAuth({ children, requireAdmin = false }: { children: ReactNode; requireAdmin?: boolean }) {
+function RequireAuth({
+  children,
+  requireAdmin = false,
+}: {
+  children: ReactNode;
+  requireAdmin?: boolean;
+}) {
   const { me, loading } = useAuth();
 
   if (loading) {
@@ -39,39 +45,99 @@ function RequireAuth({ children, requireAdmin = false }: { children: ReactNode; 
 export function resolveRoute(path: string, onNavigateHome: () => void): ReactNode {
   switch (path) {
     case '/':
-      return <RequireAuth><ChatPage /></RequireAuth>;
+      return (
+        <RequireAuth>
+          <ChatPage />
+        </RequireAuth>
+      );
     case '/settings':
-      return <RequireAuth><SettingsPage /></RequireAuth>;
+      return (
+        <RequireAuth>
+          <SettingsPage />
+        </RequireAuth>
+      );
     case '/knowledge-base':
-      return <RequireAuth><KnowledgeBasePage /></RequireAuth>;
+      return (
+        <RequireAuth>
+          <KnowledgeBasePage />
+        </RequireAuth>
+      );
     case '/generate/tk':
-      return <RequireAuth><GenerateTKPage /></RequireAuth>;
+      return (
+        <RequireAuth>
+          <GenerateTKPage />
+        </RequireAuth>
+      );
     case '/generate/letter':
-      return <RequireAuth><GenerateLetterPage /></RequireAuth>;
+      return (
+        <RequireAuth>
+          <GenerateLetterPage />
+        </RequireAuth>
+      );
     case '/generate/ks':
-      return <RequireAuth><GenerateKSPage /></RequireAuth>;
+      return (
+        <RequireAuth>
+          <GenerateKSPage />
+        </RequireAuth>
+      );
     case '/generate/ppr':
-      return <RequireAuth><GeneratePprPage /></RequireAuth>;
+      return (
+        <RequireAuth>
+          <GeneratePprPage />
+        </RequireAuth>
+      );
     case '/generate/estimate':
-      return <RequireAuth><GenerateEstimatePage /></RequireAuth>;
+      return (
+        <RequireAuth>
+          <GenerateEstimatePage />
+        </RequireAuth>
+      );
     case '/generate/exec-album':
-      return <RequireAuth><GenerateExecAlbumPage /></RequireAuth>;
+      return (
+        <RequireAuth>
+          <GenerateExecAlbumPage />
+        </RequireAuth>
+      );
     case '/analyze/tender':
-      return <RequireAuth><AnalyzeTenderPage /></RequireAuth>;
+      return (
+        <RequireAuth>
+          <AnalyzeTenderPage />
+        </RequireAuth>
+      );
     case '/analytics':
-      return <RequireAuth requireAdmin><AnalyticsDashboardPage /></RequireAuth>;
+      return (
+        <RequireAuth requireAdmin>
+          <AnalyticsDashboardPage />
+        </RequireAuth>
+      );
     case '/compliance':
-      return <RequireAuth requireAdmin><CompliancePage /></RequireAuth>;
+      return (
+        <RequireAuth requireAdmin>
+          <CompliancePage />
+        </RequireAuth>
+      );
     case '/billing':
-      return <RequireAuth requireAdmin><BillingPage /></RequireAuth>;
+      return (
+        <RequireAuth requireAdmin>
+          <BillingPage />
+        </RequireAuth>
+      );
     case '/register':
       return <RegisterPage />;
     case '/login':
       return <LoginPage />;
     case '/handover':
-      return <RequireAuth><HandoverPage /></RequireAuth>;
+      return (
+        <RequireAuth>
+          <HandoverPage />
+        </RequireAuth>
+      );
     case '/diagnostics':
-      return <RequireAuth><DiagnosticsPage /></RequireAuth>;
+      return (
+        <RequireAuth>
+          <DiagnosticsPage />
+        </RequireAuth>
+      );
     default:
       return (
         <section>

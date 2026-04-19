@@ -68,7 +68,7 @@ async function toHttpError(response: Response, endpoint: string): Promise<ApiReq
       `Ошибка авторизации (${response.status}) для ${endpoint}. Проверьте API Key в настройках клиента и на сервере.`,
       'auth',
       endpoint,
-      response.status
+      response.status,
     );
   }
 
@@ -77,7 +77,7 @@ async function toHttpError(response: Response, endpoint: string): Promise<ApiReq
       `Ошибка сервера (${response.status}) для ${endpoint}. Попробуйте повторить запрос позже. Ответ: ${body}`,
       'server',
       endpoint,
-      response.status
+      response.status,
     );
   }
 
@@ -85,11 +85,15 @@ async function toHttpError(response: Response, endpoint: string): Promise<ApiReq
     `HTTP ${response.status} для ${endpoint}. Ответ сервера: ${body}`,
     'http',
     endpoint,
-    response.status
+    response.status,
   );
 }
 
-export async function apiRequest(apiUrl: string, endpoint: string, options: ApiRequestOptions = {}): Promise<Response> {
+export async function apiRequest(
+  apiUrl: string,
+  endpoint: string,
+  options: ApiRequestOptions = {},
+): Promise<Response> {
   const { timeoutMs, signal, ...init } = options;
   const controller = new AbortController();
   const mergedSignal = combineSignals(signal, controller.signal);
@@ -107,7 +111,7 @@ export async function apiRequest(apiUrl: string, endpoint: string, options: ApiR
   try {
     const response = await fetch(`${apiUrl}${endpoint}`, {
       ...init,
-      signal: mergedSignal
+      signal: mergedSignal,
     });
 
     if (!response.ok) {
@@ -125,7 +129,7 @@ export async function apiRequest(apiUrl: string, endpoint: string, options: ApiR
         throw new ApiRequestError(
           `Превышено время ожидания ответа (${Math.round((timeoutMs ?? 0) / 1000)} c) для ${endpoint}.`,
           'timeout',
-          endpoint
+          endpoint,
         );
       }
 

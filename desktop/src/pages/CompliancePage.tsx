@@ -38,11 +38,13 @@ export default function CompliancePage() {
       const { apiUrl, apiKey } = await getApiConfig();
       const response = await checkCompliance(apiUrl, apiKey, {
         project_id: projectId.trim(),
-        requirement_ids: rules.slice(0, 20).map((rule) => rule.id)
+        requirement_ids: rules.slice(0, 20).map((rule) => rule.id),
       });
       setResult(response);
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : 'Ошибка проверки соответствия.');
+      setError(
+        submitError instanceof Error ? submitError.message : 'Ошибка проверки соответствия.',
+      );
     } finally {
       setLoading(false);
     }
@@ -58,13 +60,34 @@ export default function CompliancePage() {
       </Button>
       {error && <p style={{ color: colors.error }}>{error}</p>}
       <h3 style={{ marginBottom: spacing.xs }}>Индекс требований СП/ГОСТ</h3>
-      <div style={{ maxHeight: 200, overflowY: 'auto', border: `1px solid ${colors.border}`, borderRadius: 8, padding: spacing.sm }}>
+      <div
+        style={{
+          maxHeight: 200,
+          overflowY: 'auto',
+          border: `1px solid ${colors.border}`,
+          borderRadius: 8,
+          padding: spacing.sm,
+        }}
+      >
         {rules.map((rule) => (
-          <p key={rule.id} style={{ margin: 0, marginBottom: spacing.xs }}>{rule.code} — {rule.title}</p>
+          <p key={rule.id} style={{ margin: 0, marginBottom: spacing.xs }}>
+            {rule.code} — {rule.title}
+          </p>
         ))}
-        {rules.length === 0 && <p style={{ margin: 0, color: colors.textSecondary }}>Пока нет данных.</p>}
+        {rules.length === 0 && (
+          <p style={{ margin: 0, color: colors.textSecondary }}>Пока нет данных.</p>
+        )}
       </div>
-      {result && <Input type="textarea" label="Результат проверки" rows={10} readOnly value={JSON.stringify(result, null, 2)} style={{ marginTop: spacing.md }} />}
+      {result && (
+        <Input
+          type="textarea"
+          label="Результат проверки"
+          rows={10}
+          readOnly
+          value={JSON.stringify(result, null, 2)}
+          style={{ marginTop: spacing.md }}
+        />
+      )}
     </Card>
   );
 }

@@ -39,7 +39,7 @@ export default function ChatWindow() {
       id: messageId,
       role: 'user',
       content: trimmed,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
     });
     setText('');
     setTyping(true);
@@ -49,18 +49,23 @@ export default function ChatWindow() {
       const apiUrl = (await settings.get<string>('api_url')) || 'https://vanekpetrov1997.fvds.ru';
       const apiKey = (await settings.get<string>('api_key')) || '';
 
-      const response = await sendChatMessageStream(apiUrl, apiKey, {
-        message: trimmed,
-        role: role || defaultRole,
-        session_id: sessionId,
-        message_id: messageId
-      }, () => {
-        // source/progress события обрабатываются на сервере и попадают в итоговый done.result
-      });
+      const response = await sendChatMessageStream(
+        apiUrl,
+        apiKey,
+        {
+          message: trimmed,
+          role: role || defaultRole,
+          session_id: sessionId,
+          message_id: messageId,
+        },
+        () => {
+          // source/progress события обрабатываются на сервере и попадают в итоговый done.result
+        },
+      );
       const metadata: ChatResponseMeta = {
         agents: response.agents_used,
         confidence: typeof response.confidence === 'number' ? response.confidence : undefined,
-        sources: response.sources
+        sources: response.sources,
       };
 
       upsertMessage({
@@ -68,7 +73,7 @@ export default function ChatWindow() {
         role: 'assistant',
         content: response.reply,
         createdAt: new Date().toISOString(),
-        metadata
+        metadata,
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Ошибка отправки сообщения');
@@ -96,14 +101,14 @@ export default function ChatWindow() {
 
       await uploadChatDocument(apiUrl, apiKey, {
         file: selectedFile,
-        sessionId
+        sessionId,
       });
 
       addMessage({
         id: crypto.randomUUID(),
         role: 'system',
         content: 'Документ загружен и будет учтён в ответах',
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Ошибка загрузки документа');
@@ -126,14 +131,21 @@ export default function ChatWindow() {
           padding: spacing.md,
           display: 'flex',
           flexDirection: 'column',
-          gap: spacing.sm
+          gap: spacing.sm,
         }}
       >
         {messages.map((message) => (
-          <MessageBubble key={message.id} message={message} metadata={message.metadata} className="message-enter" />
+          <MessageBubble
+            key={message.id}
+            message={message}
+            metadata={message.metadata}
+            className="message-enter"
+          />
         ))}
         {isTyping && (
-          <div style={{ display: 'flex', gap: 4, padding: '8px 12px', color: '#6b7280', fontSize: 13 }}>
+          <div
+            style={{ display: 'flex', gap: 4, padding: '8px 12px', color: '#6b7280', fontSize: 13 }}
+          >
             <span style={{ animation: 'fadeIn 0.6s ease infinite alternate' }}>●</span>
             <span style={{ animation: 'fadeIn 0.6s ease 0.2s infinite alternate' }}>●</span>
             <span style={{ animation: 'fadeIn 0.6s ease 0.4s infinite alternate' }}>●</span>
@@ -142,8 +154,17 @@ export default function ChatWindow() {
         )}
       </div>
 
-      <div style={{ borderTop: `1px solid ${colors.border}`, paddingTop: spacing.md, marginTop: spacing.sm }}>
-        <form onSubmit={onSubmit} style={{ display: 'flex', gap: spacing.sm, alignItems: 'center' }}>
+      <div
+        style={{
+          borderTop: `1px solid ${colors.border}`,
+          paddingTop: spacing.md,
+          marginTop: spacing.sm,
+        }}
+      >
+        <form
+          onSubmit={onSubmit}
+          style={{ display: 'flex', gap: spacing.sm, alignItems: 'center' }}
+        >
           <input
             ref={fileInputRef}
             type="file"
@@ -151,7 +172,12 @@ export default function ChatWindow() {
             onChange={onDocumentPicked}
             style={{ display: 'none' }}
           />
-          <Input value={text} onChange={(e) => setText(e.target.value)} placeholder="Введите сообщение" style={{ flex: 1 }} />
+          <Input
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="Введите сообщение"
+            style={{ flex: 1 }}
+          />
           <Button type="button" onClick={openFilePicker} title="Прикрепить документ">
             📎
           </Button>

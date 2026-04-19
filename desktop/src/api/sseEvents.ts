@@ -39,7 +39,12 @@ export interface SSESourceEvent extends SSEEventBase {
   };
 }
 
-export type SSEEvent = SSEProgressEvent | SSEChunkEvent | SSEErrorEvent | SSEDoneEvent | SSESourceEvent;
+export type SSEEvent =
+  | SSEProgressEvent
+  | SSEChunkEvent
+  | SSEErrorEvent
+  | SSEDoneEvent
+  | SSESourceEvent;
 
 export function parseSSEEvent(raw: string): SSEEvent | null {
   const lines = raw
@@ -69,7 +74,7 @@ export function parseSSEEvent(raw: string): SSEEvent | null {
           ? (payload.details as Record<string, unknown>)
           : undefined,
       progress: typeof payload.progress === 'number' ? payload.progress : undefined,
-      stage: typeof payload.stage === 'string' ? payload.stage : undefined
+      stage: typeof payload.stage === 'string' ? payload.stage : undefined,
     };
   }
 
@@ -81,7 +86,7 @@ export function parseSSEEvent(raw: string): SSEEvent | null {
           ? (payload.result as GenerateDocumentResponse)
           : undefined,
       progress: typeof payload.progress === 'number' ? payload.progress : undefined,
-      stage: typeof payload.stage === 'string' ? payload.stage : undefined
+      stage: typeof payload.stage === 'string' ? payload.stage : undefined,
     };
   }
 
@@ -91,24 +96,24 @@ export function parseSSEEvent(raw: string): SSEEvent | null {
       chunk: typeof payload.chunk === 'string' ? payload.chunk : undefined,
       progress: typeof payload.progress === 'number' ? payload.progress : undefined,
       stage: typeof payload.stage === 'string' ? payload.stage : undefined,
-      message: typeof payload.message === 'string' ? payload.message : undefined
+      message: typeof payload.message === 'string' ? payload.message : undefined,
     };
   }
 
   if (eventName === 'source') {
     const source = payload.source;
     if (
-      source
-      && typeof source === 'object'
-      && typeof (source as Record<string, unknown>).title === 'string'
+      source &&
+      typeof source === 'object' &&
+      typeof (source as Record<string, unknown>).title === 'string'
     ) {
       return {
         event: 'source',
         source: {
           title: String((source as Record<string, unknown>).title),
           page: Number((source as Record<string, unknown>).page ?? 0),
-          score: Number((source as Record<string, unknown>).score ?? 0)
-        }
+          score: Number((source as Record<string, unknown>).score ?? 0),
+        },
       };
     }
     return { event: 'source' };
@@ -118,6 +123,6 @@ export function parseSSEEvent(raw: string): SSEEvent | null {
     event: 'progress',
     progress: typeof payload.progress === 'number' ? payload.progress : undefined,
     stage: typeof payload.stage === 'string' ? payload.stage : eventName,
-    message: typeof payload.message === 'string' ? payload.message : undefined
+    message: typeof payload.message === 'string' ? payload.message : undefined,
   };
 }

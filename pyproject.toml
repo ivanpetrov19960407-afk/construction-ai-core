@@ -46,8 +46,9 @@ dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24.0",
     "pytest-timeout>=2.3.1",
-    "ruff>=0.6.0",
-    "mypy>=1.11.0",
+    "ruff==0.6.9",
+    "mypy==1.11.2",
+    "pre-commit==4.0.1",
 ]
 
 [build-system]
@@ -60,6 +61,23 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+ignore_missing_imports = true
+files = ["core", "api"]
+disable_error_code = [
+    "misc",
+    "no-untyped-def",
+    "no-untyped-call",
+    "type-arg",
+    "unused-ignore",
+    "no-any-return",
+    "return-value",
+    "arg-type",
+    "no-redef",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

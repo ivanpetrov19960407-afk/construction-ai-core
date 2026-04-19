@@ -39,15 +39,20 @@ export default function GenerateExecAlbumPage() {
         (streamEvent) => {
           setProgress(streamEvent.progress ?? 0);
           setStage(streamEvent.stage);
-        }
+        },
       );
-      const output = response.result ?? response.text ?? response.content ?? JSON.stringify(response, null, 2);
+      const output =
+        response.result ?? response.text ?? response.content ?? JSON.stringify(response, null, 2);
       setResult(typeof output === 'string' ? output : JSON.stringify(output, null, 2));
     } catch (submitError) {
       if (submitError instanceof SSEError) {
         setSseError(submitError);
       }
-      setError(submitError instanceof Error ? submitError.message : 'Ошибка генерации исполнительного альбома.');
+      setError(
+        submitError instanceof Error
+          ? submitError.message
+          : 'Ошибка генерации исполнительного альбома.',
+      );
     } finally {
       setIsLoading(false);
     }
@@ -67,9 +72,15 @@ export default function GenerateExecAlbumPage() {
   return (
     <Card>
       <h2 style={{ marginTop: 0 }}>Исполнительный альбом</h2>
-      <p style={{ marginTop: 0, color: colors.textSecondary }}>Главная / Генерация / Исполнительный альбом</p>
+      <p style={{ marginTop: 0, color: colors.textSecondary }}>
+        Главная / Генерация / Исполнительный альбом
+      </p>
       <form onSubmit={onSubmit} style={{ display: 'grid', gap: spacing.md }}>
-        <Input label="ID проекта" value={projectId} onChange={(e) => setProjectId(e.target.value)} />
+        <Input
+          label="ID проекта"
+          value={projectId}
+          onChange={(e) => setProjectId(e.target.value)}
+        />
         <Input
           type="textarea"
           label="Перечень работ (каждая работа с новой строки)"
@@ -77,13 +88,22 @@ export default function GenerateExecAlbumPage() {
           value={workItemsRaw}
           onChange={(e) => setWorkItemsRaw(e.target.value)}
         />
-        <Button type="submit" loading={isLoading}>{isLoading ? 'Генерация...' : 'Сгенерировать'}</Button>
+        <Button type="submit" loading={isLoading}>
+          {isLoading ? 'Генерация...' : 'Сгенерировать'}
+        </Button>
       </form>
       {isLoading && (
         <div style={{ marginTop: spacing.md }}>
           <div style={{ color: colors.textSecondary, marginBottom: spacing.xs }}>Шаг: {stage}</div>
           <div style={{ width: '100%', height: 8, background: '#e5e7eb', borderRadius: 999 }}>
-            <div style={{ width: `${progress}%`, height: 8, background: colors.primary, borderRadius: 999 }} />
+            <div
+              style={{
+                width: `${progress}%`,
+                height: 8,
+                background: colors.primary,
+                borderRadius: 999,
+              }}
+            />
           </div>
         </div>
       )}
@@ -91,10 +111,17 @@ export default function GenerateExecAlbumPage() {
       {result && (
         <div style={{ marginTop: spacing.md }}>
           <Input type="textarea" label="Результат" rows={12} value={result} readOnly />
-          <Button type="button" onClick={onDownload} style={{ marginTop: spacing.sm }}>Скачать ZIP</Button>
+          <Button type="button" onClick={onDownload} style={{ marginTop: spacing.sm }}>
+            Скачать ZIP
+          </Button>
         </div>
       )}
-      <ErrorModal isOpen={Boolean(sseError)} onClose={() => setSseError(null)} title={sseError?.message ?? 'Ошибка'} details={sseError?.details} />
+      <ErrorModal
+        isOpen={Boolean(sseError)}
+        onClose={() => setSseError(null)}
+        title={sseError?.message ?? 'Ошибка'}
+        details={sseError?.details}
+      />
     </Card>
   );
 }

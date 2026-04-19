@@ -35,14 +35,15 @@ export default function GeneratePprPage() {
         {
           work_type: workType.trim(),
           object_name: objectName.trim(),
-          deadline_days: Number(deadlineDays)
+          deadline_days: Number(deadlineDays),
         },
         (streamEvent) => {
           setProgress(streamEvent.progress ?? 0);
           setStage(streamEvent.stage);
-        }
+        },
       );
-      const output = response.result ?? response.text ?? response.content ?? JSON.stringify(response, null, 2);
+      const output =
+        response.result ?? response.text ?? response.content ?? JSON.stringify(response, null, 2);
       setResult(typeof output === 'string' ? output : JSON.stringify(output, null, 2));
     } catch (submitError) {
       if (submitError instanceof SSEError) {
@@ -61,19 +62,43 @@ export default function GeneratePprPage() {
       <form onSubmit={onSubmit} style={{ display: 'grid', gap: spacing.md }}>
         <Input label="Тип работ" value={workType} onChange={(e) => setWorkType(e.target.value)} />
         <Input label="Объект" value={objectName} onChange={(e) => setObjectName(e.target.value)} />
-        <Input label="Срок, дней" type="number" min={1} value={deadlineDays} onChange={(e) => setDeadlineDays(e.target.value)} />
-        <Button type="submit" loading={isLoading}>{isLoading ? 'Генерация...' : 'Сгенерировать ППР'}</Button>
+        <Input
+          label="Срок, дней"
+          type="number"
+          min={1}
+          value={deadlineDays}
+          onChange={(e) => setDeadlineDays(e.target.value)}
+        />
+        <Button type="submit" loading={isLoading}>
+          {isLoading ? 'Генерация...' : 'Сгенерировать ППР'}
+        </Button>
       </form>
       {isLoading && (
         <div style={{ marginTop: spacing.md }}>
           <div style={{ color: colors.textSecondary, marginBottom: spacing.xs }}>Шаг: {stage}</div>
           <div style={{ width: '100%', height: 8, background: '#e5e7eb', borderRadius: 999 }}>
-            <div style={{ width: `${progress}%`, height: 8, background: colors.primary, borderRadius: 999 }} />
+            <div
+              style={{
+                width: `${progress}%`,
+                height: 8,
+                background: colors.primary,
+                borderRadius: 999,
+              }}
+            />
           </div>
         </div>
       )}
       {error && <p style={{ color: colors.error }}>{error}</p>}
-      {result && <Input type="textarea" label="Результат" rows={14} readOnly value={result} style={{ marginTop: spacing.md }} />}
+      {result && (
+        <Input
+          type="textarea"
+          label="Результат"
+          rows={14}
+          readOnly
+          value={result}
+          style={{ marginTop: spacing.md }}
+        />
+      )}
       <ErrorModal
         isOpen={Boolean(sseError)}
         onClose={() => setSseError(null)}

@@ -54,22 +54,57 @@ export default function AnalyzeTenderPage() {
           border: `1px dashed ${colors.border}`,
           borderRadius: 12,
           padding: spacing.lg,
-          marginBottom: spacing.md
+          marginBottom: spacing.md,
         }}
       >
         <p style={{ marginTop: 0 }}>Drag-n-drop PDF/ZIP сюда или выберите вручную.</p>
-        <input type="file" accept=".pdf,.zip" onChange={(e) => setFile(e.currentTarget.files?.[0] ?? null)} />
+        <input
+          type="file"
+          accept=".pdf,.zip"
+          onChange={(e) => setFile(e.currentTarget.files?.[0] ?? null)}
+        />
         {file && <p style={{ marginBottom: 0 }}>Файл: {file.name}</p>}
       </div>
       <Button type="button" onClick={onAnalyze} loading={isLoading}>
         {isLoading ? 'Анализ...' : 'Проанализировать'}
       </Button>
       {error && <p style={{ color: colors.error }}>{error}</p>}
-      {summary && <Input type="textarea" label="Краткое резюме" rows={8} value={summary} readOnly style={{ marginTop: spacing.md }} />}
-      {!!requirements.length && <ul>{requirements.map((item) => <li key={item}>{item}</li>)}</ul>}
-      {!!risks.length && <ul>{risks.map((item) => <li key={item}>{item}</li>)}</ul>}
-      {!!deadlines.length && <ul>{deadlines.map((item) => <li key={item}>{item}</li>)}</ul>}
-      {estimate && <p><strong>Сметная оценка:</strong> {estimate}</p>}
+      {summary && (
+        <Input
+          type="textarea"
+          label="Краткое резюме"
+          rows={8}
+          value={summary}
+          readOnly
+          style={{ marginTop: spacing.md }}
+        />
+      )}
+      {!!requirements.length && (
+        <ul>
+          {requirements.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
+      )}
+      {!!risks.length && (
+        <ul>
+          {risks.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
+      )}
+      {!!deadlines.length && (
+        <ul>
+          {deadlines.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
+      )}
+      {estimate && (
+        <p>
+          <strong>Сметная оценка:</strong> {estimate}
+        </p>
+      )}
     </Card>
   );
 }

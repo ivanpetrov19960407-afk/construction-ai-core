@@ -47,8 +47,15 @@ export default function LoginPage() {
       <p style={{ marginTop: 0, color: colors.textSecondary }}>Главная / Авторизация / Вход</p>
       <form onSubmit={onSubmit} style={{ display: 'grid', gap: spacing.md }}>
         <Input label="Логин" value={username} onChange={(e) => setUsername(e.target.value)} />
-        <Input label="Пароль" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
-        <Button type="submit" loading={loading}>{loading ? 'Входим...' : 'Войти'}</Button>
+        <Input
+          label="Пароль"
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
+        <Button type="submit" loading={loading}>
+          {loading ? 'Входим...' : 'Войти'}
+        </Button>
       </form>
       {error && <p style={{ color: colors.error }}>{error}</p>}
     </Card>

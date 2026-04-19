@@ -57,7 +57,7 @@ def decode_jwt(token: str, key: str, algorithms: list[str] | None = None) -> dic
     payload_raw = _b64url_decode(payload_segment)
     payload = json.loads(payload_raw.decode("utf-8"))
     exp = payload.get("exp")
-    if isinstance(exp, (int, float)) and exp < time.time():
+    if isinstance(exp, int | float) and exp < time.time():
         raise JWTError("Token expired")
     return payload
 

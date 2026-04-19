@@ -1,4 +1,12 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react';
 import { getApiConfig, getMe, type MeResponse } from '../api/coreClient';
 
 type AuthContextValue = {
@@ -54,9 +62,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       me,
       isAdmin: Boolean(me?.is_admin),
       loading,
-      reload: loadMe
+      reload: loadMe,
     }),
-    [loadMe, loading, me]
+    [loadMe, loading, me],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

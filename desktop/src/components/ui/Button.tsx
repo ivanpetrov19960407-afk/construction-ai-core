@@ -13,38 +13,41 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 const sizeStyles: Record<ButtonSize, { padding: string; fontSize: number }> = {
   sm: { padding: `${spacing.xs}px ${spacing.md}px`, fontSize: 12 },
   md: { padding: `${spacing.sm}px ${spacing.lg}px`, fontSize: 14 },
-  lg: { padding: `${spacing.md}px ${spacing.xl}px`, fontSize: 15 }
+  lg: { padding: `${spacing.md}px ${spacing.xl}px`, fontSize: 15 },
 };
 
-const variantStyles: Record<ButtonVariant, { bg: string; color: string; border: string; hoverBg: string; activeBg: string }> = {
+const variantStyles: Record<
+  ButtonVariant,
+  { bg: string; color: string; border: string; hoverBg: string; activeBg: string }
+> = {
   primary: {
     bg: colors.primary,
     color: '#fff',
     border: colors.primary,
     hoverBg: colors.primaryHover,
-    activeBg: colors.primaryActive
+    activeBg: colors.primaryActive,
   },
   secondary: {
     bg: '#fff',
     color: colors.textPrimary,
     border: colors.border,
     hoverBg: '#f3f4f6',
-    activeBg: '#e5e7eb'
+    activeBg: '#e5e7eb',
   },
   ghost: {
     bg: 'transparent',
     color: colors.textPrimary,
     border: 'transparent',
     hoverBg: '#f3f4f6',
-    activeBg: '#e5e7eb'
+    activeBg: '#e5e7eb',
   },
   danger: {
     bg: colors.error,
     color: '#fff',
     border: colors.error,
     hoverBg: '#991b1b',
-    activeBg: '#7f1d1d'
-  }
+    activeBg: '#7f1d1d',
+  },
 };
 
 function Spinner() {
@@ -58,7 +61,7 @@ function Spinner() {
         border: '2px solid rgba(255, 255, 255, 0.55)',
         borderTopColor: 'currentColor',
         display: 'inline-block',
-        animation: 'ui-spin 0.8s linear infinite'
+        animation: 'ui-spin 0.8s linear infinite',
       }}
     />
   );
@@ -93,7 +96,9 @@ export default function Button({
 
   return (
     <>
-      <style>{'@keyframes ui-spin { from { transform: rotate(0deg);} to { transform: rotate(360deg);} }'}</style>
+      <style>
+        {'@keyframes ui-spin { from { transform: rotate(0deg);} to { transform: rotate(360deg);} }'}
+      </style>
       <button
         {...rest}
         disabled={isDisabled}
@@ -130,7 +135,7 @@ export default function Button({
           justifyContent: 'center',
           gap: spacing.sm,
           ...(sizeStyles[size] ?? sizeStyles.md),
-          ...style
+          ...style,
         }}
       >
         {loading && <Spinner />}
