@@ -2,6 +2,15 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Default capability",
-  "windows": ["main"],
-  "permissions": ["core:default", "store:default"]
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:default",
+    "store:default",
+    "allow-get-api-url",
+    "allow-set-api-url",
+    "allow-pick-pdf-file",
+    "allow-read-pdf-file-bytes"
+  ]
 }

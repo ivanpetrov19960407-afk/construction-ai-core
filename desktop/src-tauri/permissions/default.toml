@@ -1,0 +1,9 @@
+[[set]]
+identifier = "default"
+description = "Default permissions for the app commands used by the desktop UI."
+permissions = [
+  "allow-get-api-url",
+  "allow-set-api-url",
+  "allow-pick-pdf-file",
+  "allow-read-pdf-file-bytes"
+]

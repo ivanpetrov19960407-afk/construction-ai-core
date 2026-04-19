@@ -1,0 +1,9 @@
+[[permission]]
+identifier = "allow-set-api-url"
+description = "Enables the set_api_url command without any pre-configured scope."
+commands.allow = ["set_api_url"]
+
+[[permission]]
+identifier = "deny-set-api-url"
+description = "Denies the set_api_url command without any pre-configured scope."
+commands.deny = ["set_api_url"]
