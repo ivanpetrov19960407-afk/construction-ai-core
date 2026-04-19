@@ -8,6 +8,7 @@ export interface MessageMetadata {
 interface Props {
   message: ChatMessage;
   metadata?: MessageMetadata;
+  className?: string;
 }
 
 function getConfidenceBadge(confidence?: number) {
@@ -26,7 +27,7 @@ function getConfidenceBadge(confidence?: number) {
   return { label: '? Низкая', color: '#9e9e9e' };
 }
 
-export default function MessageBubble({ message, metadata }: Props) {
+export default function MessageBubble({ message, metadata, className }: Props) {
   const isUser = message.role === 'user';
   const effectiveMetadata = metadata ?? message.metadata;
   const agents = effectiveMetadata?.agents ?? [];
@@ -42,6 +43,7 @@ export default function MessageBubble({ message, metadata }: Props) {
 
   return (
     <div
+      className={className}
       style={{
         alignSelf: isUser ? 'flex-end' : 'flex-start',
         background: isUser ? '#d4f6dd' : '#f2f2f2',
