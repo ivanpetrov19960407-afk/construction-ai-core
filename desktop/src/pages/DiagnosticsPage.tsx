@@ -84,9 +84,29 @@ export default function DiagnosticsPage() {
           <strong>/health:</strong> {healthMessage}
         </p>
         {health && (
-          <p style={{ marginBottom: 0 }}>
+          <p style={{ marginBottom: spacing.xs }}>
             Версия сервера: {health.version} · uptime: {Math.round(health.uptime_seconds)}s
           </p>
+        )}
+        {health && (
+          <div style={{ marginTop: spacing.xs }}>
+            <p style={{ marginTop: 0, marginBottom: spacing.xs }}>
+              <strong>LLM-провайдеры</strong>
+            </p>
+            <p
+              style={{
+                marginTop: 0,
+                marginBottom: spacing.xs,
+                color: health.llm.degraded ? colors.error : colors.success
+              }}
+            >
+              default: {health.llm.default}
+              {health.llm.degraded ? ' (не настроен)' : ' (настроен)'}
+            </p>
+            <p style={{ marginTop: 0, marginBottom: 0, color: colors.textSecondary }}>
+              available: {health.llm.available.length ? health.llm.available.join(', ') : 'нет'}
+            </p>
+          </div>
         )}
       </Card>
 

@@ -15,6 +15,7 @@ import structlog
 from api.metrics import LLM_TOKENS_USED
 from config.settings import settings
 from core.cache import RedisCache
+from core.errors import LLMProviderNotConfiguredError
 
 
 class LLMProvider(str, Enum):  # noqa: UP042
@@ -77,6 +78,25 @@ class LLMRouter:
         self._logger = structlog.get_logger("core.llm_router")
         self._cache = RedisCache(settings.redis_url)
         self._intent_cache_ttl_seconds = 3600
+        self.available_providers: set[LLMProvider] = self._detect_available_providers()
+        self._logger.info(
+            "llm_router_initialized",
+            default_provider=self.default_provider.value,
+            available_providers=sorted(provider.value for provider in self.available_providers),
+        )
+
+    def _detect_available_providers(self) -> set[LLMProvider]:
+        return {provider for provider in LLMProvider if self._provider_api_key(provider).strip()}
+
+    def _provider_api_key_field(self, provider: LLMProvider) -> str:
+        return str(PROVIDER_CONFIG[provider]["api_key_field"])
+
+    def _provider_api_key(self, provider: LLMProvider) -> str:
+        return str(getattr(settings, self._provider_api_key_field(provider), ""))
+
+    def is_available(self, provider: LLMProvider | str) -> bool:
+        resolved = provider if isinstance(provider, LLMProvider) else LLMProvider(provider)
+        return bool(self._provider_api_key(resolved).strip())
 
     async def query(
         self,
@@ -101,8 +121,22 @@ class LLMRouter:
         Returns:
             LLMResponse с текстом ответа и метаданными.
         """
-        provider = provider or self.default_provider
-        providers_chain = [provider, *[p for p in LLMProvider if p != provider]]
+        requested_provider = provider or self.default_provider
+        self.available_providers = self._detect_available_providers()
+        if not self.is_available(requested_provider):
+            raise LLMProviderNotConfiguredError(
+                requested_provider.value,
+                self._provider_api_key_field(requested_provider),
+            )
+
+        providers_chain = [
+            requested_provider,
+            *[
+                candidate
+                for candidate in LLMProvider
+                if candidate != requested_provider and candidate in self.available_providers
+            ],
+        ]
 
         # Формируем messages
         messages = []
@@ -116,30 +150,22 @@ class LLMRouter:
             if cached_intent is not None:
                 return LLMResponse(
                     text=cached_intent,
-                    provider=provider,
-                    model=model or PROVIDER_CONFIG[provider]["default_model"],
+                    provider=requested_provider,
+                    model=model or PROVIDER_CONFIG[requested_provider]["default_model"],
                     usage={"tokens_input": 0, "tokens_output": 0},
                 )
 
         response_data = None
         used_provider = None
         used_model = None
-        max_attempts = 3
+        max_attempts = min(3, len(providers_chain))
         last_error: Exception | None = None
 
         for attempt in range(1, max_attempts + 1):
             current_provider = providers_chain[attempt - 1]
             config = PROVIDER_CONFIG[current_provider]
             current_model = model or config["default_model"]
-            api_key = getattr(settings, config["api_key_field"])
-            if not api_key:
-                last_error = ValueError(
-                    f"API-ключ для {current_provider.value} не настроен. "
-                    f"Добавьте {config['api_key_field'].upper()} в .env"
-                )
-                if attempt < max_attempts:
-                    await self._sleep_before_retry(attempt)
-                continue
+            api_key = self._provider_api_key(current_provider)
 
             try:
                 if current_provider == LLMProvider.CLAUDE:
@@ -266,24 +292,25 @@ class LLMRouter:
         temperature: float,
         max_tokens: int,
     ) -> dict:
-        """Запрос через Anthropic API (отличается от OpenAI формата)."""
-        # Разделяем system и user messages
-        system_text = ""
-        user_messages = []
+        """Запрос к Claude API (Anthropic)."""
+        system = None
+        anthropic_messages = []
         for msg in messages:
-            if msg["role"] == "system":
-                system_text = msg["content"]
-            else:
-                user_messages.append(msg)
+            role = msg.get("role")
+            content = msg.get("content", "")
+            if role == "system":
+                system = content
+            elif role in {"user", "assistant"}:
+                anthropic_messages.append({"role": role, "content": content})
 
-        body: dict = {
+        payload = {
             "model": model,
-            "messages": user_messages,
+            "messages": anthropic_messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
-        if system_text:
-            body["system"] = system_text
+        if system:
+            payload["system"] = system
 
         response = await self._client.post(
             "https://api.anthropic.com/v1/messages",
@@ -292,15 +319,15 @@ class LLMRouter:
                 "anthropic-version": "2023-06-01",
                 "content-type": "application/json",
             },
-            json=body,
+            json=payload,
         )
         response.raise_for_status()
         data = response.json()
+        content_blocks = data.get("content", [])
+        text_parts = [
+            block.get("text", "") for block in content_blocks if block.get("type") == "text"
+        ]
         return {
-            "text": data["content"][0]["text"],
+            "text": "\n".join(part for part in text_parts if part),
             "usage": data.get("usage"),
         }
-
-    async def close(self):
-        """Закрыть HTTP-клиент."""
-        await self._client.aclose()

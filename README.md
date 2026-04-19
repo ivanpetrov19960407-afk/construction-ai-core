@@ -174,6 +174,13 @@ helm install construction-ai helm/construction-ai/ \\n  --set image.tag=latest \
 
 ---
 
+## Как получить LLM-ключи
+
+- **OpenAI**: зайдите в https://platform.openai.com/api-keys, создайте новый API key и сохраните его в `OPENAI_API_KEY`.
+- **GigaChat**: в кабинете разработчика Сбера (https://developers.sber.ru/) создайте OAuth-клиент и заполните `GIGACHAT_CREDENTIALS` в формате `base64(client_id:client_secret)`.
+
+---
+
 ## Роли пользователей
 
 | Роль | Доступ |
