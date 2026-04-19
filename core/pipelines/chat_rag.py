@@ -12,7 +12,12 @@ class ChatRagPipeline:
         self.rag_engine = rag_engine
         self.llm_router = llm_router
 
-    def _query(self, query: str, n_results: int, where: dict[str, Any] | None) -> list[dict[str, Any]]:
+    def _query(
+        self,
+        query: str,
+        n_results: int,
+        where: dict[str, Any] | None,
+    ) -> list[dict[str, Any]]:
         embedding = self.rag_engine._embed_texts([query])[0]
         payload = cast(
             Any,
@@ -42,7 +47,13 @@ class ChatRagPipeline:
         return rows
 
     def _has_personal_sources(self, user_id: str) -> bool:
-        payload = cast(Any, self.rag_engine.collection.get(where={"username": user_id}, include=["metadatas"]))
+        payload = cast(
+            Any,
+            self.rag_engine.collection.get(
+                where={"username": user_id},
+                include=["metadatas"],
+            ),
+        )
         metadatas = payload.get("metadatas") or []
         return bool(metadatas)
 
@@ -50,9 +61,11 @@ class ChatRagPipeline:
     def _context_block(chunks: list[dict[str, Any]]) -> str:
         lines: list[str] = []
         for idx, chunk in enumerate(chunks, start=1):
-            lines.append(
-                f"[S{idx}] {chunk['source']} (стр. {chunk['page']}, score={chunk['score']:.3f}):\n{chunk['text']}"
-            )
+            source = chunk["source"]
+            page = chunk["page"]
+            score = chunk["score"]
+            text = chunk["text"]
+            lines.append(f"[S{idx}] {source} (стр. {page}, score={score:.3f}):\n{text}")
         return "\n\n".join(lines)
 
     @staticmethod

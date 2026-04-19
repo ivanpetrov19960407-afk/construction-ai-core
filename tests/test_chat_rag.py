@@ -36,9 +36,17 @@ class _FakeCollection:
         _ = query_embeddings, include
         rows = self.user_docs if where == {"username": "user-1"} else self.global_docs
         rows = rows[:n_results]
+        metadatas = [
+            {
+                "source": row["source"],
+                "page": row["page"],
+                "username": row["username"],
+            }
+            for row in rows
+        ]
         return {
             "documents": [[row["text"] for row in rows]],
-            "metadatas": [[{"source": row["source"], "page": row["page"], "username": row["username"]} for row in rows]],
+            "metadatas": [metadatas],
             "distances": [[0.1 for _ in rows]],
         }
 
