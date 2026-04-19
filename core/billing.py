@@ -254,6 +254,10 @@ def require_quota(resource: str, plan: PlanTier | None = None):
     ) -> None:
         tenant = org_id or getattr(request.state, "org_id", None)
         if not tenant:
+            api_key = request.headers.get("X-API-Key")
+            if api_key and api_key in settings.api_keys:
+                tenant = "default"
+        if not tenant:
             # For requests without tenant context quota cannot be enforced reliably.
             return
         actual_plan = _resolve_plan(tenant, plan)

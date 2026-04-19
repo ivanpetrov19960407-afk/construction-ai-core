@@ -28,8 +28,23 @@ def upgrade() -> None:
     op.create_index("ix_projects_short_id", "projects", ["short_id"], unique=False)
     op.alter_column("projects", "short_id", nullable=False)
 
+    op.execute(
+        """
+        CREATE TABLE IF NOT EXISTS project_short_id_seq (
+            id INTEGER PRIMARY KEY AUTOINCREMENT
+        )
+        """
+    )
+    max_short_id = bind.execute(sa.text("SELECT COALESCE(MAX(short_id), 0) FROM projects")).scalar()
+    if int(max_short_id or 0) > 0:
+        bind.execute(
+            sa.text("INSERT INTO project_short_id_seq (id) VALUES (:short_id)"),
+            {"short_id": int(max_short_id)},
+        )
+
 
 def downgrade() -> None:
+    op.execute("DROP TABLE IF EXISTS project_short_id_seq")
     op.drop_index("ix_projects_short_id", table_name="projects")
     op.drop_constraint("uq_projects_short_id", "projects", type_="unique")
     op.drop_column("projects", "short_id")

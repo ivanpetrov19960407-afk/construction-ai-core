@@ -7,7 +7,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import desc, func
+from sqlalchemy import desc, text
 
 from api.deps import CurrentUser, current_user
 from config.settings import settings
@@ -38,6 +38,20 @@ class AddDocumentRequest(BaseModel):
 
 class AddCommentRequest(BaseModel):
     text: str = Field(min_length=1)
+
+
+def _allocate_short_id(session) -> int:
+    session.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS project_short_id_seq (
+                id INTEGER PRIMARY KEY AUTOINCREMENT
+            )
+            """
+        )
+    )
+    session.execute(text("INSERT INTO project_short_id_seq DEFAULT VALUES"))
+    return int(session.execute(text("SELECT last_insert_rowid()")).scalar_one())
 
 
 def _serialize_project(project: Project) -> dict:
@@ -83,8 +97,7 @@ async def create_project(
     members = sorted(set(payload.members + [user.username]))
 
     with session_local() as session:
-        max_short_id = session.query(func.coalesce(func.max(Project.short_id), 0)).scalar()
-        next_short_id = int(max_short_id or 0) + 1
+        next_short_id = _allocate_short_id(session)
         project = Project(
             name=payload.name,
             description=payload.description,
