@@ -6,6 +6,19 @@ import {
   DEFAULT_CHAT_TIMEOUT_MS,
   DEFAULT_GENERATION_TIMEOUT_MS
 } from '../lib/apiClient';
+import type {
+  AnalyticsSummaryResponse,
+  AuthLoginRequest,
+  AuthRegisterRequest,
+  AuthTokenResponse,
+  BillingQuotaResponse,
+  ComplianceCheckRequest,
+  ComplianceCheckResponse,
+  ComplianceRule,
+  GenerateEstimateRequest,
+  GenerateExecAlbumRequest,
+  GeneratePprRequest
+} from '../types/api';
 import type { ChatRole } from '../store/chatStore';
 import { logError } from '../lib/logger';
 import { parseSSEEvent } from './sseEvents';
@@ -242,6 +255,26 @@ async function postJson<TRequest>(
       'X-API-Key': apiKey.trim()
     },
     body: JSON.stringify(payload),
+    timeoutMs,
+    signal
+  });
+
+  return (await response.json()) as GenerateDocumentResponse;
+}
+
+async function postForm(
+  apiUrl: string,
+  apiKey: string,
+  endpoint: string,
+  payload: FormData,
+  { timeoutMs = DEFAULT_GENERATION_TIMEOUT_MS, signal }: ApiCallOptions = {}
+): Promise<GenerateDocumentResponse> {
+  const response = await apiRequest(normalizeApiUrl(apiUrl), endpoint, {
+    method: 'POST',
+    headers: {
+      'X-API-Key': apiKey.trim()
+    },
+    body: payload,
     timeoutMs,
     signal
   });
@@ -759,4 +792,147 @@ export async function downloadKSDocx(
   });
 
   return await response.blob();
+}
+
+export function generatePpr(
+  apiUrl: string,
+  apiKey: string,
+  payload: GeneratePprRequest,
+  onEvent: (event: GenerationStreamEvent) => void,
+  options?: ApiCallOptions
+) {
+  return postJsonSSE(apiUrl, apiKey, '/api/generate/ppr?stream=true', payload, onEvent, options);
+}
+
+export function generateEstimate(
+  apiUrl: string,
+  apiKey: string,
+  payload: GenerateEstimateRequest,
+  onEvent: (event: GenerationStreamEvent) => void,
+  options?: ApiCallOptions
+) {
+  return postJsonSSE(apiUrl, apiKey, '/api/generate/estimate?stream=true', payload, onEvent, options);
+}
+
+export async function analyzeDocument(
+  apiUrl: string,
+  apiKey: string,
+  file: File,
+  { timeoutMs = DEFAULT_GENERATION_TIMEOUT_MS, signal }: ApiCallOptions = {}
+) {
+  const form = new FormData();
+  form.append('file', file, file.name);
+  return postForm(apiUrl, apiKey, '/api/analyze/document', form, { timeoutMs, signal });
+}
+
+export function generateExecAlbum(
+  apiUrl: string,
+  apiKey: string,
+  payload: GenerateExecAlbumRequest,
+  onEvent: (event: GenerationStreamEvent) => void,
+  options?: ApiCallOptions
+) {
+  return postJsonSSE(apiUrl, apiKey, '/api/generate/exec-album?stream=true', payload, onEvent, options);
+}
+
+export async function getAnalyticsSummary(
+  apiUrl: string,
+  apiKey: string,
+  { timeoutMs, signal }: ApiCallOptions = {}
+): Promise<AnalyticsSummaryResponse> {
+  const response = await apiRequest(normalizeApiUrl(apiUrl), '/api/analytics/summary', {
+    method: 'GET',
+    headers: {
+      'X-API-Key': apiKey.trim()
+    },
+    timeoutMs,
+    signal
+  });
+  return (await response.json()) as AnalyticsSummaryResponse;
+}
+
+export async function listCompliance(
+  apiUrl: string,
+  apiKey: string,
+  { timeoutMs, signal }: ApiCallOptions = {}
+): Promise<ComplianceRule[]> {
+  const response = await apiRequest(normalizeApiUrl(apiUrl), '/api/compliance/rules', {
+    method: 'GET',
+    headers: {
+      'X-API-Key': apiKey.trim()
+    },
+    timeoutMs,
+    signal
+  });
+  const payload = (await response.json()) as { items?: ComplianceRule[]; rules?: ComplianceRule[] };
+  return Array.isArray(payload.items) ? payload.items : Array.isArray(payload.rules) ? payload.rules : [];
+}
+
+export async function checkCompliance(
+  apiUrl: string,
+  apiKey: string,
+  payload: ComplianceCheckRequest,
+  { timeoutMs = DEFAULT_GENERATION_TIMEOUT_MS, signal }: ApiCallOptions = {}
+): Promise<ComplianceCheckResponse> {
+  const response = await apiRequest(normalizeApiUrl(apiUrl), '/api/compliance/check', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-API-Key': apiKey.trim()
+    },
+    body: JSON.stringify(payload),
+    timeoutMs,
+    signal
+  });
+  return (await response.json()) as ComplianceCheckResponse;
+}
+
+export async function login(
+  apiUrl: string,
+  payload: AuthLoginRequest,
+  { timeoutMs, signal }: ApiCallOptions = {}
+): Promise<AuthTokenResponse> {
+  const response = await apiRequest(normalizeApiUrl(apiUrl), '/api/auth/login', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(payload),
+    timeoutMs,
+    signal
+  });
+  return (await response.json()) as AuthTokenResponse;
+}
+
+export async function register(
+  apiUrl: string,
+  payload: AuthRegisterRequest,
+  { timeoutMs, signal }: ApiCallOptions = {}
+): Promise<AuthTokenResponse> {
+  const response = await apiRequest(normalizeApiUrl(apiUrl), '/api/auth/register', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(payload),
+    timeoutMs,
+    signal
+  });
+  return (await response.json()) as AuthTokenResponse;
+}
+
+export async function getQuotas(
+  apiUrl: string,
+  apiKey: string,
+  { timeoutMs, signal }: ApiCallOptions = {}
+): Promise<BillingQuotaResponse> {
+  const response = await apiRequest(normalizeApiUrl(apiUrl), '/api/billing/quotas', {
+    method: 'GET',
+    headers: {
+      'X-API-Key': apiKey.trim()
+    },
+    timeoutMs,
+    signal
+  });
+  return (await response.json()) as BillingQuotaResponse;
 }

@@ -1,8 +1,4 @@
 import type { ChatMessage } from '../store/chatStore';
-import ReactMarkdown from 'react-markdown';
-import rehypeHighlight from 'rehype-highlight';
-import rehypeSanitize from 'rehype-sanitize';
-import remarkGfm from 'remark-gfm';
 import { colors, shadows, spacing } from '../styles/tokens';
 import MessageSources from './MessageSources';
 
@@ -71,13 +67,8 @@ export default function MessageBubble({ message, metadata, className }: Props) {
         {isUser ? (
           <span>{message.content}</span>
         ) : (
-          <div style={{ lineHeight: 1.5, overflowX: 'auto' }}>
-            <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
-              rehypePlugins={[rehypeHighlight, rehypeSanitize]}
-            >
-              {message.content}
-            </ReactMarkdown>
+          <div style={{ lineHeight: 1.5, overflowX: 'auto', whiteSpace: 'pre-wrap' }}>
+            {message.content}
           </div>
         )}
         {!isUser && !isSystem && (

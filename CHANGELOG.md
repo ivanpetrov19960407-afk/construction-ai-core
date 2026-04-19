@@ -11,6 +11,7 @@
 - feat(kb): split personal vs global knowledge base
 - feat(api): SSE for letter
 - feat(compliance): accept short_id, fix 422→404
+- feat(desktop): add PPR/Estimate/Tender/Analytics/Compliance/Billing/Auth pages
 
 ## [0.2.0] - 2026-04-14
 

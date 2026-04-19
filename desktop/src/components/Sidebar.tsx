@@ -10,6 +10,11 @@ interface NavItem {
   icon: ReactNode;
 }
 
+interface NavGroup {
+  title: string;
+  items: NavItem[];
+}
+
 interface SidebarProps {
   currentPath: string;
   onNavigate: (path: string) => void;
@@ -32,23 +37,55 @@ const HandoverIcon = () => <BaseIcon><path strokeLinecap="round" strokeLinejoin=
 const KnowledgeBaseIcon = () => <BaseIcon><path strokeLinecap="round" strokeLinejoin="round" d="M6 4.5h9l3 3v12H6v-15Zm9 0v3h3M8.25 13.5h7.5m-7.5-3h7.5" /></BaseIcon>;
 const DiagnosticsIcon = () => <BaseIcon><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 18.75h15M6.75 15.75v-3m3.75 3v-6m3.75 6V8.25m3.75 7.5V6.75M4.5 4.5h15" /></BaseIcon>;
 
-const navItems: NavItem[] = [
-  { path: '/', label: 'Чат', icon: <ChatIcon /> },
-  { path: '/settings', label: 'Настройки', icon: <SettingsIcon /> },
-  { path: '/generate/tk', label: 'Генерация ТК', icon: <TKIcon /> },
-  { path: '/generate/letter', label: 'Генерация письма', icon: <LetterIcon /> },
-  { path: '/generate/ks', label: 'Генерация КС', icon: <KSIcon /> },
-  { path: '/handover', label: 'Сдача объекта', icon: <HandoverIcon /> },
-  { path: '/knowledge-base', label: 'База знаний', icon: <KnowledgeBaseIcon /> },
-  { path: '/diagnostics', label: 'Диагностика', icon: <DiagnosticsIcon /> }
-];
-
 export default function Sidebar({ currentPath, onNavigate }: SidebarProps) {
   const sessions = useChatStore((s) => s.sessions);
   const resetSession = useChatStore((s) => s.resetSession);
   const [hoveredSession, setHoveredSession] = useState<string | null>(null);
   const { me } = useAuth();
-  const roleLabel = me?.is_admin ? 'Администратор' : me?.role === 'pto_engineer' ? 'ПТО-инженер' : me?.role ?? '—';
+  const isAdmin = Boolean(me?.is_admin);
+  const roleLabel = isAdmin ? 'Администратор' : me?.role === 'pto_engineer' ? 'ПТО-инженер' : me?.role ?? '—';
+
+  const navGroups: NavGroup[] = [
+    {
+      title: 'База',
+      items: [
+        { path: '/', label: 'Чат', icon: <ChatIcon /> },
+        { path: '/knowledge-base', label: 'База знаний', icon: <KnowledgeBaseIcon /> },
+        { path: '/settings', label: 'Настройки', icon: <SettingsIcon /> }
+      ]
+    },
+    {
+      title: 'Генерация',
+      items: [
+        { path: '/generate/tk', label: 'ТК', icon: <TKIcon /> },
+        { path: '/generate/letter', label: 'Письмо', icon: <LetterIcon /> },
+        { path: '/generate/ks', label: 'КС', icon: <KSIcon /> },
+        { path: '/generate/ppr', label: 'ППР', icon: <TKIcon /> },
+        { path: '/generate/estimate', label: 'Смета', icon: <KSIcon /> },
+        { path: '/generate/exec-album', label: 'Исп. альбом', icon: <HandoverIcon /> }
+      ]
+    },
+    {
+      title: 'Анализ',
+      items: [
+        { path: '/analyze/tender', label: 'Тендер', icon: <DiagnosticsIcon /> },
+        { path: '/handover', label: 'Сдача объекта', icon: <HandoverIcon /> },
+        { path: '/diagnostics', label: 'Диагностика', icon: <DiagnosticsIcon /> }
+      ]
+    },
+    ...(isAdmin
+      ? [
+          {
+            title: 'Админ',
+            items: [
+              { path: '/analytics', label: 'Аналитика', icon: <DiagnosticsIcon /> },
+              { path: '/billing', label: 'Биллинг', icon: <KSIcon /> },
+              { path: '/compliance', label: 'Compliance', icon: <KnowledgeBaseIcon /> }
+            ]
+          }
+        ]
+      : [])
+  ];
 
   return (
     <aside
@@ -67,71 +104,55 @@ export default function Sidebar({ currentPath, onNavigate }: SidebarProps) {
         borderRadius: radius.lg
       }}
     >
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: spacing.sm,
-          marginBottom: spacing.lg,
-          paddingBottom: spacing.md,
-          borderBottom: `1px solid ${colors.border}`
-        }}
-      >
+      <div style={{ display: 'flex', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.lg, paddingBottom: spacing.md, borderBottom: `1px solid ${colors.border}` }}>
         <span style={{ fontSize: 20 }}>🏗️</span>
         <span style={{ fontWeight: 700, fontSize: 15, color: colors.primary }}>Construction AI</span>
       </div>
       <h3 style={{ margin: 0, marginBottom: spacing.md }}>Разделы</h3>
-      <p style={{ margin: 0, marginBottom: spacing.sm, color: colors.textSecondary, fontSize: 13 }}>
-        Роль: {roleLabel}
-      </p>
-      <nav style={{ display: 'grid', gap: spacing.xs, marginBottom: spacing.lg }}>
-        {navItems.map((item) => {
-          const active = currentPath === item.path;
-          return (
-            <button
-              key={item.path}
-              type="button"
-              onClick={() => onNavigate(item.path)}
-              style={{
-                textAlign: 'left',
-                fontWeight: active ? 600 : 500,
-                display: 'flex',
-                alignItems: 'center',
-                gap: spacing.sm,
-                border: 'none',
-                borderLeft: `3px solid ${active ? colors.primary : 'transparent'}`,
-                background: active ? colors.bgActiveNav : 'transparent',
-                color: colors.textPrimary,
-                borderRadius: radius.md,
-                padding: `${spacing.sm}px ${spacing.sm}px ${spacing.sm}px ${spacing.md}`,
-                cursor: 'pointer',
-                fontFamily: typography.fontFamily,
-                transition: `background ${transitions.fast}, color ${transitions.fast}`
-              }}
-            >
-              {item.icon}
-              {item.label}
-            </button>
-          );
-        })}
+      <p style={{ margin: 0, marginBottom: spacing.sm, color: colors.textSecondary, fontSize: 13 }}>Роль: {roleLabel}</p>
+      <nav style={{ display: 'grid', gap: spacing.xs, marginBottom: spacing.lg, overflowY: 'auto' }}>
+        {navGroups.map((group) => (
+          <div key={group.title}>
+            <p style={{ margin: `${spacing.sm}px 0 ${spacing.xs}px`, color: colors.textSecondary, fontSize: 12 }}>{group.title}</p>
+            {group.items.map((item) => {
+              const active = currentPath === item.path;
+              return (
+                <button
+                  key={item.path}
+                  type="button"
+                  onClick={() => onNavigate(item.path)}
+                  style={{
+                    width: '100%',
+                    textAlign: 'left',
+                    fontWeight: active ? 600 : 500,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: spacing.sm,
+                    border: 'none',
+                    borderLeft: `3px solid ${active ? colors.primary : 'transparent'}`,
+                    background: active ? colors.bgActiveNav : 'transparent',
+                    color: colors.textPrimary,
+                    borderRadius: radius.md,
+                    padding: `${spacing.sm}px ${spacing.sm}px ${spacing.sm}px ${spacing.md}`,
+                    cursor: 'pointer',
+                    fontFamily: typography.fontFamily,
+                    transition: `background ${transitions.fast}, color ${transitions.fast}`
+                  }}
+                >
+                  {item.icon}
+                  {item.label}
+                </button>
+              );
+            })}
+          </div>
+        ))}
       </nav>
 
       <Button onClick={resetSession} style={{ width: '100%', marginBottom: spacing.md }}>
         <span aria-hidden>+</span> Новая сессия
       </Button>
       <h3 style={{ marginTop: 0, marginBottom: spacing.sm }}>История сессий</h3>
-      <ul
-        style={{
-          listStyle: 'none',
-          padding: 0,
-          margin: 0,
-          display: 'grid',
-          gap: spacing.xs,
-          flex: 1,
-          overflowY: 'auto',
-          maxHeight: 'calc(100vh - 380px)'
-        }}
-      >
+      <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gap: spacing.xs, flex: 1, overflowY: 'auto', maxHeight: 'calc(100vh - 380px)' }}>
         {sessions.map((session) => {
           const isHovered = hoveredSession === session.id;
           return (
