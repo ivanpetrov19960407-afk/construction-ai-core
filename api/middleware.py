@@ -7,6 +7,7 @@ import logging
 import time
 import traceback
 from collections.abc import Awaitable, Callable
+from hashlib import sha256
 from typing import Any, cast
 
 import structlog
@@ -32,7 +33,18 @@ EXCLUDED_PATHS = {
     "/metrics",
 }
 PUBLIC_AUTH_PATHS = {"/auth/register", "/auth/login"}
+API_KEY_IDENTITY_PATHS = {
+    "/api/me",
+    "/api/rag/chat-upload",
+    "/api/rag/my-sources",
+}
 limiter = Limiter(key_func=get_remote_address, default_limits=[])
+
+
+def _api_key_actor_id(api_key: str) -> str:
+    """Build collision-resistant actor id for API key-authenticated requests."""
+    digest = sha256(api_key.encode("utf-8")).hexdigest()
+    return f"api-key:{digest}"
 
 
 class APIKeyMiddleware(BaseHTTPMiddleware):
@@ -65,6 +77,12 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         provided_key = request.headers.get("X-API-Key")
         if provided_key not in settings.api_keys:
             return JSONResponse(status_code=401, content={"detail": "Invalid API key"})
+        if path in API_KEY_IDENTITY_PATHS:
+            request.state.username = _api_key_actor_id(provided_key)
+            request.state.user_role = (
+                "admin" if provided_key in settings.admin_api_keys else "pto_engineer"
+            )
+            request.state.org_id = "default"
         return await call_next(request)
 
 
@@ -170,7 +188,7 @@ def setup_rate_limiter(app_routes: list[BaseRoute]) -> None:
 
         if path == "/api/chat":
             route.endpoint = cast(Any, limiter.limit("60/minute")(endpoint))
-        elif path.startswith("/api/generate/"):
+        elif path.startswith("/api/generate/") and path != "/api/generate/exec-album":
             route.endpoint = cast(Any, limiter.limit("10/minute")(endpoint))
         elif path.startswith("/api/analyze/"):
             route.endpoint = cast(Any, limiter.limit("5/minute")(endpoint))

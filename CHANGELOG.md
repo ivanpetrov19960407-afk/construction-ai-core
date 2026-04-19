@@ -3,6 +3,9 @@
 ### Fixed
 - fix(health): honest LLM status
 
+### Added
+- feat(kb): split personal vs global knowledge base
+
 ## [0.2.0] - 2026-04-14
 
 ### Added

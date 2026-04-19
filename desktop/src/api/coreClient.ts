@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { Store } from '@tauri-apps/plugin-store';
 import {
+  ApiRequestError,
   apiRequest,
   DEFAULT_CHAT_TIMEOUT_MS,
   DEFAULT_GENERATION_TIMEOUT_MS
@@ -140,6 +141,26 @@ export interface UploadChatDocumentResponse {
   source: string;
 }
 
+export interface RagSourceItem {
+  source: string;
+  chunks: number;
+}
+
+export interface MeResponse {
+  username: string;
+  role: string;
+  is_admin: boolean;
+}
+
+export class ForbiddenError extends Error {
+  status = 403;
+
+  constructor(message = 'Недостаточно прав. Войдите как admin или используйте “Мою базу”') {
+    super(message);
+    this.name = 'ForbiddenError';
+  }
+}
+
 export interface TelegramLinkResponse {
   ok: boolean;
   telegram_user_id: string;
@@ -195,6 +216,18 @@ async function postJson<TRequest>(
   });
 
   return (await response.json()) as GenerateDocumentResponse;
+}
+
+function parseError(error: unknown): never {
+  if (error instanceof ApiRequestError && error.status === 403) {
+    throw new ForbiddenError();
+  }
+
+  if (error instanceof Error) {
+    throw error;
+  }
+
+  throw new Error('Неизвестная ошибка запроса.');
 }
 
 async function postJsonSSE<TRequest>(
@@ -319,23 +352,141 @@ export async function uploadChatDocument(
   },
   { timeoutMs = DEFAULT_GENERATION_TIMEOUT_MS, signal }: ApiCallOptions = {}
 ): Promise<UploadChatDocumentResponse> {
-  const endpoint = '/api/rag/chat-upload';
-  const formData = new FormData();
-  formData.append('file', payload.file, payload.file.name);
-  formData.append('source_name', payload.file.name);
-  formData.append('session_id', payload.sessionId);
+  try {
+    const endpoint = '/api/rag/chat-upload';
+    const formData = new FormData();
+    formData.append('file', payload.file, payload.file.name);
+    formData.append('source_name', payload.file.name);
+    formData.append('session_id', payload.sessionId);
 
-  const response = await apiRequest(normalizeApiUrl(apiUrl), endpoint, {
-    method: 'POST',
-    headers: {
-      'X-API-Key': apiKey.trim()
-    },
-    body: formData,
-    timeoutMs,
-    signal
-  });
+    const response = await apiRequest(normalizeApiUrl(apiUrl), endpoint, {
+      method: 'POST',
+      headers: {
+        'X-API-Key': apiKey.trim()
+      },
+      body: formData,
+      timeoutMs,
+      signal
+    });
 
-  return (await response.json()) as UploadChatDocumentResponse;
+    return (await response.json()) as UploadChatDocumentResponse;
+  } catch (error) {
+    parseError(error);
+  }
+}
+
+export async function ingestGlobal(
+  apiUrl: string,
+  apiKey: string,
+  payload: {
+    file: File;
+    sourceName?: string;
+  },
+  { timeoutMs = DEFAULT_GENERATION_TIMEOUT_MS, signal }: ApiCallOptions = {}
+): Promise<UploadChatDocumentResponse> {
+  try {
+    const endpoint = '/api/rag/ingest';
+    const formData = new FormData();
+    formData.append('file', payload.file, payload.file.name);
+    formData.append('source_name', payload.sourceName || payload.file.name);
+
+    const response = await apiRequest(normalizeApiUrl(apiUrl), endpoint, {
+      method: 'POST',
+      headers: {
+        'X-API-Key': apiKey.trim()
+      },
+      body: formData,
+      timeoutMs,
+      signal
+    });
+    return (await response.json()) as UploadChatDocumentResponse;
+  } catch (error) {
+    parseError(error);
+  }
+}
+
+export async function listMySources(
+  apiUrl: string,
+  apiKey: string,
+  { timeoutMs, signal }: ApiCallOptions = {}
+): Promise<RagSourceItem[]> {
+  try {
+    const response = await apiRequest(normalizeApiUrl(apiUrl), '/api/rag/my-sources', {
+      method: 'GET',
+      headers: {
+        'X-API-Key': apiKey.trim()
+      },
+      timeoutMs,
+      signal
+    });
+    const payload = (await response.json()) as { sources?: RagSourceItem[] };
+    return Array.isArray(payload.sources) ? payload.sources : [];
+  } catch (error) {
+    parseError(error);
+  }
+}
+
+export async function listGlobalSources(
+  apiUrl: string,
+  apiKey: string,
+  { timeoutMs, signal }: ApiCallOptions = {}
+): Promise<RagSourceItem[]> {
+  try {
+    const response = await apiRequest(normalizeApiUrl(apiUrl), '/api/rag/sources', {
+      method: 'GET',
+      headers: {
+        'X-API-Key': apiKey.trim()
+      },
+      timeoutMs,
+      signal
+    });
+    const payload = (await response.json()) as { sources?: RagSourceItem[] };
+    return Array.isArray(payload.sources) ? payload.sources : [];
+  } catch (error) {
+    parseError(error);
+  }
+}
+
+export async function deleteGlobalSource(
+  apiUrl: string,
+  apiKey: string,
+  source: string,
+  { timeoutMs, signal }: ApiCallOptions = {}
+): Promise<{ deleted: number; source: string }> {
+  try {
+    const endpoint = `/api/rag/sources/${encodeURIComponent(source)}`;
+    const response = await apiRequest(normalizeApiUrl(apiUrl), endpoint, {
+      method: 'DELETE',
+      headers: {
+        'X-API-Key': apiKey.trim()
+      },
+      timeoutMs,
+      signal
+    });
+    return (await response.json()) as { deleted: number; source: string };
+  } catch (error) {
+    parseError(error);
+  }
+}
+
+export async function getMe(
+  apiUrl: string,
+  apiKey: string,
+  { timeoutMs, signal }: ApiCallOptions = {}
+): Promise<MeResponse> {
+  try {
+    const response = await apiRequest(normalizeApiUrl(apiUrl), '/api/me', {
+      method: 'GET',
+      headers: {
+        'X-API-Key': apiKey.trim()
+      },
+      timeoutMs,
+      signal
+    });
+    return (await response.json()) as MeResponse;
+  } catch (error) {
+    parseError(error);
+  }
 }
 
 export async function checkHealth(apiUrl: string, { timeoutMs, signal }: ApiCallOptions = {}): Promise<HealthResponse> {

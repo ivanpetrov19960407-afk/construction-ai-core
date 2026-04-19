@@ -94,3 +94,49 @@ def test_me_requires_auth():
         assert response.json() == {"detail": "Invalid API key"}
 
     asyncio.run(_run())
+
+
+def test_api_me_returns_profile(tmp_path: Path):
+    """GET /api/me should return username, role and is_admin."""
+
+    async def _run() -> None:
+        old_users_db_path = settings.users_db_path
+        old_invite_codes = settings.invite_codes
+        old_jwt_secret = settings.jwt_secret
+        settings.users_db_path = str(tmp_path / "users.db")
+        settings.invite_codes = {"PTO-XXX": "pto_engineer"}
+        settings.jwt_secret = "test-secret"
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                register_response = await client.post(
+                    "/auth/register",
+                    json={
+                        "username": "ivan",
+                        "password": "pass123",
+                        "invite_code": "PTO-XXX",
+                    },
+                )
+                assert register_response.status_code == 200
+                login_response = await client.post(
+                    "/auth/login",
+                    json={"username": "ivan", "password": "pass123"},
+                )
+                token = login_response.json()["access_token"]
+                me_response = await client.get(
+                    "/api/me", headers={"Authorization": f"Bearer {token}"}
+                )
+        finally:
+            settings.users_db_path = old_users_db_path
+            settings.invite_codes = old_invite_codes
+            settings.jwt_secret = old_jwt_secret
+
+        assert me_response.status_code == 200
+        assert me_response.json() == {
+            "username": "ivan",
+            "role": "pto_engineer",
+            "org_id": "default",
+            "is_admin": False,
+        }
+
+    asyncio.run(_run())

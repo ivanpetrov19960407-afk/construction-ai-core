@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { checkHealth, fetchNotifications, getApiConfig, type DesktopNotification } from './api/coreClient';
 import Sidebar from './components/Sidebar';
 import StatusBar from './components/StatusBar';
+import { AuthProvider } from './context/AuthContext';
 import { resolveRoute } from './router';
 import { colors, spacing, typography } from './styles/tokens';
 import type { BrandingConfig } from './store/brandingStore';
@@ -160,7 +161,7 @@ export default function App() {
   );
 
   return (
-    <>
+    <AuthProvider>
       <style>{`*, *::before, *::after { box-sizing: border-box; } body { margin: 0; }`}</style>
       <main style={appTheme}>
         <Sidebar currentPath={currentPath} onNavigate={navigate} />
@@ -190,6 +191,6 @@ export default function App() {
           </div>
         ))}
       </div>
-    </>
+    </AuthProvider>
   );
 }

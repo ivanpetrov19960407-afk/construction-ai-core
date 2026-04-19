@@ -137,7 +137,9 @@ def test_rag_chat_upload_allows_non_admin_key(monkeypatch):
         def ingest_pdf(self, filepath: str, source_name: str, metadata: dict | None = None) -> int:
             assert filepath.endswith(".pdf")
             assert source_name == "chat-file.pdf"
-            assert metadata == {"session_id": "chat-456"}
+            assert metadata is not None
+            assert metadata.get("session_id") == "chat-456"
+            assert str(metadata.get("username", "")).startswith("api-key:")
             return 5
 
     monkeypatch.setattr(rag_routes, "get_rag_engine", lambda: _ChatUploadRAG())
