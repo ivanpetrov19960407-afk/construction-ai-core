@@ -8,7 +8,10 @@ from api.security import JWTError, decode_jwt, encode_jwt
 from config.settings import settings
 from core.database import get_db
 
-UTC = getattr(datetime, "UTC", timezone.utc)
+if hasattr(datetime, "UTC"):
+    UTC = datetime.UTC
+else:  # pragma: no cover
+    UTC = timezone.utc  # noqa: UP017
 
 
 class InvalidTelegramLinkTokenError(ValueError):

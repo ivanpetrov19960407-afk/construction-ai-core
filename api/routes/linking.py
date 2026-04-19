@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, Field
 
 from core.session_bridge import (
     InvalidTelegramLinkTokenError,

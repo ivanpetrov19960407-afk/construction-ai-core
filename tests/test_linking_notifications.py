@@ -23,7 +23,11 @@ def test_link_telegram_and_fetch_notifications(tmp_path):
         with TestClient(app) as client:
             link_response = client.post(
                 "/api/link/telegram",
-                json={"code": token, "user_id": "desktop-user-1", "session_id": "desktop-session-1"},
+                json={
+                    "code": token,
+                    "user_id": "desktop-user-1",
+                    "session_id": "desktop-session-1",
+                },
                 headers={"X-API-Key": "valid-key"},
             )
             assert link_response.status_code == 200
