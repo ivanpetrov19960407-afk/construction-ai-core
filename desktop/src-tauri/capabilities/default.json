@@ -13,6 +13,7 @@
     "core:path:default",
     "dialog:allow-message",
     "dialog:allow-ask",
+    "http:default",
     "allow-get-api-url",
     "allow-set-api-url",
     "allow-pick-pdf-file",
