@@ -625,7 +625,10 @@ async def generate_tk(
             yield _sse_event("error", {"stage": "error", "message": "Unexpected generation error"})
             return
 
-        yield _sse_event("done", {"stage": "done", "progress": 100, "result": response.model_dump()})
+        yield _sse_event(
+            "done",
+            {"stage": "done", "progress": 100, "result": response.model_dump()},
+        )
 
     return StreamingResponse(_stream(), media_type="text/event-stream")
 
@@ -1058,7 +1061,10 @@ async def generate_ks(
             yield _sse_event("error", {"stage": "error", "message": "Unexpected generation error"})
             return
 
-        yield _sse_event("done", {"stage": "done", "progress": 100, "result": response.model_dump()})
+        yield _sse_event(
+            "done",
+            {"stage": "done", "progress": 100, "result": response.model_dump()},
+        )
 
     return StreamingResponse(_stream(), media_type="text/event-stream")
 
