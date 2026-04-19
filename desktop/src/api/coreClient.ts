@@ -14,6 +14,13 @@ export interface ChatRequest {
   message: string;
   role: ChatRole;
   session_id: string;
+  message_id?: string;
+}
+
+export interface ChatSource {
+  title: string;
+  page: number;
+  score: number;
 }
 
 export interface ChatResponse {
@@ -22,11 +29,14 @@ export interface ChatResponse {
   agents_used?: string[];
   confidence?: number | null;
   conflict_rate?: number | null;
+  sources?: ChatSource[];
+  message_id?: string;
 }
 
 export interface ChatResponseMeta {
   agents?: string[];
   confidence?: number;
+  sources?: ChatSource[];
 }
 
 export interface TKRequest {
@@ -370,6 +380,73 @@ export async function sendChatMessage(
   });
 
   return (await response.json()) as ChatResponse;
+}
+
+export async function sendChatMessageStream(
+  apiUrl: string,
+  apiKey: string,
+  payload: ChatRequest,
+  onEvent: (event: import('./sseEvents').SSEEvent) => void,
+  { timeoutMs = DEFAULT_CHAT_TIMEOUT_MS, signal }: ApiCallOptions = {}
+): Promise<ChatResponse> {
+  const controller = new AbortController();
+  const timeoutId =
+    typeof timeoutMs === 'number' && timeoutMs > 0 ? window.setTimeout(() => controller.abort(), timeoutMs) : null;
+  if (signal) {
+    if (signal.aborted) {
+      controller.abort();
+    } else {
+      signal.addEventListener('abort', () => controller.abort(), { once: true });
+    }
+  }
+
+  try {
+    const response = await fetch(`${normalizeApiUrl(apiUrl)}/api/chat?stream=true`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+        'X-API-Key': apiKey.trim()
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal
+    });
+
+    if (!response.ok || !response.body) {
+      throw new Error(`SSE HTTP error: ${response.status}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      while (buffer.includes('\n\n')) {
+        const splitAt = buffer.indexOf('\n\n');
+        const rawEvent = buffer.slice(0, splitAt);
+        buffer = buffer.slice(splitAt + 2);
+
+        const parsedEvent = parseSSEEvent(rawEvent);
+        if (!parsedEvent) continue;
+        onEvent(parsedEvent);
+
+        if (parsedEvent.event === 'error') {
+          throw new SSEError(parsedEvent.code, parsedEvent.message, parsedEvent.details);
+        }
+        if (parsedEvent.event === 'done' && parsedEvent.result) {
+          return parsedEvent.result as unknown as ChatResponse;
+        }
+      }
+    }
+  } finally {
+    if (timeoutId !== null) window.clearTimeout(timeoutId);
+  }
+
+  throw new SSEError('internal', 'Поток чата завершился без результата');
 }
 
 export async function uploadChatDocument(

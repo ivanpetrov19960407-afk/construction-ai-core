@@ -3,7 +3,7 @@ import MessageBubble from './MessageBubble';
 import Input from './ui/Input';
 import Button from './ui/Button';
 import { useChatStore } from '../store/chatStore';
-import { sendChatMessage, uploadChatDocument } from '../api/coreClient';
+import { sendChatMessageStream, uploadChatDocument } from '../api/coreClient';
 import type { ChatResponseMeta } from '../api/coreClient';
 import { Store } from '@tauri-apps/plugin-store';
 import { colors, radius, spacing } from '../styles/tokens';
@@ -16,6 +16,7 @@ export default function ChatWindow() {
   const defaultRole = useChatStore((s) => s.defaultRole);
   const sessionId = useChatStore((s) => s.sessionId);
   const addMessage = useChatStore((s) => s.addMessage);
+  const upsertMessage = useChatStore((s) => s.upsertMessage);
   const isTyping = useChatStore((s) => s.isTyping);
   const setTyping = useChatStore((s) => s.setTyping);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -30,11 +31,12 @@ export default function ChatWindow() {
   const onSubmit = async (event: FormEvent) => {
     event.preventDefault();
     const trimmed = text.trim();
-    if (!trimmed) return;
+    if (!trimmed || isTyping) return;
 
     setError(null);
+    const messageId = crypto.randomUUID();
     addMessage({
-      id: crypto.randomUUID(),
+      id: messageId,
       role: 'user',
       content: trimmed,
       createdAt: new Date().toISOString()
@@ -47,18 +49,22 @@ export default function ChatWindow() {
       const apiUrl = (await settings.get<string>('api_url')) || 'https://vanekpetrov1997.fvds.ru';
       const apiKey = (await settings.get<string>('api_key')) || '';
 
-      const response = await sendChatMessage(apiUrl, apiKey, {
+      const response = await sendChatMessageStream(apiUrl, apiKey, {
         message: trimmed,
         role: role || defaultRole,
-        session_id: sessionId
+        session_id: sessionId,
+        message_id: messageId
+      }, () => {
+        // source/progress события обрабатываются на сервере и попадают в итоговый done.result
       });
       const metadata: ChatResponseMeta = {
         agents: response.agents_used,
-        confidence: typeof response.confidence === 'number' ? response.confidence : undefined
+        confidence: typeof response.confidence === 'number' ? response.confidence : undefined,
+        sources: response.sources
       };
 
-      addMessage({
-        id: crypto.randomUUID(),
+      upsertMessage({
+        id: response.message_id ? `assistant:${response.message_id}` : `assistant:${messageId}`,
         role: 'assistant',
         content: response.reply,
         createdAt: new Date().toISOString(),

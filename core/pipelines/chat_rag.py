@@ -1,0 +1,105 @@
+from __future__ import annotations
+
+from typing import Any, cast
+
+from core.rag_engine import RAGEngine
+
+
+class ChatRagPipeline:
+    """Базовый RAG pipeline для chat intent."""
+
+    def __init__(self, rag_engine: RAGEngine, llm_router: Any):
+        self.rag_engine = rag_engine
+        self.llm_router = llm_router
+
+    def _query(self, query: str, n_results: int, where: dict[str, Any] | None) -> list[dict[str, Any]]:
+        embedding = self.rag_engine._embed_texts([query])[0]
+        payload = cast(
+            Any,
+            self.rag_engine.collection.query(
+                query_embeddings=[embedding],
+                n_results=n_results,
+                include=["documents", "metadatas", "distances"],
+                where=where,
+            ),
+        )
+        documents = cast(list[list[str]], payload.get("documents") or [[]])
+        metadatas = cast(list[list[dict[str, Any]]], payload.get("metadatas") or [[]])
+        distances = cast(list[list[float]], payload.get("distances") or [[]])
+
+        rows: list[dict[str, Any]] = []
+        for text, meta, distance in zip(documents[0], metadatas[0], distances[0], strict=False):
+            metadata = meta or {}
+            rows.append(
+                {
+                    "text": text,
+                    "source": str(metadata.get("source", "unknown")),
+                    "page": int(metadata.get("page", 0) or 0),
+                    "score": max(0.0, 1.0 - float(distance)),
+                    "username": str(metadata.get("username", "") or ""),
+                }
+            )
+        return rows
+
+    def _has_personal_sources(self, user_id: str) -> bool:
+        payload = cast(Any, self.rag_engine.collection.get(where={"username": user_id}, include=["metadatas"]))
+        metadatas = payload.get("metadatas") or []
+        return bool(metadatas)
+
+    @staticmethod
+    def _context_block(chunks: list[dict[str, Any]]) -> str:
+        lines: list[str] = []
+        for idx, chunk in enumerate(chunks, start=1):
+            lines.append(
+                f"[S{idx}] {chunk['source']} (стр. {chunk['page']}, score={chunk['score']:.3f}):\n{chunk['text']}"
+            )
+        return "\n\n".join(lines)
+
+    @staticmethod
+    def _to_sources(chunks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return [
+            {
+                "title": str(chunk.get("source", "unknown")),
+                "page": int(chunk.get("page", 0) or 0),
+                "score": round(float(chunk.get("score", 0.0)), 4),
+            }
+            for chunk in chunks
+        ]
+
+    async def run(
+        self,
+        *,
+        message: str,
+        user_id: str,
+        role_system_prompt: str,
+        top_k: int = 6,
+    ) -> dict[str, Any]:
+        steps = ["retriever"]
+        chunks: list[dict[str, Any]] = []
+
+        if self._has_personal_sources(user_id):
+            chunks = self._query(message, n_results=top_k, where={"username": user_id})
+
+        if not chunks:
+            # fallback на глобальную базу (документы без username)
+            global_candidates = self._query(message, n_results=top_k * 2, where=None)
+            chunks = [item for item in global_candidates if not item.get("username")][:top_k]
+
+        context_block = self._context_block(chunks[:top_k]) if chunks else ""
+        system_prompt = role_system_prompt
+        if context_block:
+            system_prompt = (
+                f"{role_system_prompt}\n\n"
+                "Используй только подтверждаемые фрагменты из базы знаний ниже. "
+                "Если ответа нет в источниках — так и скажи. Ссылайся в формате [S1], [S2].\n\n"
+                f"Контекст:\n{context_block}"
+            )
+
+        llm_response = await self.llm_router.query(prompt=message, system_prompt=system_prompt)
+        steps.append("responder")
+
+        return {
+            "reply": llm_response.text,
+            "agents_used": steps,
+            "sources": self._to_sources(chunks[:top_k]),
+        }

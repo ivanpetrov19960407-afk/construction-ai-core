@@ -37,7 +37,8 @@ def test_request_with_valid_api_key_returns_200(monkeypatch: pytest.MonkeyPatch)
         old_keys = settings.api_keys
         settings.api_keys = ["valid-key"]
 
-        async def _fake_process(message: str, session_id: str, role: str):
+        async def _fake_process(message: str, session_id: str, role: str, user_id: str = "u"):
+            _ = user_id
             return {
                 "reply": f"echo: {message}",
                 "session_id": session_id,

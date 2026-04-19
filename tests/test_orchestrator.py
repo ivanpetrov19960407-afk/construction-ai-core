@@ -85,3 +85,29 @@ def test_run_pipeline_generate_tk_fallback_without_bridge():
 
     assert result["reply"] == "ai-only"
     assert "tk_bridge_result" not in result
+
+
+def test_chat_intent_uses_chat_rag_pipeline():
+    orchestrator = Orchestrator()
+    orchestrator.session_memory.add = AsyncMock()
+    orchestrator.chat_rag.run = AsyncMock(
+        return_value={
+            "reply": "RAG answer",
+            "agents_used": ["retriever", "responder"],
+            "sources": [{"title": "sp_48.pdf", "page": 2, "score": 0.95}],
+        }
+    )
+
+    result = asyncio.run(
+        orchestrator.process(
+            message="что такое сп 48?",
+            session_id="s-chat",
+            role="pto_engineer",
+            intent="chat",
+            user_id="user-1",
+        )
+    )
+
+    assert result["reply"] == "RAG answer"
+    assert result["agents_used"] == ["retriever", "responder"]
+    assert result["sources"][0]["title"] == "sp_48.pdf"

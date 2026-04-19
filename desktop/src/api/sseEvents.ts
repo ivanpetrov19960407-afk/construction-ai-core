@@ -1,6 +1,6 @@
 import type { GenerateDocumentResponse } from './coreClient';
 
-export type SSEEventName = 'progress' | 'chunk' | 'error' | 'done';
+export type SSEEventName = 'progress' | 'chunk' | 'error' | 'done' | 'source';
 
 export interface SSEEventBase {
   event: SSEEventName;
@@ -30,7 +30,16 @@ export interface SSEDoneEvent extends SSEEventBase {
   result?: GenerateDocumentResponse;
 }
 
-export type SSEEvent = SSEProgressEvent | SSEChunkEvent | SSEErrorEvent | SSEDoneEvent;
+export interface SSESourceEvent extends SSEEventBase {
+  event: 'source';
+  source?: {
+    title: string;
+    page: number;
+    score: number;
+  };
+}
+
+export type SSEEvent = SSEProgressEvent | SSEChunkEvent | SSEErrorEvent | SSEDoneEvent | SSESourceEvent;
 
 export function parseSSEEvent(raw: string): SSEEvent | null {
   const lines = raw
@@ -84,6 +93,25 @@ export function parseSSEEvent(raw: string): SSEEvent | null {
       stage: typeof payload.stage === 'string' ? payload.stage : undefined,
       message: typeof payload.message === 'string' ? payload.message : undefined
     };
+  }
+
+  if (eventName === 'source') {
+    const source = payload.source;
+    if (
+      source
+      && typeof source === 'object'
+      && typeof (source as Record<string, unknown>).title === 'string'
+    ) {
+      return {
+        event: 'source',
+        source: {
+          title: String((source as Record<string, unknown>).title),
+          page: Number((source as Record<string, unknown>).page ?? 0),
+          score: Number((source as Record<string, unknown>).score ?? 0)
+        }
+      };
+    }
+    return { event: 'source' };
   }
 
   return {

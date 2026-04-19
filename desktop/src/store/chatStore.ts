@@ -29,6 +29,7 @@ interface ChatState {
   setRole: (role: ChatRole) => void;
   setDefaultRole: (role: ChatRole) => void;
   addMessage: (message: ChatMessage) => void;
+  upsertMessage: (message: ChatMessage) => void;
   setTyping: (isTyping: boolean) => void;
   resetSession: () => void;
 }
@@ -44,7 +45,23 @@ export const useChatStore = create<ChatState>((set, get) => ({
   isTyping: false,
   setRole: (role) => set({ role }),
   setDefaultRole: (role) => set({ defaultRole: role, role }),
-  addMessage: (message) => set({ messages: [...get().messages, message] }),
+  addMessage: (message) =>
+    set((state) => {
+      if (state.messages.some((item) => item.id === message.id)) {
+        return state;
+      }
+      return { messages: [...state.messages, message] };
+    }),
+  upsertMessage: (message) =>
+    set((state) => {
+      const index = state.messages.findIndex((item) => item.id === message.id);
+      if (index === -1) {
+        return { messages: [...state.messages, message] };
+      }
+      const messages = [...state.messages];
+      messages[index] = message;
+      return { messages };
+    }),
   setTyping: (isTyping) => set({ isTyping }),
   resetSession: () => {
     const prev = get();
