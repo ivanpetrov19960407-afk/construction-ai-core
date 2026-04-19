@@ -25,6 +25,22 @@ npm run tauri build
 - `src/` — UI (React + TypeScript)
 - `src-tauri/` — Rust-команды Tauri
 
+## Tauri плагины и permissions
+- Плагины (`src-tauri/Cargo.toml` + `src-tauri/tauri.conf.json`):
+  - `tauri-plugin-store`
+  - `tauri-plugin-log`
+  - `tauri-plugin-shell`
+  - `tauri-plugin-fs`
+  - `tauri-plugin-dialog`
+  - `tauri-plugin-clipboard-manager`
+- Capability `src-tauri/capabilities/default.json` включает:
+  - `core:default`, `store:default`
+  - `shell:allow-open`
+  - `fs:allow-read-dir`
+  - `path:default`
+  - `dialog:allow-message`, `dialog:allow-ask`
+  - Кастомные команды: `allow-get-api-url`, `allow-set-api-url`, `allow-pick-pdf-file`, `allow-read-pdf-file-bytes`, `allow-open-logs-folder`, `allow-copy-last-log-lines`, `allow-get-app-version`
+
 ## Настройки
 Настройки `API URL` и `API Key` сохраняются через `tauri-plugin-store` в:
 
