@@ -212,7 +212,7 @@ class Orchestrator:
     def _map_pipeline_exception(self, exc: Exception) -> AppError:
         if isinstance(exc, LLMProviderNotConfiguredError):
             return exc
-        if isinstance(exc, (asyncio.TimeoutError, httpx.TimeoutException)):
+        if isinstance(exc, asyncio.TimeoutError | httpx.TimeoutException):
             return AppError(
                 message="LLM не ответил за 60 сек",
                 code="llm_timeout",

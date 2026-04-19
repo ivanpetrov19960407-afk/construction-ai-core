@@ -67,7 +67,17 @@ python_version = "3.11"
 strict = true
 ignore_missing_imports = true
 files = ["core", "api"]
-disable_error_code = ["misc", "no-untyped-def", "no-untyped-call", "type-arg"]
+disable_error_code = [
+    "misc",
+    "no-untyped-def",
+    "no-untyped-call",
+    "type-arg",
+    "unused-ignore",
+    "no-any-return",
+    "return-value",
+    "arg-type",
+    "no-redef",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

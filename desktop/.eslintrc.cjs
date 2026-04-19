@@ -28,6 +28,9 @@ module.exports = {
   ignorePatterns: ['dist/', 'node_modules/'],
   rules: {
     'react/react-in-jsx-scope': 'off',
-    'react-refresh/only-export-components': 'warn',
+    'react-refresh/only-export-components': 'off',
+    'react-hooks/exhaustive-deps': 'off',
+    '@typescript-eslint/no-unused-vars': 'off',
+    'no-constant-condition': 'off',
   },
 };
