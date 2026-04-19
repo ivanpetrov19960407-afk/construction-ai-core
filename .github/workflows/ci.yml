@@ -22,7 +22,7 @@ jobs:
         run: pip install pre-commit
       - name: Install desktop deps
         working-directory: desktop
-        run: npm ci
+        run: npm install --no-audit --no-fund
       - name: Run pre-commit
         run: pre-commit run --all-files
 
