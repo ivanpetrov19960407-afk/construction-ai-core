@@ -40,3 +40,21 @@ export const typography = {
   small: { fontSize: 12, fontWeight: 400, lineHeight: 1.5 },
   label: { fontSize: 13, fontWeight: 500, lineHeight: 1.4 }
 } as const;
+
+export const shadows = {
+  sm: '0 1px 3px rgba(0,0,0,0.08)',
+  md: '0 4px 12px rgba(0,0,0,0.10)',
+  lg: '0 8px 24px rgba(0,0,0,0.12)'
+} as const;
+
+export const transitions = {
+  fast: '150ms ease',
+  base: '200ms ease',
+  slow: '300ms ease'
+} as const;
+
+export const zIndex = {
+  sidebar: 10,
+  modal: 100,
+  toast: 200
+} as const;
