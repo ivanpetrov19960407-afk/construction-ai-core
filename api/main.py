@@ -1,12 +1,12 @@
 """Construction AI Core — FastAPI application."""
 
+import sqlite3
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from hmac import compare_digest
 from typing import cast
 
 from aiogram.types import Update
-import sqlite3
 from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response

@@ -26,10 +26,9 @@ from aiogram.types import (
     WebAppInfo,
 )
 
-from config.settings import settings
 from api.metrics import BOT_MESSAGES_TOTAL
+from config.settings import settings
 from core.session_bridge import issue_telegram_link_token
-from telegram.middlewares.auth import delete_api_key_for_chat, get_api_key_for_chat, save_api_key_for_chat
 from telegram.keyboards import (
     cancel_keyboard,
     confirm_keyboard,
@@ -38,6 +37,11 @@ from telegram.keyboards import (
     role_keyboard,
     skip_keyboard,
     unit_keyboard,
+)
+from telegram.middlewares.auth import (
+    delete_api_key_for_chat,
+    get_api_key_for_chat,
+    save_api_key_for_chat,
 )
 from telegram.states import AnalyzeForm, KSStates, LetterStates, TKStates, UploadForm
 

@@ -53,7 +53,10 @@ async def check_rate_limit(chat_id: int) -> tuple[bool, int]:
         if count <= RATE_LIMIT_MAX:
             return True, 0
         ttl = await client.ttl(key)
-        retry_after = max(1, math.ceil(float(ttl if ttl and ttl > 0 else RATE_LIMIT_WINDOW_SECONDS)))
+        retry_after = max(
+            1,
+            math.ceil(float(ttl if ttl and ttl > 0 else RATE_LIMIT_WINDOW_SECONDS)),
+        )
         return False, retry_after
     finally:
         await client.close()
