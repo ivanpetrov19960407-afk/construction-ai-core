@@ -1,0 +1,11 @@
+image:
+  repository: ghcr.io/example/construction-ai-core
+  tag: ci
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi

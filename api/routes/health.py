@@ -57,6 +57,7 @@ def _check_llm_router() -> dict[str, object]:
 
 
 @router.get("/health")
+@router.get("/api/health")
 async def health_check(request: Request):
     """Проверка состояния сервиса."""
     components: dict[str, dict[str, Any]] = {}

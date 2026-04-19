@@ -4,6 +4,8 @@
 [![Docker Build](https://github.com/ivanpetrov19960407-afk/construction-ai-core/actions/workflows/docker-build.yml/badge.svg)](https://github.com/ivanpetrov19960407-afk/construction-ai-core/actions/workflows/docker-build.yml)
 [![Helm Lint](https://github.com/ivanpetrov19960407-afk/construction-ai-core/actions/workflows/helm-lint.yml/badge.svg)](https://github.com/ivanpetrov19960407-afk/construction-ai-core/actions/workflows/helm-lint.yml)
 [![Release](https://img.shields.io/github/v/release/ivanpetrov19960407-afk/construction-ai-core)](https://github.com/ivanpetrov19960407-afk/construction-ai-core/releases)
+[![Release Workflow](https://github.com/ivanpetrov19960407-afk/construction-ai-core/actions/workflows/release.yml/badge.svg)](https://github.com/ivanpetrov19960407-afk/construction-ai-core/actions/workflows/release.yml)
+[![Coverage](https://img.shields.io/badge/coverage-CI%20artifact-blue)](https://github.com/ivanpetrov19960407-afk/construction-ai-core/actions/workflows/ci.yml)
 [![PRs](https://img.shields.io/github/issues-pr-closed/ivanpetrov19960407-afk/construction-ai-core)](https://github.com/ivanpetrov19960407-afk/construction-ai-core/pulls?q=is%3Apr+is%3Aclosed)
 
 **ИИ-платформа для строительной отрасли — от генерации документов до сдачи объекта**

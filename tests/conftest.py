@@ -34,4 +34,8 @@ def _cleanup_threads():
     for t in threading.enumerate():
         if t is main_thread or t.daemon:
             continue
-        t.daemon = True
+        try:
+            t.daemon = True
+        except RuntimeError:
+            # Thread is still active; ignore to avoid teardown failure in CI.
+            continue

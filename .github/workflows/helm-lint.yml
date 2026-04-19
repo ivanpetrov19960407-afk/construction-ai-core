@@ -3,11 +3,11 @@ name: Helm Lint
 on:
   push:
     paths:
-      - 'helm/construction-ai/**'
+      - 'helm/**'
       - '.github/workflows/helm-lint.yml'
   pull_request:
     paths:
-      - 'helm/construction-ai/**'
+      - 'helm/**'
       - '.github/workflows/helm-lint.yml'
 
 jobs:
@@ -19,8 +19,11 @@ jobs:
       - name: Set up Helm
         uses: azure/setup-helm@v4
 
-      - name: Helm lint
-        run: helm lint helm/construction-ai/
+      - name: Helm lint (strict)
+        run: helm lint helm/* --strict
 
-      - name: Helm template validation
-        run: helm template helm/construction-ai/ > /dev/null
+      - name: Helm template validation (default)
+        run: helm template helm/construction-ai/ --values helm/construction-ai/values.yaml > /dev/null
+
+      - name: Helm template validation (example)
+        run: helm template helm/construction-ai/ --values helm/construction-ai/values.ci.yaml > /dev/null

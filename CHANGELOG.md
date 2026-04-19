@@ -1,3 +1,8 @@
+## [0.5.1] - 2026-04-19
+
+### Changed
+- ci: add pre-commit, smoke, alembic gate, docker healthchecks, release workflow
+
 ## [0.2.1] - 2026-04-19
 
 ### Fixed
