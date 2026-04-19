@@ -164,9 +164,9 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .setup(|app| {
-            ensure_logs_dir(&app.handle())
+            ensure_logs_dir(app.handle())
                 .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
-            ensure_store_defaults(&app.handle())
+            ensure_store_defaults(app.handle())
                 .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
             info!("Desktop app initialized");
             Ok(())
