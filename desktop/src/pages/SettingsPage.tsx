@@ -14,6 +14,7 @@ import {
 } from '../api/coreClient';
 import { useChatStore, type ChatRole } from '../store/chatStore';
 import { useServerStatusStore } from '../store/serverStatusStore';
+import { useAuth } from '../context/AuthContext';
 
 type ConnectionStatus = {
   tone: 'idle' | 'checking' | 'success' | 'warning' | 'error';
@@ -46,6 +47,7 @@ const APP_VERSION =
   (import.meta as ImportMeta & { env?: { VITE_APP_VERSION?: string } }).env?.VITE_APP_VERSION || '0.5.0';
 
 export default function SettingsPage() {
+  const { me, isAdmin } = useAuth();
   const setDefaultRole = useChatStore((state) => state.setDefaultRole);
   const documentsCount = useServerStatusStore((state) => state.documentsCount);
   const [apiUrl, setApiUrl] = useState(DEFAULT_API_URL);
@@ -211,6 +213,9 @@ export default function SettingsPage() {
   return (
     <Card>
       <form onSubmit={onSave} style={{ display: 'grid', gap: spacing.md, maxWidth: 640 }}>
+        <p style={{ margin: 0, color: colors.textSecondary }}>
+          Текущая роль: {isAdmin ? 'Администратор' : me?.role ?? 'не определена'}
+        </p>
         <Input label="API URL" value={apiUrl} onChange={(e) => setApiUrl(e.target.value)} />
         <Input label="API Key" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
         <Input

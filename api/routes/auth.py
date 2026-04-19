@@ -15,6 +15,7 @@ from config.settings import settings
 ALGORITHM = "HS256"
 UTC = getattr(dt, "UTC", dt.timezone.utc)  # noqa: UP017
 router = APIRouter(prefix="/auth", tags=["auth"])
+api_router = APIRouter(prefix="/api", tags=["auth"])
 
 
 def _ensure_users_table() -> None:
@@ -111,8 +112,7 @@ async def login_user(payload: UserLogin) -> TokenResponse:
     )
 
 
-@router.get("/me")
-async def me(request: Request) -> dict[str, str]:
+def _build_me_response(request: Request) -> dict[str, str | bool]:
     """Return current user profile based on middleware-populated JWT context."""
     username = getattr(request.state, "username", None)
     user_role = getattr(request.state, "user_role", None)
@@ -121,10 +121,26 @@ async def me(request: Request) -> dict[str, str]:
 
     user = _get_user(username)
     if user is None:
-        raise HTTPException(status_code=404, detail="User not found")
+        role = str(user_role)
+        return {
+            "username": username,
+            "role": role,
+            "org_id": "default",
+            "is_admin": role == "admin",
+        }
 
-    _username, _password_hash, role, org_id, created_at = user
-    return {"username": username, "role": role, "org_id": org_id, "created_at": created_at}
+    _username, _password_hash, role, org_id, _created_at = user
+    return {"username": username, "role": role, "org_id": org_id, "is_admin": role == "admin"}
+
+
+@router.get("/me")
+async def me(request: Request) -> dict[str, str | bool]:
+    return _build_me_response(request)
+
+
+@api_router.get("/me")
+async def api_me(request: Request) -> dict[str, str | bool]:
+    return _build_me_response(request)
 
 
 def decode_jwt_token(token: str) -> dict[str, str]:

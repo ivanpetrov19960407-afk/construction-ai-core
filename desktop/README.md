@@ -32,3 +32,10 @@ npm run tauri build
 - Windows: `%APPDATA%/construction-ai/settings.json`
 
 Значения используются в чате для вызова `POST {API_URL}/api/chat` с заголовком `X-API-Key`.
+
+## База знаний
+- Страница KB работает в двух режимах:
+  - `Моя база` — доступна любой роли, загрузка через `/api/rag/chat-upload`, список через `/api/rag/my-sources`.
+  - `Глобальная база` — только для admin, загрузка через `/api/rag/ingest`, список через `/api/rag/sources`.
+- Роль берётся из `GET /api/me` и кэшируется в `AuthContext`.
+- При 403 показывается понятная ошибка доступа вместо `Failed to fetch`.

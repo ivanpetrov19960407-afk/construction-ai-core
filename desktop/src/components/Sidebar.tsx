@@ -1,5 +1,6 @@
 import { type ReactNode, useState } from 'react';
 import { useChatStore } from '../store/chatStore';
+import { useAuth } from '../context/AuthContext';
 import Button from './ui/Button';
 import { colors, radius, spacing, transitions, typography } from '../styles/tokens';
 
@@ -46,6 +47,8 @@ export default function Sidebar({ currentPath, onNavigate }: SidebarProps) {
   const sessions = useChatStore((s) => s.sessions);
   const resetSession = useChatStore((s) => s.resetSession);
   const [hoveredSession, setHoveredSession] = useState<string | null>(null);
+  const { me } = useAuth();
+  const roleLabel = me?.is_admin ? 'Администратор' : me?.role === 'pto_engineer' ? 'ПТО-инженер' : me?.role ?? '—';
 
   return (
     <aside
@@ -78,6 +81,9 @@ export default function Sidebar({ currentPath, onNavigate }: SidebarProps) {
         <span style={{ fontWeight: 700, fontSize: 15, color: colors.primary }}>Construction AI</span>
       </div>
       <h3 style={{ margin: 0, marginBottom: spacing.md }}>Разделы</h3>
+      <p style={{ margin: 0, marginBottom: spacing.sm, color: colors.textSecondary, fontSize: 13 }}>
+        Роль: {roleLabel}
+      </p>
       <nav style={{ display: 'grid', gap: spacing.xs, marginBottom: spacing.lg }}>
         {navItems.map((item) => {
           const active = currentPath === item.path;
