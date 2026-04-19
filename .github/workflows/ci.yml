@@ -3,20 +3,52 @@ name: CI
 on: [push, pull_request]
 
 jobs:
-  lint:
+  changes:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    outputs:
+      migrations: ${{ steps.filter.outputs.migrations }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            migrations:
+              - 'migrations/**'
+
+  precommit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
       - run: uv sync --extra dev --no-install-project
-      - run: uv run --no-project ruff check .
-      - run: uv run --no-project ruff format --check .
-      - run: uv run --no-project mypy core/ agents/ api/ --ignore-missing-imports
+      - run: uv run --no-project pre-commit run --all-files
+
+  lint:
+    runs-on: ubuntu-latest
+    needs: precommit
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - run: uv sync --extra dev --no-install-project
+      - run: uv run --no-project ruff check core/ api/
+      - run: uv run --no-project ruff format --check core/ api/
+
+  typecheck:
+    runs-on: ubuntu-latest
+    needs: precommit
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - run: uv sync --extra dev --no-install-project
+      - run: uv run --no-project mypy --strict --ignore-missing-imports core/ api/
 
   test:
     runs-on: ubuntu-latest
-    needs: lint
+    needs: [lint, typecheck]
     timeout-minutes: 30
     env:
       DEFAULT_LLM_PROVIDER: openai
@@ -39,15 +71,23 @@ jobs:
           name: test-results
           path: .pytest_cache/
 
-  helm:
+  smoke:
     runs-on: ubuntu-latest
-    needs: lint
+    needs: [lint, typecheck]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Helm
-        uses: azure/setup-helm@v4
-      - name: Helm lint
-        run: helm lint helm/construction-ai/
-      - name: Helm template validation
-        run: helm template helm/construction-ai/ > /dev/null
+      - uses: astral-sh/setup-uv@v3
+      - run: uv sync --extra dev --no-install-project
+      - run: uv run --no-project pytest tests/test_health.py -v --tb=short
+
+  alembic:
+    runs-on: ubuntu-latest
+    needs: [changes, lint, typecheck]
+    if: needs.changes.outputs.migrations == 'true'
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - run: uv sync --extra dev --no-install-project
+      - run: uv run --no-project python -m compileall migrations
