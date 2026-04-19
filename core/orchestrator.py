@@ -7,10 +7,10 @@ Supervisor-паттерн на LangGraph. Управляет pipeline'ами:
 - generate_ks: Researcher → Calculator → Author → Critic → Verifier → Formatter
 """
 
+import asyncio
 import json
 import re
 import uuid
-import asyncio
 from pathlib import Path
 from typing import Any, TypedDict, cast
 
@@ -25,10 +25,10 @@ from agents.legal_expert import LegalExpertAgent
 from agents.researcher import ResearcherAgent
 from agents.verifier import VerifierAgent
 from api.metrics import PIPELINE_DURATION
+from core.errors import AppError, LLMProviderNotConfiguredError
 from core.llm_router import LLMRouter
 from core.session_memory import SessionMemory
 from core.tk_bridge import TKGeneratorBridge
-from core.errors import AppError, LLMProviderNotConfiguredError
 
 METRICS_PATTERN = re.compile(r"Метрика \w+:\s*\S+\.?\s*", re.UNICODE)
 
@@ -216,9 +216,17 @@ class Orchestrator:
             )
         text = str(exc).lower()
         if "validation" in text:
-            return AppError(message="Ошибка валидации входных данных", code="validation_failed", status_code=422)
+            return AppError(
+                message="Ошибка валидации входных данных",
+                code="validation_failed",
+                status_code=422,
+            )
         if "rag" in text and ("empty" in text or "no document" in text):
-            return AppError(message="RAG не вернул релевантных документов", code="rag_empty", status_code=422)
+            return AppError(
+                message="RAG не вернул релевантных документов",
+                code="rag_empty",
+                status_code=422,
+            )
         return AppError(message="Внутренняя ошибка генерации", code="internal", status_code=503)
 
     async def _run_pipeline(
