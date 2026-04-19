@@ -5,6 +5,7 @@ from __future__ import annotations
 from functools import lru_cache
 from io import BytesIO
 from tempfile import NamedTemporaryFile
+from zipfile import BadZipFile
 
 from docx import Document
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
@@ -50,13 +51,40 @@ async def rag_ingest(
 ) -> dict[str, int | str]:
     """Загрузить PDF/DOCX в RAG-индекс (доступно только admin)."""
     _require_admin(request)
+    return _ingest_uploaded_file(file=file, source_name=source_name, session_id=session_id)
+
+
+@router.post("/chat-upload")
+async def rag_chat_upload(
+    file: UploadFile = File(...),
+    session_id: str = Form(...),
+    source_name: str | None = Form(None),
+) -> dict[str, int | str]:
+    """Загрузить файл из чата в RAG-индекс для текущей session_id."""
+    effective_source_name = source_name or file.filename or f"chat-{session_id}.doc"
+    return _ingest_uploaded_file(
+        file=file,
+        source_name=effective_source_name,
+        session_id=session_id,
+    )
+
+
+def _ingest_uploaded_file(
+    *,
+    file: UploadFile,
+    source_name: str,
+    session_id: str | None,
+) -> dict[str, int | str]:
     filename = file.filename or source_name
     is_pdf = file.content_type == "application/pdf" or filename.lower().endswith(".pdf")
     is_docx = file.content_type == DOCX_MIME_TYPE or filename.lower().endswith(".docx")
     if not is_pdf and not is_docx:
         raise HTTPException(status_code=400, detail="Only PDF and DOCX files are supported")
 
-    file_bytes = await file.read()
+    file_bytes = file.file.read()
+    if not file_bytes:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty")
+
     metadata = {"session_id": session_id} if session_id else None
 
     if is_pdf:
@@ -71,7 +99,10 @@ async def rag_ingest(
                 metadata=metadata,
             )
     else:
-        document = Document(BytesIO(file_bytes))
+        try:
+            document = Document(BytesIO(file_bytes))
+        except (BadZipFile, ValueError) as exc:
+            raise HTTPException(status_code=400, detail="Invalid DOCX file") from exc
         text = "\n".join(
             paragraph.text.strip() for paragraph in document.paragraphs if paragraph.text.strip()
         )

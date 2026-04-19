@@ -255,7 +255,7 @@ export async function uploadChatDocument(
   },
   { timeoutMs = DEFAULT_GENERATION_TIMEOUT_MS, signal }: ApiCallOptions = {}
 ): Promise<UploadChatDocumentResponse> {
-  const endpoint = '/api/rag/ingest';
+  const endpoint = '/api/rag/chat-upload';
   const formData = new FormData();
   formData.append('file', payload.file, payload.file.name);
   formData.append('source_name', payload.file.name);
