@@ -1,6 +1,7 @@
 """Health-check endpoint."""
 
 from datetime import datetime, timezone
+from typing import Any
 
 from fastapi import APIRouter, Request
 
@@ -58,7 +59,7 @@ def _check_llm_router() -> dict[str, object]:
 @router.get("/health")
 async def health_check(request: Request):
     """Проверка состояния сервиса."""
-    components: dict[str, dict[str, str | int | list[str] | bool]] = {}
+    components: dict[str, dict[str, Any]] = {}
 
     # database
     db_status = "ok"
