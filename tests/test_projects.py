@@ -41,6 +41,7 @@ def test_create_project(tmp_path):
     data = response.json()
     assert data["name"] == "ЖК Север"
     assert set(data["members"]) == {"ivan", "petr"}
+    assert isinstance(data["short_id"], int)
 
 
 def test_add_member(tmp_path):
@@ -171,3 +172,22 @@ def test_query_param_user_id_does_not_authorize(tmp_path):
 
     assert response.status_code == 401
     assert response.json() == {"detail": "Authentication required"}
+
+
+def test_list_my_projects_alias(tmp_path):
+    old_db_path = _with_temp_db(tmp_path)
+    try:
+        with TestClient(app) as client:
+            client.post(
+                "/api/projects",
+                json={"name": "Mine", "description": "Only mine", "members": []},
+                headers=_auth_headers("owner"),
+            )
+            mine = client.get("/api/projects/mine", headers=_auth_headers("owner"))
+    finally:
+        settings.sqlite_db_path = old_db_path
+        projects_core._ENGINE_CACHE.clear()
+        projects_core._SESSIONMAKER_CACHE.clear()
+
+    assert mine.status_code == 200
+    assert len(mine.json()["projects"]) == 1

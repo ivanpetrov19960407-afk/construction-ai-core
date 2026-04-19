@@ -114,6 +114,13 @@ text
 
 ---
 
+
+## Как получить short_id проекта
+
+- Вызовите `GET /api/projects/mine` (или `GET /api/projects`) с вашим JWT или `X-API-Key`.
+- В каждом объекте проекта поле `short_id` содержит короткий числовой идентификатор проекта.
+- `short_id` можно использовать в compliance-эндпоинтах (`/api/compliance/gsn-checklist/{project_id}`, `/api/compliance/gsn-report/{project_id}`) наравне с UUID.
+
 ## Тарифные планы
 
 | План | Проектов | AI-запросов/мес | Альбомов |

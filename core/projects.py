@@ -6,7 +6,7 @@ import datetime as dt
 from pathlib import Path
 from uuid import UUID, uuid4
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, create_engine
+from sqlalchemy import JSON, BigInteger, DateTime, ForeignKey, Integer, String, create_engine
 from sqlalchemy.orm import (
     DeclarativeBase,
     Mapped,
@@ -33,6 +33,7 @@ class Project(Base):
     description: Mapped[str] = mapped_column(String(2000), default="", nullable=False)
     org_id: Mapped[str] = mapped_column(String(255), nullable=False, default="default", index=True)
     owner_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    short_id: Mapped[int] = mapped_column(BigInteger, nullable=False, unique=True, index=True)
     created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: dt.datetime.now(UTC),

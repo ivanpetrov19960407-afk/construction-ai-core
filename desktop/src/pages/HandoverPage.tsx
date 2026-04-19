@@ -3,7 +3,7 @@ import TabLayout from '../components/TabLayout';
 import Button from '../components/ui/Button';
 import Card from '../components/ui/Card';
 import Input from '../components/ui/Input';
-import { getApiConfig } from '../api/coreClient';
+import { getApiConfig, listMyProjects, type MyProjectItem } from '../api/coreClient';
 import { colors, spacing } from '../styles/tokens';
 import type { GSNChecklist, GSNSectionStatus, ScheduleForecast, SignStatus } from '../types/handover';
 
@@ -37,6 +37,17 @@ interface AllProjectsRiskItem {
 const sectionOrder = ['AR', 'KZH', 'KM', 'OV', 'VK', 'EM', 'SS', 'APS', 'PS'];
 const signableDocTypes = new Set(['aosr', 'ks2', 'ks3']);
 
+
+const projectIdPattern = /^[A-Za-z0-9-]+$/;
+
+function validateProjectId(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return 'Укажите ID проекта';
+  if (trimmed.length < 1 || trimmed.length > 64) return 'ID проекта должен быть длиной 1-64 символа';
+  if (!projectIdPattern.test(trimmed)) return 'ID проекта может содержать только буквы, цифры и дефис';
+  return null;
+}
+
 function normalizeForecast(payload: Partial<ScheduleForecast>): ScheduleForecast {
   return {
     predicted_completion: String(payload.predicted_completion ?? '—'),
@@ -51,6 +62,7 @@ export default function HandoverPage() {
   const [activeTab, setActiveTab] = useState('readiness');
   const [projectId, setProjectId] = useState('');
   const [userId, setUserId] = useState('');
+  const [myProjects, setMyProjects] = useState<MyProjectItem[]>([]);
   const [checklist, setChecklist] = useState<GSNChecklist | null>(null);
   const [forecast, setForecast] = useState<ScheduleForecast | null>(null);
   const [project, setProject] = useState<ProjectInfo | null>(null);
@@ -70,6 +82,16 @@ export default function HandoverPage() {
     const savedUserId = window.localStorage.getItem('handover_user_id') ?? '';
     setProjectId(savedProjectId);
     setUserId(savedUserId);
+
+    (async () => {
+      try {
+        const { apiUrl, apiKey } = await getApiConfig();
+        const projects = await listMyProjects(apiUrl, apiKey);
+        setMyProjects(projects);
+      } catch {
+        setMyProjects([]);
+      }
+    })();
   }, []);
 
   const fetchJson = async <T,>(endpoint: string, init?: RequestInit): Promise<T> => {
@@ -142,8 +164,9 @@ export default function HandoverPage() {
   };
 
   const loadAll = async () => {
-    if (!projectId.trim()) {
-      setError('Укажите projectId');
+    const projectIdError = validateProjectId(projectId);
+    if (projectIdError) {
+      setError(projectIdError);
       return;
     }
 
@@ -168,8 +191,9 @@ export default function HandoverPage() {
   };
 
   const handleGenerateReport = async () => {
-    if (!projectId.trim()) {
-      setError('Укажите projectId');
+    const projectIdError = validateProjectId(projectId);
+    if (projectIdError) {
+      setError(projectIdError);
       return;
     }
 
@@ -372,8 +396,18 @@ export default function HandoverPage() {
 
       <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
         <label style={{ display: 'grid', gap: 4 }}>
-          <span>Project ID</span>
-          <Input value={projectId} onChange={(event) => setProjectId(event.target.value)} placeholder="UUID проекта" />
+          <span>ID проекта</span>
+          <Input
+            value={projectId}
+            onChange={(event) => setProjectId(event.target.value)}
+            placeholder="UUID или short_id проекта"
+            list="my-projects"
+          />
+          <datalist id="my-projects">
+            {myProjects.map((item) => (
+              <option key={item.id} value={item.id}>{`#${item.short_id} — ${item.name}`}</option>
+            ))}
+          </datalist>
         </label>
         <label style={{ display: 'grid', gap: 4 }}>
           <span>User ID для ЭЦП</span>
