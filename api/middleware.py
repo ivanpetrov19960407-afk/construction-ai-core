@@ -66,7 +66,9 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         if provided_key not in settings.api_keys:
             return JSONResponse(status_code=401, content={"detail": "Invalid API key"})
         request.state.username = f"api-key:{provided_key[:8]}"
-        request.state.user_role = "admin" if provided_key in settings.admin_api_keys else "pto_engineer"
+        request.state.user_role = (
+            "admin" if provided_key in settings.admin_api_keys else "pto_engineer"
+        )
         request.state.org_id = "default"
         return await call_next(request)
 
