@@ -1,6 +1,6 @@
 """Настройки приложения — загружаются из .env."""
 
-from pydantic import computed_field
+from pydantic import computed_field, field_validator
 from pydantic_settings import BaseSettings
 
 
@@ -14,6 +14,11 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     api_keys: list[str] = []
     admin_api_keys: list[str] = []
+    cors_origins: list[str] = [
+        "tauri://localhost",
+        "http://localhost:1420",
+        "https://vanekpetrov1997.fvds.ru",
+    ]
     jwt_secret: str = "changeme"
     jwt_expire_minutes: int = 60
     multitenancy_enabled: bool = False
@@ -117,6 +122,15 @@ class Settings(BaseSettings):
             raise ValueError(
                 "Unsafe JWT secret: set JWT_SECRET to a unique value with at least 32 chars",
             )
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def validate_cors_origins(cls, value: object) -> list[str] | object:
+        """Поддержка CSV-строки CORS_ORIGINS в env."""
+        if isinstance(value, str):
+            items = [item.strip() for item in value.split(",")]
+            return [item for item in items if item]
+        return value
 
 
 settings = Settings()

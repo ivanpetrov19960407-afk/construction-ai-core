@@ -2,9 +2,11 @@
 
 ### Fixed
 - fix(health): honest LLM status
+- fix(cors): valid credentials+origins
 
 ### Added
 - feat(kb): split personal vs global knowledge base
+- feat(api): SSE for letter
 
 ## [0.2.0] - 2026-04-14
 

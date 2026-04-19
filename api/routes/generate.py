@@ -53,6 +53,13 @@ SESSION_STORE: dict[str, dict[str, dict]] = {}
 _cleanup_task: asyncio.Task | None = None
 _cleanup_lock = asyncio.Lock()
 GENERATION_STAGES = ("research", "draft", "critic", "verify", "format")
+LETTER_GENERATION_PROGRESS = (
+    {"stage": "research", "agent": "researcher", "progress": 20},
+    {"stage": "draft", "agent": "author", "progress": 40},
+    {"stage": "critic", "agent": "critic", "progress": 60},
+    {"stage": "verify", "agent": "verifier", "progress": 80},
+    {"stage": "format", "agent": "formatter", "progress": 90},
+)
 ERROR_CODES = {
     "llm_timeout",
     "llm_not_configured",
@@ -773,7 +780,7 @@ def _extract_legal_references(history: list[dict]) -> list[str]:
         }
     },
 )
-async def generate_letter_v2(
+async def generate_letter_sse(
     payload: LetterRequest,
     request: Request,
     org_id: str | None = Depends(get_tenant_id),
@@ -852,9 +859,17 @@ async def generate_letter_v2(
         task = asyncio.create_task(_generate_letter_response())
         stage_index = 0
         while not task.done():
-            stage = GENERATION_STAGES[min(stage_index, len(GENERATION_STAGES) - 1)]
-            progress = min(90, int(((stage_index + 1) / (len(GENERATION_STAGES) + 1)) * 100))
-            yield _sse_event("progress", {"stage": stage, "progress": progress})
+            stage_data = LETTER_GENERATION_PROGRESS[
+                min(stage_index, len(LETTER_GENERATION_PROGRESS) - 1)
+            ]
+            yield _sse_event(
+                "progress",
+                {
+                    "stage": stage_data["stage"],
+                    "progress": stage_data["progress"],
+                    "message": f"Агент: {stage_data['agent']}, {stage_data['progress']}%",
+                },
+            )
             stage_index += 1
             try:
                 await asyncio.wait_for(asyncio.shield(task), timeout=5)

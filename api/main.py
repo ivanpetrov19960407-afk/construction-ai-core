@@ -92,10 +92,12 @@ app = FastAPI(
 Instrumentator().instrument(app).expose(app, endpoint="/metrics")
 
 # CORS — для Tauri и Web UI
+cors_origins = list(settings.cors_origins)
+has_wildcard_origin = "*" in cors_origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # TODO: ограничить в production
-    allow_credentials=True,
+    allow_origins=["*"] if has_wildcard_origin else cors_origins,
+    allow_credentials=not has_wildcard_origin,
     allow_methods=["*"],
     allow_headers=["*"],
 )
