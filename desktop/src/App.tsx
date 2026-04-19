@@ -10,6 +10,14 @@ import { useServerStatusStore } from './store/serverStatusStore';
 
 const normalizePath = (path: string) => path.replace(/\/$/, '') || '/';
 
+const APP_THEME_BASE = {
+  minHeight: '100vh',
+  fontFamily: typography.fontFamily,
+  display: 'flex',
+  background: colors.bgPage,
+  overflow: 'hidden'
+} as const;
+
 export default function App() {
   const [currentPath, setCurrentPath] = useState(() => normalizePath(window.location.pathname));
   const branding = useBrandingStore((state) => state.branding);
@@ -98,12 +106,8 @@ export default function App() {
 
   const appTheme = useMemo(
     () => ({
-      minHeight: '100vh',
-      fontFamily: typography.fontFamily,
-      display: 'flex',
-      gap: spacing.lg,
+      ...APP_THEME_BASE,
       borderTop: `4px solid ${branding?.primary_color ?? '#2563eb'}`,
-      background: colors.bgPage
     }),
     [branding?.primary_color]
   );
@@ -113,8 +117,10 @@ export default function App() {
       <style>{`*, *::before, *::after { box-sizing: border-box; } body { margin: 0; }`}</style>
       <main style={appTheme}>
         <Sidebar currentPath={currentPath} onNavigate={navigate} />
-        <section style={{ flex: 1, padding: spacing.lg, paddingBottom: 36 }}>
-          {resolveRoute(currentPath, () => navigate('/'))}
+        <section style={{ flex: 1, padding: spacing.lg, paddingBottom: spacing.xxl }}>
+          <div className="page-content" style={{ maxWidth: 920, width: '100%' }}>
+            {resolveRoute(currentPath, () => navigate('/'))}
+          </div>
         </section>
       </main>
       <StatusBar />
