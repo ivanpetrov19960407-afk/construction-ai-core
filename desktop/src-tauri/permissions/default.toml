@@ -7,5 +7,6 @@ permissions = [
   "allow-pick-pdf-file",
   "allow-read-pdf-file-bytes",
   "allow-open-logs-folder",
-  "allow-copy-last-log-lines"
+  "allow-copy-last-log-lines",
+  "allow-get-app-version"
 ]

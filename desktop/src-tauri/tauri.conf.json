@@ -22,6 +22,14 @@
       "csp": null
     }
   },
+  "plugins": {
+    "shell": {
+      "open": true
+    },
+    "fs": {},
+    "dialog": {},
+    "clipboard-manager": {}
+  },
   "bundle": {
     "active": true,
     "targets": ["dmg", "msi", "deb"],

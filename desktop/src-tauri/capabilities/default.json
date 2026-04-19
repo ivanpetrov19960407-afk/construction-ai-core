@@ -8,9 +8,17 @@
   "permissions": [
     "core:default",
     "store:default",
+    "shell:allow-open",
+    "fs:allow-read-dir",
+    "path:default",
+    "dialog:allow-message",
+    "dialog:allow-ask",
     "allow-get-api-url",
     "allow-set-api-url",
     "allow-pick-pdf-file",
-    "allow-read-pdf-file-bytes"
+    "allow-read-pdf-file-bytes",
+    "allow-open-logs-folder",
+    "allow-copy-last-log-lines",
+    "allow-get-app-version"
   ]
 }

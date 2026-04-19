@@ -4,6 +4,7 @@
 - fix(health): honest LLM status
 - fix(cors): valid credentials+origins
 - fix(bot): correct entrypoint, add /link validation, rate-limit
+- fix(tauri): add missing permissions for logs folder
 
 ### Added
 - feat(kb): split personal vs global knowledge base

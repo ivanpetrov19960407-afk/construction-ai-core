@@ -4,6 +4,7 @@ use dirs::config_dir;
 use log::{error, info, warn};
 use std::{fs, path::PathBuf};
 use tauri::Manager;
+use tauri_plugin_shell::ShellExt;
 use tauri_plugin_log::{Target, TargetKind};
 use tauri_plugin_store::{StoreExt, JsonValue};
 
@@ -12,7 +13,6 @@ const STORE_FILE: &str = "settings.json";
 const API_URL_KEY: &str = "api_url";
 const API_KEY_KEY: &str = "api_key";
 const DEFAULT_API_URL: &str = "https://vanekpetrov1997.fvds.ru";
-const LOGS_DIR_NAME: &str = "logs";
 const LOG_FILE_NAME: &str = "app.log";
 
 fn settings_path() -> PathBuf {
@@ -78,9 +78,8 @@ fn read_pdf_file_bytes(path: String) -> Result<Vec<u8>, String> {
 fn app_logs_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
   app
     .path()
-    .app_data_dir()
+    .app_log_dir()
     .map_err(|e| e.to_string())
-    .map(|path| path.join(LOGS_DIR_NAME))
 }
 
 fn app_log_file(app: &tauri::AppHandle) -> Result<PathBuf, String> {
@@ -91,29 +90,11 @@ fn app_log_file(app: &tauri::AppHandle) -> Result<PathBuf, String> {
 fn open_logs_folder(app: tauri::AppHandle) -> Result<(), String> {
   let logs_dir = app_logs_dir(&app)?;
   fs::create_dir_all(&logs_dir).map_err(|e| e.to_string())?;
-
-  #[cfg(target_os = "windows")]
-  let mut command = {
-    let mut cmd = std::process::Command::new("explorer");
-    cmd.arg(&logs_dir);
-    cmd
-  };
-
-  #[cfg(target_os = "macos")]
-  let mut command = {
-    let mut cmd = std::process::Command::new("open");
-    cmd.arg(&logs_dir);
-    cmd
-  };
-
-  #[cfg(all(unix, not(target_os = "macos")))]
-  let mut command = {
-    let mut cmd = std::process::Command::new("xdg-open");
-    cmd.arg(&logs_dir);
-    cmd
-  };
-
-  command.status().map_err(|e| e.to_string())?;
+  let logs_url = format!("file://{}", logs_dir.to_string_lossy());
+  app
+    .shell()
+    .open(logs_url, None)
+    .map_err(|e| e.to_string())?;
   info!("Logs directory opened: {}", logs_dir.display());
   Ok(())
 }
@@ -139,6 +120,11 @@ fn copy_last_log_lines(app: tauri::AppHandle, lines: Option<usize>) -> Result<St
   );
 
   Ok(tail)
+}
+
+#[tauri::command]
+fn get_app_version(app: tauri::AppHandle) -> String {
+  app.package_info().version.to_string()
 }
 
 fn ensure_store_defaults(app: &tauri::AppHandle) -> Result<(), String> {
@@ -177,6 +163,10 @@ fn main() {
         .build()
     )
     .plugin(tauri_plugin_store::Builder::default().build())
+    .plugin(tauri_plugin_shell::init())
+    .plugin(tauri_plugin_fs::init())
+    .plugin(tauri_plugin_dialog::init())
+    .plugin(tauri_plugin_clipboard_manager::init())
     .setup(|app| {
       ensure_logs_dir(&app.handle())
         .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
@@ -191,7 +181,8 @@ fn main() {
       pick_pdf_file,
       read_pdf_file_bytes,
       open_logs_folder,
-      copy_last_log_lines
+      copy_last_log_lines,
+      get_app_version
     ])
     .run(tauri::generate_context!())
     .unwrap_or_else(|error| {

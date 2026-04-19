@@ -5,6 +5,7 @@ import Button from '../components/ui/Button';
 import Card from '../components/ui/Card';
 import { checkHealth, DEFAULT_API_URL, normalizeApiUrl, type HealthResponse } from '../api/coreClient';
 import { colors, spacing } from '../styles/tokens';
+import { getAppLogDir } from '../lib/logger';
 
 type HealthTone = 'idle' | 'checking' | 'ok' | 'error';
 
@@ -21,6 +22,13 @@ export default function DiagnosticsPage() {
   const [healthTone, setHealthTone] = useState<HealthTone>('idle');
   const [healthMessage, setHealthMessage] = useState('Проверка /health ещё не запускалась.');
   const [copyMessage, setCopyMessage] = useState('');
+
+  const showFriendlyError = useCallback(async (fallback: string, error: unknown) => {
+    const reason = error instanceof Error ? error.message : fallback;
+    const friendlyMessage = `${fallback}\n\n${reason}`;
+    setCopyMessage(friendlyMessage);
+    return friendlyMessage;
+  }, []);
 
   const loadApiUrl = useCallback(async () => {
     const store = await Store.load('settings.json');
@@ -54,8 +62,13 @@ export default function DiagnosticsPage() {
   const onOpenLogsFolder = async () => {
     try {
       await invoke('open_logs_folder');
+      const logsDir = await getAppLogDir();
+      setCopyMessage(`Папка логов открыта: ${logsDir}`);
     } catch (error) {
-      setCopyMessage(error instanceof Error ? error.message : 'Не удалось открыть папку логов.');
+      showFriendlyError(
+        'Не удалось открыть папку логов. Проверьте системные разрешения и настройки sandbox.',
+        error
+      );
     }
   };
 
@@ -65,7 +78,10 @@ export default function DiagnosticsPage() {
       await navigator.clipboard.writeText(lines || 'Лог-файл пока пуст.');
       setCopyMessage('Скопировано: последние 200 строк app.log');
     } catch (error) {
-      setCopyMessage(error instanceof Error ? error.message : 'Не удалось скопировать лог.');
+      showFriendlyError(
+        'Не удалось скопировать лог. Проверьте доступ к буферу обмена и правам приложения.',
+        error
+      );
     }
   };
 

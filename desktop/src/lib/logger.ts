@@ -1,3 +1,5 @@
+import { appLogDir } from '@tauri-apps/api/path';
+
 export type LogLevel = 'info' | 'warn' | 'error';
 
 export function logEvent(level: LogLevel, event: string, payload?: Record<string, unknown>) {
@@ -15,4 +17,8 @@ export function logEvent(level: LogLevel, event: string, payload?: Record<string
 
 export function logError(event: string, payload?: Record<string, unknown>) {
   logEvent('error', event, payload);
+}
+
+export async function getAppLogDir() {
+  return appLogDir();
 }
