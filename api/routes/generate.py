@@ -29,6 +29,7 @@ from core.multitenancy import get_tenant_id
 from core.orchestrator import Orchestrator
 from core.pdf_exporter import PDFExporter
 from core.pdf_parser import PDFParser
+from core.session_bridge import create_document_ready_notification_for_session
 
 router = APIRouter()
 orchestrator = Orchestrator()
@@ -555,6 +556,7 @@ async def _generate_tk_response(payload: TKRequest) -> TKResponse:
         doc_type="tk",
         docx_bytes=docx_bytes if isinstance(docx_bytes, bytes) else None,
     )
+    await create_document_ready_notification_for_session(session_id=session_id, doc_type="tk")
 
     return TKResponse(
         result=result_text,
@@ -753,6 +755,7 @@ async def generate_letter_v2(
         doc_type="letter",
         docx_bytes=docx_bytes if isinstance(docx_bytes, bytes) else None,
     )
+    await create_document_ready_notification_for_session(session_id=session_id, doc_type="letter")
 
     return LetterResponse(
         result=result_text,
@@ -976,6 +979,7 @@ async def _generate_ks_response(payload: KSRequest, tenant: str) -> KSResponse:
         doc_type="ks",
         docx_bytes=docx_bytes if isinstance(docx_bytes, bytes) else None,
     )
+    await create_document_ready_notification_for_session(session_id=session_id, doc_type="ks")
     try:
         await asyncio.to_thread(
             _upsert_generated_doc,

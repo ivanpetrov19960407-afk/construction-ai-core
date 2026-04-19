@@ -26,6 +26,7 @@ from aiogram.types import (
 )
 
 from config.settings import settings
+from core.session_bridge import issue_telegram_link_token
 from telegram.keyboards import (
     cancel_keyboard,
     confirm_keyboard,
@@ -189,6 +190,19 @@ async def app_handler(message: Message) -> None:
         ],
     )
     await message.answer("Откройте мини-приложение:", reply_markup=keyboard)
+
+
+@router.message(Command("link"))
+async def link_handler(message: Message) -> None:
+    """Выдать одноразовый код для привязки Telegram к desktop-сессии."""
+    user_id = _require_user_id(message)
+    token = issue_telegram_link_token(telegram_user_id=user_id, session_id=str(user_id))
+    await message.answer(
+        "Код для привязки к Desktop (вставьте в настройках):\n"
+        f"`{token}`\n\n"
+        "После привязки desktop будет получать уведомления о готовых документах.",
+        parse_mode="Markdown",
+    )
 
 
 @router.callback_query(F.data.startswith("project_doc:"))

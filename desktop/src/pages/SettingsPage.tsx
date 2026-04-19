@@ -8,6 +8,7 @@ import { colors, spacing } from '../styles/tokens';
 import {
   DEFAULT_API_URL,
   checkHealth,
+  linkTelegramAccount,
   normalizeApiUrl,
   type HealthResponse
 } from '../api/coreClient';
@@ -52,6 +53,8 @@ export default function SettingsPage() {
   const [defaultRole, setDefaultRoleValue] = useState<ChatRole>('pto_engineer');
   const [saved, setSaved] = useState(false);
   const [health, setHealth] = useState<HealthResponse | null>(null);
+  const [telegramCode, setTelegramCode] = useState('');
+  const [linkStatus, setLinkStatus] = useState('');
   const [lastCheckedAt, setLastCheckedAt] = useState<string | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>({
     tone: 'idle',
@@ -167,6 +170,39 @@ export default function SettingsPage() {
     }
   };
 
+  const onLinkTelegram = async () => {
+    const normalizedUrl = normalizeApiUrl(apiUrl);
+    const trimmedKey = apiKey.trim();
+    const code = telegramCode.trim();
+    if (!code) {
+      setLinkStatus('Введите код из Telegram-бота (/link).');
+      return;
+    }
+    if (!trimmedKey) {
+      setLinkStatus('Сначала заполните API Key.');
+      return;
+    }
+    const storageKey = 'desktop_user_id';
+    const existingUserId = localStorage.getItem(storageKey);
+    const userId = existingUserId || `desktop-${crypto.randomUUID()}`;
+    if (!existingUserId) {
+      localStorage.setItem(storageKey, userId);
+    }
+    const desktopSessionId = useChatStore.getState().sessionId;
+
+    try {
+      await linkTelegramAccount(normalizedUrl, trimmedKey, {
+        code,
+        user_id: userId,
+        session_id: desktopSessionId
+      });
+      setLinkStatus('Telegram успешно привязан. Уведомления теперь будут приходить в desktop.');
+      setTelegramCode('');
+    } catch (error) {
+      setLinkStatus(error instanceof Error ? error.message : 'Не удалось привязать Telegram.');
+    }
+  };
+
   const openKnowledgeBase = () => {
     window.history.pushState({}, '', '/knowledge-base');
     window.dispatchEvent(new PopStateEvent('popstate'));
@@ -177,6 +213,12 @@ export default function SettingsPage() {
       <form onSubmit={onSave} style={{ display: 'grid', gap: spacing.md, maxWidth: 640 }}>
         <Input label="API URL" value={apiUrl} onChange={(e) => setApiUrl(e.target.value)} />
         <Input label="API Key" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
+        <Input
+          label="Код привязки из Telegram (/link)"
+          value={telegramCode}
+          onChange={(e) => setTelegramCode(e.target.value)}
+          placeholder="Вставьте токен из бота"
+        />
         <label style={{ display: 'grid', gap: spacing.xs }}>
           <span style={{ color: colors.textPrimary, fontWeight: 500 }}>Имя роли по умолчанию</span>
           <select
@@ -207,11 +249,15 @@ export default function SettingsPage() {
           >
             {connectionStatus.tone === 'checking' ? 'Проверка...' : 'Проверить соединение'}
           </Button>
+          <Button type="button" variant="secondary" onClick={onLinkTelegram}>
+            Привязать Telegram
+          </Button>
         </div>
         {saved && <span style={{ color: colors.success }}>Сохранено ✓</span>}
         <p style={{ color: statusColor[connectionStatus.tone], margin: 0 }}>
           {connectionStatus.message}
         </p>
+        {linkStatus && <p style={{ margin: 0, color: colors.textSecondary }}>{linkStatus}</p>}
 
         {documentsCount === 0 && (
           <Card

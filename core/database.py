@@ -85,4 +85,31 @@ async def init_db(db_path: str) -> None:
             );
             """
         )
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS telegram_session_links (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              telegram_user_id TEXT NOT NULL UNIQUE,
+              user_id TEXT NOT NULL,
+              session_id TEXT NOT NULL,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL
+            );
+            """
+        )
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS notifications (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              user_id TEXT NOT NULL,
+              telegram_user_id TEXT,
+              session_id TEXT NOT NULL,
+              event_type TEXT NOT NULL,
+              title TEXT NOT NULL,
+              body TEXT NOT NULL,
+              created_at TEXT NOT NULL,
+              is_read INTEGER NOT NULL DEFAULT 0
+            );
+            """
+        )
         await db.commit()
