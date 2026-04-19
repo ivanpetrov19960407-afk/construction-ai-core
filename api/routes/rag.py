@@ -73,9 +73,7 @@ async def rag_ingest(
     else:
         document = Document(BytesIO(file_bytes))
         text = "\n".join(
-            paragraph.text.strip()
-            for paragraph in document.paragraphs
-            if paragraph.text.strip()
+            paragraph.text.strip() for paragraph in document.paragraphs if paragraph.text.strip()
         )
         if not text.strip():
             raise HTTPException(status_code=400, detail="DOCX does not contain text")
