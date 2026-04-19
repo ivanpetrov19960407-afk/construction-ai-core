@@ -446,3 +446,65 @@ def test_rate_limit_blocks_11th_request(monkeypatch):
         assert retry_after == 42
 
     asyncio.run(_run())
+
+
+def test_health_handler_sends_api_key_header(monkeypatch):
+    _install_aiogram_stubs()
+    handlers = importlib.import_module("telegram.handlers")
+
+    async def fake_get_api_key_for_chat(_chat_id: int) -> str:
+        return "linked_api_key_123456"
+
+    class DummyResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"active_sessions": 7}
+
+    get_mock = AsyncMock(return_value=DummyResponse())
+
+    class DummyAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return SimpleNamespace(get=get_mock)
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(handlers, "get_api_key_for_chat", fake_get_api_key_for_chat)
+    monkeypatch.setattr(handlers.httpx, "AsyncClient", DummyAsyncClient)
+
+    message = SimpleNamespace(
+        text="/health",
+        from_user=SimpleNamespace(id=99),
+        answer=AsyncMock(),
+    )
+
+    asyncio.run(handlers.health_handler(message))
+
+    assert get_mock.await_count == 1
+    assert get_mock.await_args.kwargs["headers"]["X-API-Key"] == "linked_api_key_123456"
+    message.answer.assert_awaited_once_with("Активных сессий: 7")
+
+
+def test_rate_limit_uses_callback_message_chat(monkeypatch):
+    module = importlib.import_module("telegram.middlewares.rate_limit")
+    middleware = module.TelegramRateLimitMiddleware()
+    handler = AsyncMock(return_value="ok")
+
+    check_mock = AsyncMock(return_value=(True, 0))
+    monkeypatch.setattr(module, "check_rate_limit", check_mock)
+
+    callback_event = SimpleNamespace(
+        chat=None,
+        message=SimpleNamespace(chat=SimpleNamespace(id=4242)),
+        answer=AsyncMock(),
+    )
+
+    result = asyncio.run(middleware.__call__(handler, callback_event, {}))
+
+    assert result == "ok"
+    check_mock.assert_awaited_once_with(4242)

@@ -295,9 +295,14 @@ async def whoami_handler(message: Message) -> None:
 
 @router.message(Command("health"))
 async def health_handler(message: Message) -> None:
+    user_id = _require_user_id(message)
+    api_key = await get_api_key_for_chat(user_id)
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(f"{settings.core_api_url.rstrip('/')}/api/telegram/health")
+            response = await client.get(
+                f"{settings.core_api_url.rstrip('/')}/api/telegram/health",
+                headers={"X-API-Key": api_key or _get_api_key()},
+            )
             response.raise_for_status()
             payload = response.json()
     except httpx.HTTPError:

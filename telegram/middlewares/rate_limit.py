@@ -19,7 +19,7 @@ class TelegramRateLimitMiddleware(BaseMiddleware):
     """Enforces 10 req/min per chat_id."""
 
     async def __call__(self, handler, event, data):  # type: ignore[override]
-        chat = getattr(event, "chat", None)
+        chat = _resolve_event_chat(event)
         if chat is None:
             return await handler(event, data)
 
@@ -30,6 +30,17 @@ class TelegramRateLimitMiddleware(BaseMiddleware):
                 await event.answer(f"Слишком часто, попробуйте через {retry_after} сек")
             return None
         return await handler(event, data)
+
+
+def _resolve_event_chat(event: Any) -> Any | None:
+    chat = getattr(event, "chat", None)
+    if chat is not None:
+        return chat
+
+    message = getattr(event, "message", None)
+    if message is not None:
+        return getattr(message, "chat", None)
+    return None
 
 
 def _redis_client() -> Any | None:
