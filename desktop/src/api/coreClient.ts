@@ -64,6 +64,15 @@ export interface GenerateDocumentResponse {
   session_id?: string;
   [key: string]: unknown;
 }
+export type GenerationStage = 'queued' | 'research' | 'draft' | 'critic' | 'verify' | 'format' | 'done' | 'error';
+
+export interface GenerationStreamEvent {
+  event: GenerationStage;
+  stage: GenerationStage;
+  progress: number;
+  message?: string;
+  result?: GenerateDocumentResponse;
+}
 
 export interface ApiConfig {
   apiUrl: string;
@@ -122,6 +131,80 @@ async function postJson<TRequest>(
   return (await response.json()) as GenerateDocumentResponse;
 }
 
+async function postJsonSSE<TRequest>(
+  apiUrl: string,
+  apiKey: string,
+  endpoint: string,
+  payload: TRequest,
+  onEvent: (event: GenerationStreamEvent) => void,
+  { timeoutMs, signal }: ApiCallOptions = {}
+): Promise<GenerateDocumentResponse> {
+  const controller = new AbortController();
+  const timeoutId =
+    typeof timeoutMs === 'number' && timeoutMs > 0 ? window.setTimeout(() => controller.abort(), timeoutMs) : null;
+  if (signal) {
+    if (signal.aborted) {
+      controller.abort();
+    } else {
+      signal.addEventListener('abort', () => controller.abort(), { once: true });
+    }
+  }
+  const mergedSignal = controller.signal;
+
+  try {
+    const response = await fetch(`${normalizeApiUrl(apiUrl)}${endpoint}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+        'X-API-Key': apiKey.trim()
+      },
+      body: JSON.stringify(payload),
+      signal: mergedSignal
+    });
+
+    if (!response.ok || !response.body) {
+      throw new Error(`SSE HTTP error: ${response.status}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      while (buffer.includes('\n\n')) {
+        const splitAt = buffer.indexOf('\n\n');
+        const chunk = buffer.slice(0, splitAt);
+        buffer = buffer.slice(splitAt + 2);
+        const lines = chunk.split('\n');
+        const eventLine = lines.find((line) => line.startsWith('event:'));
+        const dataLine = lines.find((line) => line.startsWith('data:'));
+        if (!dataLine) continue;
+
+        const parsed = JSON.parse(dataLine.replace(/^data:\s*/, '')) as Omit<GenerationStreamEvent, 'event'>;
+        const event = (eventLine?.replace(/^event:\s*/, '') ?? parsed.stage) as GenerationStage;
+        const fullEvent: GenerationStreamEvent = { event, ...parsed };
+        onEvent(fullEvent);
+
+        if (event === 'error') {
+          throw new Error(parsed.message ?? 'Ошибка генерации');
+        }
+        if (event === 'done' && parsed.result) {
+          return parsed.result;
+        }
+      }
+    }
+  } finally {
+    if (timeoutId !== null) window.clearTimeout(timeoutId);
+  }
+
+  throw new Error('Поток генерации завершился без результата');
+}
+
 export async function getApiConfig(): Promise<ApiConfig> {
   const store = await Store.load('settings.json');
   const savedUrl = await store.get<string>('api_url');
@@ -169,6 +252,15 @@ export async function checkHealth(apiUrl: string, { timeoutMs, signal }: ApiCall
 export function generateTK(apiUrl: string, apiKey: string, payload: TKRequest, options?: ApiCallOptions) {
   return postJson(apiUrl, apiKey, '/api/generate/tk', payload, options);
 }
+export function generateTKStream(
+  apiUrl: string,
+  apiKey: string,
+  payload: TKRequest,
+  onEvent: (event: GenerationStreamEvent) => void,
+  options?: ApiCallOptions
+) {
+  return postJsonSSE(apiUrl, apiKey, '/api/generate/tk?stream=true', payload, onEvent, options);
+}
 
 export function generateLetter(apiUrl: string, apiKey: string, payload: LetterRequest, options?: ApiCallOptions) {
   return postJson(apiUrl, apiKey, '/api/generate/letter', payload, options);
@@ -176,6 +268,15 @@ export function generateLetter(apiUrl: string, apiKey: string, payload: LetterRe
 
 export function generateKS(apiUrl: string, apiKey: string, payload: KSRequest, options?: ApiCallOptions) {
   return postJson(apiUrl, apiKey, '/api/generate/ks', payload, options);
+}
+export function generateKSStream(
+  apiUrl: string,
+  apiKey: string,
+  payload: KSRequest,
+  onEvent: (event: GenerationStreamEvent) => void,
+  options?: ApiCallOptions
+) {
+  return postJsonSSE(apiUrl, apiKey, '/api/generate/ks?stream=true', payload, onEvent, options);
 }
 
 export async function downloadTKDocx(

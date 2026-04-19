@@ -14,7 +14,7 @@ from typing import Literal
 import structlog
 from docx import Document
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import create_engine, text
 
@@ -50,6 +50,7 @@ SESSION_CLEANUP_INTERVAL_SECONDS = 10 * 60
 SESSION_STORE: dict[str, dict[str, dict]] = {}
 _cleanup_task: asyncio.Task | None = None
 _cleanup_lock = asyncio.Lock()
+GENERATION_STAGES = ("research", "draft", "critic", "verify", "format")
 
 
 def _now_mono() -> float:
@@ -128,6 +129,17 @@ async def _ensure_cleanup_task_started() -> None:
     async with _cleanup_lock:
         if _cleanup_task is None or _cleanup_task.done():
             _cleanup_task = asyncio.create_task(cleanup_expired_sessions())
+
+
+def _sse_event(event: str, payload: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+def _is_sse_requested(request: Request, stream: bool) -> bool:
+    if stream:
+        return True
+    accept = request.headers.get("accept", "")
+    return "text/event-stream" in accept.lower()
 
 
 class TKRequest(BaseModel):
@@ -476,38 +488,7 @@ async def generate_exec_album(
     }
 
 
-@router.post(
-    "/generate/tk",
-    response_model=TKResponse,
-    summary="Генерация технологической карты",
-    description="Генерирует ТК на основе вида работ, объёмов и нормативов.",
-    openapi_extra={
-        "requestBody": {
-            "required": True,
-            "content": {
-                "application/json": {
-                    "example": {
-                        "work_type": "Устройство монолитной плиты",
-                        "object_name": "ЖК Северный квартал, корпус 3",
-                        "volume": 120.5,
-                        "unit": "м³",
-                        "norms": ["СП 70.13330", "СП 48.13330"],
-                        "role": "pto_engineer",
-                        "session_id": "1c53f75f-4036-4b8f-9046-a46ad9175d1f",
-                    }
-                }
-            },
-        }
-    },
-)
-async def generate_tk(
-    payload: TKRequest,
-    request: Request,
-    org_id: str | None = Depends(get_tenant_id),
-):
-    """Генерация технологической карты (ТК) через orchestrator."""
-    _ = (request, org_id)
-    await _ensure_cleanup_task_started()
+async def _generate_tk_response(payload: TKRequest) -> TKResponse:
     session_id = payload.session_id or str(uuid.uuid4())
     norms_text = ", ".join(payload.norms) if payload.norms else "не указаны"
     message = (
@@ -518,7 +499,6 @@ async def generate_tk(
         f"Нормативы: {norms_text}.\n"
         "Подготовь структурированный документ для последующего DOCX-форматирования."
     )
-
     try:
         result = await orchestrator.process(
             message=message,
@@ -584,6 +564,82 @@ async def generate_tk(
         confidence=result.get("confidence"),
         sha256=sha256,
     )
+
+
+@router.post(
+    "/generate/tk",
+    response_model=TKResponse,
+    summary="Генерация технологической карты",
+    description="Генерирует ТК на основе вида работ, объёмов и нормативов.",
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {
+                "application/json": {
+                    "example": {
+                        "work_type": "Устройство монолитной плиты",
+                        "object_name": "ЖК Северный квартал, корпус 3",
+                        "volume": 120.5,
+                        "unit": "м³",
+                        "norms": ["СП 70.13330", "СП 48.13330"],
+                        "role": "pto_engineer",
+                        "session_id": "1c53f75f-4036-4b8f-9046-a46ad9175d1f",
+                    }
+                }
+            },
+        }
+    },
+)
+async def generate_tk(
+    payload: TKRequest,
+    request: Request,
+    org_id: str | None = Depends(get_tenant_id),
+    stream: bool = Query(False, description="Вернуть прогресс в формате SSE"),
+):
+    """Генерация технологической карты (ТК) через orchestrator."""
+    _ = (request, org_id)
+    await _ensure_cleanup_task_started()
+    if not _is_sse_requested(request, stream):
+        return await _generate_tk_response(payload)
+
+    async def _stream():
+        yield _sse_event("queued", {"stage": "queued", "progress": 0})
+        task = asyncio.create_task(_generate_tk_response(payload))
+        stage_index = 0
+        while not task.done():
+            stage = GENERATION_STAGES[min(stage_index, len(GENERATION_STAGES) - 1)]
+            progress = min(90, int(((stage_index + 1) / (len(GENERATION_STAGES) + 1)) * 100))
+            yield _sse_event(stage, {"stage": stage, "progress": progress})
+            stage_index += 1
+            try:
+                await asyncio.wait_for(asyncio.shield(task), timeout=5)
+            except TimeoutError:
+                continue
+            except HTTPException as exc:
+                yield _sse_event("error", {"stage": "error", "message": str(exc.detail)})
+                return
+            except Exception:
+                yield _sse_event(
+                    "error",
+                    {"stage": "error", "message": "Unexpected generation error"},
+                )
+                return
+
+        try:
+            response = await task
+        except HTTPException as exc:
+            yield _sse_event("error", {"stage": "error", "message": str(exc.detail)})
+            return
+        except Exception:
+            yield _sse_event("error", {"stage": "error", "message": "Unexpected generation error"})
+            return
+
+        yield _sse_event(
+            "done",
+            {"stage": "done", "progress": 100, "result": response.model_dump()},
+        )
+
+    return StreamingResponse(_stream(), media_type="text/event-stream")
 
 
 LEGAL_REFERENCE_PATTERN = re.compile(
@@ -849,47 +905,8 @@ async def generate_ppr(
     }
 
 
-@router.post(
-    "/generate/ks",
-    response_model=KSResponse,
-    summary="Генерация КС-2 и КС-3",
-    description="Генерирует формы КС-2/КС-3 по перечню выполненных работ за указанный период.",
-    openapi_extra={
-        "requestBody": {
-            "required": True,
-            "content": {
-                "application/json": {
-                    "example": {
-                        "object_name": "БЦ Речной, секция Б",
-                        "contract_number": "К-2026-11",
-                        "period_from": "2026-03-01",
-                        "period_to": "2026-03-31",
-                        "work_items": [
-                            {
-                                "name": "Устройство бетонной подготовки",
-                                "unit": "м³",
-                                "volume": 80.0,
-                                "norm_hours": 12.5,
-                                "price_per_unit": 5200.0,
-                            }
-                        ],
-                        "role": "pto_engineer",
-                        "session_id": "7042f67a-7df6-4cf4-8fd4-065a2b3fac58",
-                    }
-                }
-            },
-        }
-    },
-)
-async def generate_ks(
-    payload: KSRequest,
-    request: Request,
-    org_id: str | None = Depends(get_tenant_id),
-):
-    """Генерация КС-2/КС-3 через orchestrator pipeline."""
-    _ = request
+async def _generate_ks_response(payload: KSRequest, tenant: str) -> KSResponse:
     await _ensure_cleanup_task_started()
-    tenant = org_id or "default"
     session_id = payload.session_id or str(uuid.uuid4())
     work_names = ", ".join(item.name for item in payload.work_items)
     message = (
@@ -985,6 +1002,89 @@ async def generate_ks(
         total_hours=total_hours,
         sha256=sha256,
     )
+
+
+@router.post(
+    "/generate/ks",
+    response_model=KSResponse,
+    summary="Генерация КС-2 и КС-3",
+    description="Генерирует формы КС-2/КС-3 по перечню выполненных работ за указанный период.",
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {
+                "application/json": {
+                    "example": {
+                        "object_name": "БЦ Речной, секция Б",
+                        "contract_number": "К-2026-11",
+                        "period_from": "2026-03-01",
+                        "period_to": "2026-03-31",
+                        "work_items": [
+                            {
+                                "name": "Устройство бетонной подготовки",
+                                "unit": "м³",
+                                "volume": 80.0,
+                                "norm_hours": 12.5,
+                                "price_per_unit": 5200.0,
+                            }
+                        ],
+                        "role": "pto_engineer",
+                        "session_id": "7042f67a-7df6-4cf4-8fd4-065a2b3fac58",
+                    }
+                }
+            },
+        }
+    },
+)
+async def generate_ks(
+    payload: KSRequest,
+    request: Request,
+    org_id: str | None = Depends(get_tenant_id),
+    stream: bool = Query(False, description="Вернуть прогресс в формате SSE"),
+):
+    """Генерация КС-2/КС-3 через orchestrator pipeline."""
+    tenant = org_id or "default"
+    if not _is_sse_requested(request, stream):
+        return await _generate_ks_response(payload, tenant)
+
+    async def _stream():
+        yield _sse_event("queued", {"stage": "queued", "progress": 0})
+        task = asyncio.create_task(_generate_ks_response(payload, tenant))
+        stage_index = 0
+        while not task.done():
+            stage = GENERATION_STAGES[min(stage_index, len(GENERATION_STAGES) - 1)]
+            progress = min(90, int(((stage_index + 1) / (len(GENERATION_STAGES) + 1)) * 100))
+            yield _sse_event(stage, {"stage": stage, "progress": progress})
+            stage_index += 1
+            try:
+                await asyncio.wait_for(asyncio.shield(task), timeout=5)
+            except TimeoutError:
+                continue
+            except HTTPException as exc:
+                yield _sse_event("error", {"stage": "error", "message": str(exc.detail)})
+                return
+            except Exception:
+                yield _sse_event(
+                    "error",
+                    {"stage": "error", "message": "Unexpected generation error"},
+                )
+                return
+
+        try:
+            response = await task
+        except HTTPException as exc:
+            yield _sse_event("error", {"stage": "error", "message": str(exc.detail)})
+            return
+        except Exception:
+            yield _sse_event("error", {"stage": "error", "message": "Unexpected generation error"})
+            return
+
+        yield _sse_event(
+            "done",
+            {"stage": "done", "progress": 100, "result": response.model_dump()},
+        )
+
+    return StreamingResponse(_stream(), media_type="text/event-stream")
 
 
 @router.post(

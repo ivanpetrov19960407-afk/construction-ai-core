@@ -4,7 +4,7 @@ import Button from '../components/ui/Button';
 import Card from '../components/ui/Card';
 import Input from '../components/ui/Input';
 import { colors, spacing } from '../styles/tokens';
-import { downloadTKDocx, generateTK, getApiConfig } from '../api/coreClient';
+import { downloadTKDocx, generateTKStream, getApiConfig, type GenerationStage } from '../api/coreClient';
 import { DEFAULT_GENERATION_TIMEOUT_MS } from '../lib/apiClient';
 
 const fields: DocumentField[] = [
@@ -27,15 +27,19 @@ export default function GenerateTKPage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [downloadLoading, setDownloadLoading] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [stage, setStage] = useState<GenerationStage>('queued');
 
   const handleSubmit = async (data: Record<string, string>) => {
     setIsLoading(true);
     setError('');
     setSuccess(false);
+    setProgress(0);
+    setStage('queued');
 
     try {
       const { apiUrl, apiKey } = await getApiConfig();
-      const response = await generateTK(
+      const response = await generateTKStream(
         apiUrl,
         apiKey,
         {
@@ -44,7 +48,10 @@ export default function GenerateTKPage() {
           volume: Number(data.volume),
           unit: data.unit
         },
-        { timeoutMs: DEFAULT_GENERATION_TIMEOUT_MS }
+        (event) => {
+          setProgress(event.progress ?? 0);
+          setStage(event.stage);
+        }
       );
 
       const normalizedResult =
@@ -96,6 +103,14 @@ export default function GenerateTKPage() {
       <section style={{ display: 'grid', gap: spacing.md }}>
         <h2>Генерация ТК</h2>
         <DocumentForm fields={fields} onSubmit={handleSubmit} isLoading={isLoading} error={error} />
+        {isLoading && (
+          <div style={{ display: 'grid', gap: spacing.xs }}>
+            <div style={{ color: colors.textSecondary }}>Текущий шаг: {stage}</div>
+            <div style={{ width: '100%', height: 8, background: '#e5e7eb', borderRadius: 999 }}>
+              <div style={{ width: `${progress}%`, height: 8, background: colors.primary, borderRadius: 999, transition: 'width 200ms ease' }} />
+            </div>
+          </div>
+        )}
         {success && <p style={{ color: colors.success, fontWeight: 600 }}>✓ ТК сгенерирована</p>}
         {error && <p style={{ color: colors.error }}>{error}</p>}
         {sessionId && <p style={{ color: colors.textSecondary, fontSize: 12 }}>session_id: {sessionId}</p>}

@@ -3,7 +3,13 @@ import Button from '../components/ui/Button';
 import Card from '../components/ui/Card';
 import Input from '../components/ui/Input';
 import { colors, radius, spacing, typography } from '../styles/tokens';
-import { downloadKSDocx, generateKS, getApiConfig, type KSWorkItem } from '../api/coreClient';
+import {
+  downloadKSDocx,
+  generateKSStream,
+  getApiConfig,
+  type GenerationStage,
+  type KSWorkItem
+} from '../api/coreClient';
 import { DEFAULT_GENERATION_TIMEOUT_MS } from '../lib/apiClient';
 
 const unitOptions = ['м²', 'м³', 'пог.м.', 'шт.', 'т', 'кг', 'компл.', 'услуга'] as const;
@@ -97,6 +103,8 @@ export default function GenerateKSPage() {
   const [success, setSuccess] = useState(false);
   const [downloadLoading, setDownloadLoading] = useState(false);
   const [summary, setSummary] = useState<KSSummary | null>(null);
+  const [progress, setProgress] = useState(0);
+  const [stage, setStage] = useState<GenerationStage>('queued');
 
   const handleRowChange = (rowId: string, key: keyof Omit<WorkRow, 'id'>, value: string) => {
     setWorkRows((prev) => prev.map((row) => (row.id === rowId ? { ...row, [key]: value } : row)));
@@ -201,6 +209,8 @@ export default function GenerateKSPage() {
     setSuccess(false);
     setSummary(null);
     setImportInfo('');
+    setProgress(0);
+    setStage('queued');
 
     try {
       if (!formValues.objectName.trim()) {
@@ -220,7 +230,7 @@ export default function GenerateKSPage() {
       }
 
       const { apiUrl, apiKey } = await getApiConfig();
-      const response = await generateKS(
+      const response = await generateKSStream(
         apiUrl,
         apiKey,
         {
@@ -230,7 +240,10 @@ export default function GenerateKSPage() {
           period_to: parseDateRU(formValues.dateTo),
           work_items: workItems
         },
-        { timeoutMs: DEFAULT_GENERATION_TIMEOUT_MS }
+        (event) => {
+          setProgress(event.progress ?? 0);
+          setStage(event.stage);
+        }
       );
 
       setSessionId(String(response.session_id ?? ''));
@@ -468,6 +481,22 @@ export default function GenerateKSPage() {
             </Button>
             {isLoading && <span role="status">⏳ Генерация...</span>}
           </div>
+          {isLoading && (
+            <div style={{ display: 'grid', gap: spacing.xs }}>
+              <div style={{ color: colors.textSecondary }}>Текущий шаг: {stage}</div>
+              <div style={{ width: '100%', height: 8, background: '#e5e7eb', borderRadius: 999 }}>
+                <div
+                  style={{
+                    width: `${progress}%`,
+                    height: 8,
+                    background: colors.primary,
+                    borderRadius: 999,
+                    transition: 'width 200ms ease'
+                  }}
+                />
+              </div>
+            </div>
+          )}
         </form>
         {success && <p style={{ color: colors.success, fontWeight: 600 }}>✓ КС сгенерирована</p>}
         {warning && <p style={{ color: colors.warning }}>{warning}</p>}
