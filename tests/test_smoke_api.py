@@ -13,8 +13,8 @@ from fastapi.testclient import TestClient
 
 from api.main import app
 from api.routes import generate, rag, sign
-from core.cache import RedisCache
 from config.settings import settings
+from core.cache import RedisCache
 
 
 class _FakeRagCollection:
@@ -132,4 +132,6 @@ def test_smoke_get_post_routes_not_500(smoke_env: None) -> None:
                 else:
                     response = client.post(url, headers=headers, json={})
 
-                assert response.status_code != 500, f"{method} {route.path} -> {response.status_code}"
+                assert response.status_code != 500, (
+                    f"{method} {route.path} -> {response.status_code}"
+                )
