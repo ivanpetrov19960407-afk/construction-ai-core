@@ -171,6 +171,13 @@ helm install construction-ai helm/construction-ai/ \\n  --set image.tag=latest \
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | Web Push VAPID-ключи |
 | `JWT_SECRET` | JWT secret (≥32 символов) |
 | `MULTITENANCY_ENABLED` | Включить мультитенантность |
+| `CORS_ORIGINS` | Разрешённые origins через CSV (например `tauri://localhost,http://localhost:1420`) |
+
+### Разрешённые Origins (CORS)
+
+- По умолчанию разрешены: `tauri://localhost`, `http://localhost:1420`, `https://vanekpetrov1997.fvds.ru`.
+- Для production задавайте `CORS_ORIGINS` явно списком доверенных доменов и схем.
+- Если используете wildcard `*`, сервер автоматически отключает `allow_credentials` (требование CORS-спецификации), поэтому для desktop/web с cookie/credentials используйте явный allowlist.
 
 ---
 

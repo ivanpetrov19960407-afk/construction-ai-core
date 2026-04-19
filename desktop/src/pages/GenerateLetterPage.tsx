@@ -44,6 +44,7 @@ export default function GenerateLetterPage() {
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   const [progress, setProgress] = useState(0);
   const [stage, setStage] = useState<GenerationStage>('queued');
+  const [progressMessage, setProgressMessage] = useState('');
   const [toastMessage, setToastMessage] = useState('');
   const [sseError, setSseError] = useState<SSEError | null>(null);
   const [isErrorModalOpen, setIsErrorModalOpen] = useState(false);
@@ -72,6 +73,10 @@ export default function GenerateLetterPage() {
     setSuccess(false);
     setProgress(0);
     setStage('queued');
+    setProgressMessage('');
+    setToastMessage('');
+    setSseError(null);
+    setIsErrorModalOpen(false);
 
     try {
       const { apiUrl, apiKey } = await getApiConfig();
@@ -87,6 +92,7 @@ export default function GenerateLetterPage() {
         (event) => {
           setProgress(event.progress ?? 0);
           setStage(event.stage);
+          setProgressMessage(event.message ?? '');
         },
         { timeoutMs: DEFAULT_GENERATION_TIMEOUT_MS }
       );
@@ -159,7 +165,11 @@ export default function GenerateLetterPage() {
           error={error}
           fieldErrors={validationErrors}
         />
-        {isLoading && <p style={{ color: colors.textSecondary }}>Текущий шаг: {stage} · {progress}%</p>}
+        {isLoading && (
+          <p style={{ color: colors.textSecondary }}>
+            {progressMessage || `Текущий шаг: ${stage} · ${progress}%`}
+          </p>
+        )}
         {success && <p style={{ color: colors.success, fontWeight: 600 }}>✓ Письмо сгенерировано</p>}
         {error && <p style={{ color: colors.error }}>{error}</p>}
         {toastMessage && (
