@@ -11,12 +11,26 @@ from sqlalchemy import desc, text
 
 from api.deps import CurrentUser, current_user
 from config.settings import settings
-from core.billing import require_quota
+from core.billing import get_current_plan, usage_counter
 from core.multitenancy import get_tenant_id
 from core.projects import Project, ProjectComment, ProjectDocument, get_projects_sessionmaker
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 UTC = getattr(dt, "UTC", dt.timezone(dt.timedelta(0)))
+
+
+async def _require_projects_quota(
+    user: CurrentUser = Depends(current_user),
+    org_id: str | None = Depends(get_tenant_id),
+) -> None:
+    tenant = org_id or user.org_id or "default"
+    plan, _valid_until = get_current_plan(tenant)
+    allowed = await usage_counter.consume_quota(tenant, "projects", plan)
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Quota exceeded for resource 'projects' on plan '{plan.value}'",
+        )
 
 
 class CreateProjectRequest(BaseModel):
@@ -88,7 +102,7 @@ async def create_project(
     payload: CreateProjectRequest,
     user: CurrentUser = Depends(current_user),
     org_id: str | None = Depends(get_tenant_id),
-    _quota: None = Depends(require_quota("projects")),
+    _quota: None = Depends(_require_projects_quota),
 ) -> dict:
     _ = _quota
     tenant = org_id or user.org_id or "default"
