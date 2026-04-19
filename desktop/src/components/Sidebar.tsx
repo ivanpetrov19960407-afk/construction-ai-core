@@ -1,7 +1,7 @@
 import { type ReactNode, useState } from 'react';
 import { useChatStore } from '../store/chatStore';
 import Button from './ui/Button';
-import { colors, radius, spacing, typography } from '../styles/tokens';
+import { colors, radius, spacing, transitions, typography } from '../styles/tokens';
 
 interface NavItem {
   path: string;
@@ -44,7 +44,35 @@ export default function Sidebar({ currentPath, onNavigate }: SidebarProps) {
   const [hoveredSession, setHoveredSession] = useState<string | null>(null);
 
   return (
-    <aside style={{ minWidth: 240, borderRight: `1px solid ${colors.border}`, padding: spacing.md, background: colors.bgSidebar, borderRadius: radius.lg }}>
+    <aside
+      style={{
+        width: 240,
+        flexShrink: 0,
+        height: '100vh',
+        position: 'sticky',
+        top: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        overflowY: 'hidden',
+        borderRight: `1px solid ${colors.border}`,
+        padding: spacing.md,
+        background: colors.bgSidebar,
+        borderRadius: radius.lg
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: spacing.sm,
+          marginBottom: spacing.lg,
+          paddingBottom: spacing.md,
+          borderBottom: `1px solid ${colors.border}`
+        }}
+      >
+        <span style={{ fontSize: 20 }}>🏗️</span>
+        <span style={{ fontWeight: 700, fontSize: 15, color: colors.primary }}>Construction AI</span>
+      </div>
       <h3 style={{ margin: 0, marginBottom: spacing.md }}>Разделы</h3>
       <nav style={{ display: 'grid', gap: spacing.xs, marginBottom: spacing.lg }}>
         {navItems.map((item) => {
@@ -67,7 +95,8 @@ export default function Sidebar({ currentPath, onNavigate }: SidebarProps) {
                 borderRadius: radius.md,
                 padding: `${spacing.sm}px ${spacing.sm}px ${spacing.sm}px ${spacing.md}`,
                 cursor: 'pointer',
-                fontFamily: typography.fontFamily
+                fontFamily: typography.fontFamily,
+                transition: `background ${transitions.fast}, color ${transitions.fast}`
               }}
             >
               {item.icon}
@@ -78,10 +107,21 @@ export default function Sidebar({ currentPath, onNavigate }: SidebarProps) {
       </nav>
 
       <Button onClick={resetSession} style={{ width: '100%', marginBottom: spacing.md }}>
-        + Новая сессия
+        <span aria-hidden>+</span> Новая сессия
       </Button>
       <h3 style={{ marginTop: 0, marginBottom: spacing.sm }}>История сессий</h3>
-      <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gap: spacing.xs }}>
+      <ul
+        style={{
+          listStyle: 'none',
+          padding: 0,
+          margin: 0,
+          display: 'grid',
+          gap: spacing.xs,
+          flex: 1,
+          overflowY: 'auto',
+          maxHeight: 'calc(100vh - 380px)'
+        }}
+      >
         {sessions.map((session) => {
           const isHovered = hoveredSession === session.id;
           return (
@@ -91,6 +131,7 @@ export default function Sidebar({ currentPath, onNavigate }: SidebarProps) {
                 onClick={() => undefined}
                 onMouseEnter={() => setHoveredSession(session.id)}
                 onMouseLeave={() => setHoveredSession(null)}
+                title={session.title}
                 style={{
                   width: '100%',
                   textAlign: 'left',
