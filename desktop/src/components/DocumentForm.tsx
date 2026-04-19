@@ -16,9 +16,11 @@ export interface DocumentField {
 interface DocumentFormProps {
   fields: DocumentField[];
   onSubmit: (data: Record<string, string>) => void;
+  onValuesChange?: (data: Record<string, string>) => void;
   isLoading: boolean;
   error?: string;
   disabledOnLoading?: boolean;
+  fieldErrors?: Record<string, string>;
 }
 
 const makeInitialValues = (fields: DocumentField[]): Record<string, string> =>
@@ -30,9 +32,11 @@ const makeInitialValues = (fields: DocumentField[]): Record<string, string> =>
 export default function DocumentForm({
   fields,
   onSubmit,
+  onValuesChange,
   isLoading,
   error,
-  disabledOnLoading = true
+  disabledOnLoading = true,
+  fieldErrors = {}
 }: DocumentFormProps) {
   const initialValues = useMemo(() => makeInitialValues(fields), [fields]);
   const [values, setValues] = useState<Record<string, string>>(initialValues);
@@ -41,6 +45,10 @@ export default function DocumentForm({
     setValues(initialValues);
   }, [initialValues]);
 
+
+  useEffect(() => {
+    onValuesChange?.(values);
+  }, [onValuesChange, values]);
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
     onSubmit(values);
@@ -56,6 +64,7 @@ export default function DocumentForm({
         <div key={field.name}>
           {field.type === 'textarea' ? (
             <Input
+              error={fieldErrors[field.name]}
               type="textarea"
               rows={6}
               value={values[field.name] ?? ''}
@@ -93,9 +102,13 @@ export default function DocumentForm({
                   </option>
                 ))}
               </select>
+              {fieldErrors[field.name] && (
+                <span style={{ color: colors.error, fontSize: typography.small.fontSize }}>{fieldErrors[field.name]}</span>
+              )}
             </label>
           ) : (
             <Input
+              error={fieldErrors[field.name]}
               type={field.type}
               value={values[field.name] ?? ''}
               onChange={(e) => setValues((prev) => ({ ...prev, [field.name]: e.target.value }))}
