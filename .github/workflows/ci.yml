@@ -92,7 +92,9 @@ jobs:
       - uses: astral-sh/setup-uv@v3
       - run: uv sync --extra dev --no-install-project
       - run: |
+          rm -f construction_ai_ci.db
           uv run --no-project alembic upgrade head
+          uv run --no-project alembic stamp head
           uv run --no-project alembic check
 
   docker-build:
