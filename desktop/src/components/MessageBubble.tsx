@@ -1,4 +1,5 @@
 import type { ChatMessage } from '../store/chatStore';
+import { colors, shadows, spacing } from '../styles/tokens';
 
 export interface MessageMetadata {
   agents?: string[];
@@ -42,59 +43,72 @@ export default function MessageBubble({ message, metadata, className }: Props) {
   };
 
   return (
-    <div
-      className={className}
-      style={{
-        alignSelf: isUser ? 'flex-end' : 'flex-start',
-        background: isUser ? '#d4f6dd' : '#f2f2f2',
-        borderRadius: 12,
-        padding: '10px 12px',
-        maxWidth: '80%'
-      }}
-    >
-      <strong style={{ display: 'block', marginBottom: 4 }}>{isUser ? 'Вы' : 'Assistant'}</strong>
-      <span>{message.content}</span>
-      {!isUser && (
-        <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
-          {agents.map((agent) => (
-            <span
-              key={agent}
+    <div className={className} style={{ alignSelf: isUser ? 'flex-end' : 'flex-start', maxWidth: isUser ? '72%' : '80%' }}>
+      <div
+        style={{
+          background: isUser ? colors.primary : colors.bgCard,
+          border: isUser ? 'none' : `1px solid ${colors.border}`,
+          color: isUser ? '#ffffff' : colors.textPrimary,
+          borderRadius: isUser ? '16px 16px 4px 16px' : '4px 16px 16px 16px',
+          padding: `${spacing.sm}px ${spacing.md}px`,
+          boxShadow: shadows.sm
+        }}
+      >
+        <strong style={{ display: 'block', marginBottom: 4 }}>{isUser ? 'Вы' : 'Assistant'}</strong>
+        <span>{message.content}</span>
+        {!isUser && (
+          <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+            {agents.map((agent) => (
+              <span
+                key={agent}
+                style={{
+                  background: '#f3f4f6',
+                  color: '#4b5563',
+                  borderRadius: 999,
+                  padding: '2px 8px',
+                  fontSize: 11,
+                  fontWeight: 500
+                }}
+              >
+                {agent}
+              </span>
+            ))}
+            {confidenceBadge && (
+              <span style={{ fontSize: 11, color: confidenceBadge.color }}>
+                {confidenceBadge.label}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={onCopy}
               style={{
-                fontSize: 11,
-                color: '#777',
+                marginLeft: 'auto',
+                fontSize: 12,
+                color: '#666',
+                background: 'transparent',
                 border: '1px solid #d5d5d5',
-                borderRadius: 999,
-                padding: '1px 8px'
+                borderRadius: 8,
+                cursor: 'pointer',
+                padding: '2px 8px'
               }}
+              aria-label="Копировать сообщение"
+              title="Копировать"
             >
-              {agent}
-            </span>
-          ))}
-          {confidenceBadge && (
-            <span style={{ fontSize: 11, color: confidenceBadge.color }}>
-              {confidenceBadge.label}
-            </span>
-          )}
-          <button
-            type="button"
-            onClick={onCopy}
-            style={{
-              marginLeft: 'auto',
-              fontSize: 12,
-              color: '#666',
-              background: 'transparent',
-              border: '1px solid #d5d5d5',
-              borderRadius: 8,
-              cursor: 'pointer',
-              padding: '2px 8px'
-            }}
-            aria-label="Копировать сообщение"
-            title="Копировать"
-          >
-            📋 Копировать
-          </button>
-        </div>
-      )}
+              📋 Копировать
+            </button>
+          </div>
+        )}
+      </div>
+      <div
+        style={{
+          fontSize: 11,
+          color: isUser ? 'rgba(255,255,255,0.65)' : colors.textMuted,
+          textAlign: isUser ? 'right' : 'left',
+          marginTop: 2
+        }}
+      >
+        {new Date(message.createdAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+      </div>
     </div>
   );
 }
