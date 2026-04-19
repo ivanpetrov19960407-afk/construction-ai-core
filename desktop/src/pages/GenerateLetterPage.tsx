@@ -5,6 +5,7 @@ import Card from '../components/ui/Card';
 import Input from '../components/ui/Input';
 import { colors, spacing } from '../styles/tokens';
 import { downloadLetterDocx, generateLetter, getApiConfig } from '../api/coreClient';
+import { DEFAULT_GENERATION_TIMEOUT_MS } from '../lib/apiClient';
 
 const letterTypeMap: Record<string, 'запрос' | 'претензия' | 'уведомление' | 'ответ'> = {
   Запрос: 'запрос',
@@ -45,12 +46,17 @@ export default function GenerateLetterPage() {
         .map((item) => item.trim())
         .filter(Boolean);
 
-      const response = await generateLetter(apiUrl, apiKey, {
-        letter_type: letterTypeMap[data.letter_type] ?? 'запрос',
-        addressee: data.addressee,
-        subject: data.subject,
-        body_points: bodyPoints
-      });
+      const response = await generateLetter(
+        apiUrl,
+        apiKey,
+        {
+          letter_type: letterTypeMap[data.letter_type] ?? 'запрос',
+          addressee: data.addressee,
+          subject: data.subject,
+          body_points: bodyPoints
+        },
+        { timeoutMs: DEFAULT_GENERATION_TIMEOUT_MS }
+      );
 
       const normalizedResult =
         response.document ?? response.result ?? response.text ?? response.content ?? '';
@@ -79,7 +85,9 @@ export default function GenerateLetterPage() {
 
     try {
       const { apiUrl, apiKey } = await getApiConfig();
-      const blob = await downloadLetterDocx(apiUrl, apiKey, sessionId);
+      const blob = await downloadLetterDocx(apiUrl, apiKey, sessionId, {
+        timeoutMs: DEFAULT_GENERATION_TIMEOUT_MS
+      });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;

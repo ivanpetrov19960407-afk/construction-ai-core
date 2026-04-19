@@ -1,5 +1,10 @@
 import { invoke } from '@tauri-apps/api/core';
 import { Store } from '@tauri-apps/plugin-store';
+import {
+  apiRequest,
+  DEFAULT_CHAT_TIMEOUT_MS,
+  DEFAULT_GENERATION_TIMEOUT_MS
+} from '../lib/apiClient';
 import type { ChatRole } from '../store/chatStore';
 
 export interface ChatRequest {
@@ -73,6 +78,11 @@ export interface HealthResponse {
   components: Record<string, { status: string; [key: string]: unknown }>;
 }
 
+export interface ApiCallOptions {
+  timeoutMs?: number;
+  signal?: AbortSignal;
+}
+
 export const DEFAULT_API_URL = 'https://vanekpetrov1997.fvds.ru';
 
 const LEGACY_DEFAULT_API_URL = 'http://vanekpetrov1997.fvds.ru';
@@ -91,74 +101,23 @@ export const normalizeApiUrl = (apiUrl: string) => {
   return trimmedUrl;
 };
 
-async function readResponseBody(response: Response): Promise<string> {
-  const fallback = '<пустой ответ>';
-
-  try {
-    const text = await response.text();
-    return text.trim() || fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-export async function formatHttpError(response: Response, endpoint: string): Promise<string> {
-  const responseBody = await readResponseBody(response);
-  const authHint =
-    response.status === 401
-      ? ' Проверьте API Key: он должен совпадать с одним из значений API_KEYS в серверном .env.'
-      : '';
-
-  return `Запрос ${endpoint} завершился ошибкой HTTP ${response.status}.${authHint} Ответ сервера: ${responseBody}`;
-}
-
-export function formatNetworkError(error: unknown, endpoint: string): string {
-  const details = error instanceof Error && error.message ? ` Детали: ${error.message}` : '';
-  return `Не удалось подключиться к API (${endpoint}). Проверьте API URL и доступность /health.${details}`;
-}
-
-export async function assertOk(response: Response, endpoint: string): Promise<void> {
-  if (!response.ok) {
-    throw new Error(await formatHttpError(response, endpoint));
-  }
-}
-
-export async function apiFetch(
-  apiUrl: string,
-  endpoint: string,
-  init?: RequestInit
-): Promise<Response> {
-  try {
-    return await fetch(`${normalizeApiUrl(apiUrl)}${endpoint}`, init);
-  } catch (error) {
-    throw new Error(formatNetworkError(error, endpoint));
-  }
-}
-
 async function postJson<TRequest>(
   apiUrl: string,
   apiKey: string,
   endpoint: string,
-  payload: TRequest
+  payload: TRequest,
+  { timeoutMs = DEFAULT_GENERATION_TIMEOUT_MS, signal }: ApiCallOptions = {}
 ): Promise<GenerateDocumentResponse> {
-  const controller = new AbortController();
-  const timeoutId = window.setTimeout(() => {
-    controller.abort();
-  }, 30_000);
-
-  const response = await apiFetch(apiUrl, endpoint, {
+  const response = await apiRequest(normalizeApiUrl(apiUrl), endpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'X-API-Key': apiKey.trim()
     },
     body: JSON.stringify(payload),
-    signal: controller.signal
-  }).finally(() => {
-    window.clearTimeout(timeoutId);
+    timeoutMs,
+    signal
   });
-
-  await assertOk(response, endpoint);
 
   return (await response.json()) as GenerateDocumentResponse;
 }
@@ -181,51 +140,59 @@ export async function getApiConfig(): Promise<ApiConfig> {
 export async function sendChatMessage(
   apiUrl: string,
   apiKey: string,
-  payload: ChatRequest
+  payload: ChatRequest,
+  { timeoutMs = DEFAULT_CHAT_TIMEOUT_MS, signal }: ApiCallOptions = {}
 ): Promise<ChatResponse> {
   const endpoint = '/api/chat';
-  const response = await apiFetch(apiUrl, endpoint, {
+  const response = await apiRequest(normalizeApiUrl(apiUrl), endpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'X-API-Key': apiKey.trim()
     },
-    body: JSON.stringify(payload)
+    body: JSON.stringify(payload),
+    timeoutMs,
+    signal
   });
-
-  await assertOk(response, endpoint);
 
   return (await response.json()) as ChatResponse;
 }
 
-export async function checkHealth(apiUrl: string): Promise<HealthResponse> {
-  const response = await apiFetch(apiUrl, '/health');
-  await assertOk(response, '/health');
+export async function checkHealth(apiUrl: string, { timeoutMs, signal }: ApiCallOptions = {}): Promise<HealthResponse> {
+  const response = await apiRequest(normalizeApiUrl(apiUrl), '/health', {
+    timeoutMs,
+    signal
+  });
   return (await response.json()) as HealthResponse;
 }
 
-export function generateTK(apiUrl: string, apiKey: string, payload: TKRequest) {
-  return postJson(apiUrl, apiKey, '/api/generate/tk', payload);
+export function generateTK(apiUrl: string, apiKey: string, payload: TKRequest, options?: ApiCallOptions) {
+  return postJson(apiUrl, apiKey, '/api/generate/tk', payload, options);
 }
 
-export function generateLetter(apiUrl: string, apiKey: string, payload: LetterRequest) {
-  return postJson(apiUrl, apiKey, '/api/generate/letter', payload);
+export function generateLetter(apiUrl: string, apiKey: string, payload: LetterRequest, options?: ApiCallOptions) {
+  return postJson(apiUrl, apiKey, '/api/generate/letter', payload, options);
 }
 
-export function generateKS(apiUrl: string, apiKey: string, payload: KSRequest) {
-  return postJson(apiUrl, apiKey, '/api/generate/ks', payload);
+export function generateKS(apiUrl: string, apiKey: string, payload: KSRequest, options?: ApiCallOptions) {
+  return postJson(apiUrl, apiKey, '/api/generate/ks', payload, options);
 }
 
-export async function downloadTKDocx(apiUrl: string, apiKey: string, sessionId: string): Promise<Blob> {
+export async function downloadTKDocx(
+  apiUrl: string,
+  apiKey: string,
+  sessionId: string,
+  { timeoutMs, signal }: ApiCallOptions = {}
+): Promise<Blob> {
   const endpoint = `/api/generate/tk/${encodeURIComponent(sessionId)}/download`;
-  const response = await apiFetch(apiUrl, endpoint, {
+  const response = await apiRequest(normalizeApiUrl(apiUrl), endpoint, {
     method: 'GET',
     headers: {
       'X-API-Key': apiKey.trim()
-    }
+    },
+    timeoutMs,
+    signal
   });
-
-  await assertOk(response, endpoint);
 
   return await response.blob();
 }
@@ -233,31 +200,37 @@ export async function downloadTKDocx(apiUrl: string, apiKey: string, sessionId: 
 export async function downloadLetterDocx(
   apiUrl: string,
   apiKey: string,
-  sessionId: string
+  sessionId: string,
+  { timeoutMs, signal }: ApiCallOptions = {}
 ): Promise<Blob> {
   const endpoint = `/api/generate/letter/${encodeURIComponent(sessionId)}/download`;
-  const response = await apiFetch(apiUrl, endpoint, {
+  const response = await apiRequest(normalizeApiUrl(apiUrl), endpoint, {
     method: 'GET',
     headers: {
       'X-API-Key': apiKey.trim()
-    }
+    },
+    timeoutMs,
+    signal
   });
-
-  await assertOk(response, endpoint);
 
   return await response.blob();
 }
 
-export async function downloadKSDocx(apiUrl: string, apiKey: string, sessionId: string): Promise<Blob> {
+export async function downloadKSDocx(
+  apiUrl: string,
+  apiKey: string,
+  sessionId: string,
+  { timeoutMs, signal }: ApiCallOptions = {}
+): Promise<Blob> {
   const endpoint = `/api/generate/ks/${encodeURIComponent(sessionId)}/download`;
-  const response = await apiFetch(apiUrl, endpoint, {
+  const response = await apiRequest(normalizeApiUrl(apiUrl), endpoint, {
     method: 'GET',
     headers: {
       'X-API-Key': apiKey.trim()
-    }
+    },
+    timeoutMs,
+    signal
   });
-
-  await assertOk(response, endpoint);
 
   return await response.blob();
 }

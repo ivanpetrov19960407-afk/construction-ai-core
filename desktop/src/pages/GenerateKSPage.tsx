@@ -4,6 +4,7 @@ import Card from '../components/ui/Card';
 import Input from '../components/ui/Input';
 import { colors, radius, spacing, typography } from '../styles/tokens';
 import { downloadKSDocx, generateKS, getApiConfig, type KSWorkItem } from '../api/coreClient';
+import { DEFAULT_GENERATION_TIMEOUT_MS } from '../lib/apiClient';
 
 const unitOptions = ['м²', 'м³', 'пог.м.', 'шт.', 'т', 'кг', 'компл.', 'услуга'] as const;
 
@@ -219,13 +220,18 @@ export default function GenerateKSPage() {
       }
 
       const { apiUrl, apiKey } = await getApiConfig();
-      const response = await generateKS(apiUrl, apiKey, {
-        object_name: formValues.objectName.trim(),
-        contract_number: formValues.contractNumber.trim(),
-        period_from: parseDateRU(formValues.dateFrom),
-        period_to: parseDateRU(formValues.dateTo),
-        work_items: workItems
-      });
+      const response = await generateKS(
+        apiUrl,
+        apiKey,
+        {
+          object_name: formValues.objectName.trim(),
+          contract_number: formValues.contractNumber.trim(),
+          period_from: parseDateRU(formValues.dateFrom),
+          period_to: parseDateRU(formValues.dateTo),
+          work_items: workItems
+        },
+        { timeoutMs: DEFAULT_GENERATION_TIMEOUT_MS }
+      );
 
       setSessionId(String(response.session_id ?? ''));
       setSuccess(true);
@@ -264,7 +270,9 @@ export default function GenerateKSPage() {
 
     try {
       const { apiUrl, apiKey } = await getApiConfig();
-      const blob = await downloadKSDocx(apiUrl, apiKey, sessionId);
+      const blob = await downloadKSDocx(apiUrl, apiKey, sessionId, {
+        timeoutMs: DEFAULT_GENERATION_TIMEOUT_MS
+      });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
