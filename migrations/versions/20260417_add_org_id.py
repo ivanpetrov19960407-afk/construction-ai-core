@@ -23,19 +23,33 @@ _TABLES = (
 )
 
 
+def _has_table(table_name: str) -> bool:
+    return table_name in sa.inspect(op.get_bind()).get_table_names()
+
+
+def _has_column(table_name: str, column_name: str) -> bool:
+    if not _has_table(table_name):
+        return False
+    return any(col["name"] == column_name for col in sa.inspect(op.get_bind()).get_columns(table_name))
+
+
 def upgrade() -> None:
     for table in _TABLES:
+        if not _has_table(table):
+            continue
+        if not _has_column(table, "org_id"):
+            op.add_column(
+                table,
+                sa.Column("org_id", sa.Text(), nullable=False, server_default="default"),
+            )
+        op.create_index(f"ix_{table}_org_id", table, ["org_id"], unique=False, if_not_exists=True)
+
+    if _has_table("users") and not _has_column("users", "org_id"):
         op.add_column(
-            table,
+            "users",
             sa.Column("org_id", sa.Text(), nullable=False, server_default="default"),
         )
-        op.create_index(f"ix_{table}_org_id", table, ["org_id"], unique=False)
-
-    op.add_column(
-        "users",
-        sa.Column("org_id", sa.Text(), nullable=False, server_default="default"),
-    )
-    op.create_index("ix_users_org_id", "users", ["org_id"], unique=False)
+        op.create_index("ix_users_org_id", "users", ["org_id"], unique=False, if_not_exists=True)
 
     bind = op.get_bind()
     inspector = sa.inspect(bind)
@@ -86,13 +100,13 @@ def upgrade() -> None:
             )
         op.drop_table("generated_docs")
         op.rename_table("generated_docs_new", "generated_docs")
-        op.create_index("ix_generated_docs_org_id", "generated_docs", ["org_id"], unique=False)
+        op.create_index("ix_generated_docs_org_id", "generated_docs", ["org_id"], unique=False, if_not_exists=True)
 
 
 def downgrade() -> None:
     bind = op.get_bind()
     inspector = sa.inspect(bind)
-    if "generated_docs" in inspector.get_table_names():
+    if "generated_docs" in inspector.get_table_names() and _has_column("generated_docs", "org_id"):
         op.execute(
             """
             CREATE TABLE generated_docs_old (
@@ -129,9 +143,12 @@ def downgrade() -> None:
         op.drop_table("generated_docs")
         op.rename_table("generated_docs_old", "generated_docs")
 
-    op.drop_index("ix_users_org_id", table_name="users")
-    op.drop_column("users", "org_id")
+    if _has_table("users") and _has_column("users", "org_id"):
+        op.drop_index("ix_users_org_id", table_name="users", if_exists=True)
+        op.drop_column("users", "org_id")
 
     for table in reversed(_TABLES):
-        op.drop_index(f"ix_{table}_org_id", table_name=table)
+        if not _has_table(table) or not _has_column(table, "org_id"):
+            continue
+        op.drop_index(f"ix_{table}_org_id", table_name=table, if_exists=True)
         op.drop_column(table, "org_id")

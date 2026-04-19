@@ -15,17 +15,31 @@ branch_labels = None
 depends_on = None
 
 
+def _has_table(table_name: str) -> bool:
+    return table_name in sa.inspect(op.get_bind()).get_table_names()
+
+
+def _has_column(table_name: str, column_name: str) -> bool:
+    if not _has_table(table_name):
+        return False
+    return any(col["name"] == column_name for col in sa.inspect(op.get_bind()).get_columns(table_name))
+
+
 def upgrade() -> None:
-    op.add_column(
-        "projects",
-        sa.Column("short_id", sa.BigInteger(), nullable=True),
-    )
+    if not _has_table("projects"):
+        return
+
+    if not _has_column("projects", "short_id"):
+        op.add_column(
+            "projects",
+            sa.Column("short_id", sa.BigInteger(), nullable=True),
+        )
 
     bind = op.get_bind()
     bind.execute(sa.text("UPDATE projects SET short_id = rowid WHERE short_id IS NULL"))
 
-    op.create_unique_constraint("uq_projects_short_id", "projects", ["short_id"])
-    op.create_index("ix_projects_short_id", "projects", ["short_id"], unique=False)
+    op.create_index("uq_projects_short_id", "projects", ["short_id"], unique=True, if_not_exists=True)
+    op.create_index("ix_projects_short_id", "projects", ["short_id"], unique=False, if_not_exists=True)
     op.alter_column("projects", "short_id", nullable=False)
 
     op.execute(
@@ -44,7 +58,12 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    if not _has_table("projects"):
+        op.execute("DROP TABLE IF EXISTS project_short_id_seq")
+        return
+
     op.execute("DROP TABLE IF EXISTS project_short_id_seq")
-    op.drop_index("ix_projects_short_id", table_name="projects")
-    op.drop_constraint("uq_projects_short_id", "projects", type_="unique")
-    op.drop_column("projects", "short_id")
+    op.drop_index("ix_projects_short_id", table_name="projects", if_exists=True)
+    op.drop_index("uq_projects_short_id", table_name="projects", if_exists=True)
+    if _has_column("projects", "short_id"):
+        op.drop_column("projects", "short_id")
