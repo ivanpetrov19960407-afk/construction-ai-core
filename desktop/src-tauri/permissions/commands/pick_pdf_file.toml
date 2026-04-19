@@ -1,0 +1,9 @@
+[[permission]]
+identifier = "allow-pick-pdf-file"
+description = "Enables the pick_pdf_file command without any pre-configured scope."
+commands.allow = ["pick_pdf_file"]
+
+[[permission]]
+identifier = "deny-pick-pdf-file"
+description = "Denies the pick_pdf_file command without any pre-configured scope."
+commands.deny = ["pick_pdf_file"]
