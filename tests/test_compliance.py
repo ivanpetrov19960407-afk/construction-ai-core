@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
+import sqlite3
+from pathlib import Path
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
@@ -16,6 +18,25 @@ from core.compliance.gsn_checklist import GSN_REQUIREMENTS, GSNReadinessChecker
 from core.projects import Project, ProjectDocument, get_projects_sessionmaker
 
 UTC = getattr(dt, "UTC", dt.timezone(dt.timedelta(0)))
+
+
+def _bind_api_key_user(api_key: str, username: str) -> None:
+    users_db = Path(settings.users_db_path)
+    users_db.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(users_db) as connection:
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS api_keys (
+                api_key TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            "INSERT OR REPLACE INTO api_keys (api_key, user_id) VALUES (?, ?)",
+            (api_key, username),
+        )
+        connection.commit()
 
 
 def _make_bearer(username: str, role: str = "pto_engineer") -> str:
@@ -40,6 +61,7 @@ def _seed_project_docs(
         session.add(
             Project(
                 id=project_id,
+                short_id=11,
                 name="GSN Project",
                 description="",
                 owner_id=owner,
@@ -176,7 +198,7 @@ def test_gsn_checklist_requires_membership(tmp_path, monkeypatch):
                 headers={"Authorization": f"Bearer {_make_bearer('owner')}"},
             )
             malformed = client.get(
-                "/api/compliance/gsn-checklist/not-a-uuid",
+                "/api/compliance/gsn-checklist/does-not-exist",
                 headers={"Authorization": f"Bearer {_make_bearer('owner')}"},
             )
     finally:
@@ -185,4 +207,44 @@ def test_gsn_checklist_requires_membership(tmp_path, monkeypatch):
 
     assert forbidden.status_code == 403
     assert missing_project.status_code == 404
-    assert malformed.status_code == 422
+    assert malformed.status_code == 404
+    assert malformed.json() == {"detail": "project_not_found"}
+
+
+def test_gsn_checklist_short_id_with_api_key(tmp_path, monkeypatch):
+    old_db_path = settings.sqlite_db_path
+    old_users_db = settings.users_db_path
+    old_keys = settings.api_keys
+
+    settings.sqlite_db_path = str(tmp_path / "compliance_short_id.db")
+    settings.users_db_path = str(tmp_path / "users.db")
+    settings.api_keys = ["desktop-key"]
+
+    project_id = _seed_project_docs(
+        settings.sqlite_db_path,
+        section="KZH",
+        include_journals=True,
+        owner="tester",
+    )
+    _ = project_id
+    _bind_api_key_user("desktop-key", "tester")
+    monkeypatch.setattr(compliance, "checker", GSNReadinessChecker())
+
+    try:
+        with TestClient(app) as client:
+            ok = client.get(
+                "/api/compliance/gsn-checklist/11",
+                headers={"X-API-Key": "desktop-key"},
+            )
+            not_found = client.get(
+                "/api/compliance/gsn-checklist/does-not-exist",
+                headers={"X-API-Key": "desktop-key"},
+            )
+    finally:
+        settings.sqlite_db_path = old_db_path
+        settings.users_db_path = old_users_db
+        settings.api_keys = old_keys
+
+    assert ok.status_code == 200
+    assert not_found.status_code == 404
+    assert not_found.json() == {"detail": "project_not_found"}

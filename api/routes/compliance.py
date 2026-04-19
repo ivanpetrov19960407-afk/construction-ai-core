@@ -7,9 +7,11 @@ import datetime as dt
 from pathlib import Path
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
+from sqlalchemy import select
 
+from api.deps import CurrentUser, current_user
 from config.settings import settings
 from core.branding import BrandingConfig, get_branding
 from core.compliance.gsn_checklist import GSNReadinessChecker
@@ -59,57 +61,70 @@ def _render_pdf_from_html(html: str) -> bytes:
     return HTML(string=html, base_url=str(Path.cwd())).write_pdf()
 
 
-def _require_project_member(request: Request, project_id: UUID, org_id: str) -> None:
-    username = getattr(request.state, "username", None)
-    if not username:
-        raise HTTPException(status_code=401, detail="Authentication required")
-
+def _resolve_project(project_id: str, org_id: str) -> Project:
     session_local = get_projects_sessionmaker(settings.sqlite_db_path)
     with session_local() as session:
-        project = session.get(Project, project_id)
-        if project is None or project.org_id != org_id:
-            raise HTTPException(status_code=404, detail="Project not found")
+        project: Project | None = None
+        try:
+            parsed_uuid = UUID(project_id)
+            project = session.get(Project, parsed_uuid)
+        except ValueError:
+            if project_id.isdigit():
+                project = session.execute(
+                    select(Project).where(Project.short_id == int(project_id))
+                ).scalar_one_or_none()
 
-        members = project.members or []
-        if username != project.owner_id and username not in members:
-            raise HTTPException(status_code=403, detail="Access denied")
+        if project is None or project.org_id != org_id:
+            raise HTTPException(status_code=404, detail="project_not_found")
+
+        session.expunge(project)
+        return project
+
+
+def _require_project_member(user: CurrentUser, project: Project) -> None:
+    members = project.members or []
+    if user.username != project.owner_id and user.username not in members:
+        raise HTTPException(status_code=403, detail="Access denied")
 
 
 @router.get("/gsn-checklist/{project_id}")
 async def get_gsn_checklist(
-    project_id: UUID,
-    request: Request,
+    project_id: str,
+    user: CurrentUser = Depends(current_user),
     org_id: str | None = Depends(get_tenant_id),
 ) -> dict:
-    _require_project_member(request=request, project_id=project_id, org_id=org_id or "default")
-    return await checker.check_full_project(project_id=str(project_id))
+    project = _resolve_project(project_id=project_id, org_id=org_id or user.org_id or "default")
+    _require_project_member(user=user, project=project)
+    return await checker.check_full_project(project_id=str(project.id))
 
 
 @router.get("/gsn-checklist/{project_id}/section/{section}")
 async def get_gsn_checklist_section(
-    project_id: UUID,
+    project_id: str,
     section: str,
-    request: Request,
+    user: CurrentUser = Depends(current_user),
     org_id: str | None = Depends(get_tenant_id),
 ) -> dict:
-    _require_project_member(request=request, project_id=project_id, org_id=org_id or "default")
+    project = _resolve_project(project_id=project_id, org_id=org_id or user.org_id or "default")
+    _require_project_member(user=user, project=project)
     try:
-        return await checker.check_section(project_id=str(project_id), section=section)
+        return await checker.check_section(project_id=str(project.id), section=section)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post("/gsn-report/{project_id}")
 async def generate_gsn_report(
-    project_id: UUID,
-    request: Request,
+    project_id: str,
+    user: CurrentUser = Depends(current_user),
     org_id: str | None = Depends(get_tenant_id),
 ) -> Response:
-    _require_project_member(request=request, project_id=project_id, org_id=org_id or "default")
-    checklist = await checker.check_full_project(project_id=str(project_id))
-    branding = await get_branding(org_id or "default")
+    project = _resolve_project(project_id=project_id, org_id=org_id or user.org_id or "default")
+    _require_project_member(user=user, project=project)
+    checklist = await checker.check_full_project(project_id=str(project.id))
+    branding = await get_branding(org_id or user.org_id or "default")
     html = _render_gsn_report_html(
-        project_id=str(project_id),
+        project_id=str(project.short_id),
         checklist=checklist,
         branding=branding,
     )

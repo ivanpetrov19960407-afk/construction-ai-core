@@ -154,6 +154,13 @@ export interface MeResponse {
   is_admin: boolean;
 }
 
+export interface MyProjectItem {
+  id: string;
+  short_id: number;
+  name: string;
+}
+
+
 export class ForbiddenError extends Error {
   status = 403;
 
@@ -509,6 +516,24 @@ export async function getMe(
   } catch (error) {
     parseError(error);
   }
+}
+
+
+export async function listMyProjects(
+  apiUrl: string,
+  apiKey: string,
+  { timeoutMs, signal }: ApiCallOptions = {}
+): Promise<MyProjectItem[]> {
+  const response = await apiRequest(normalizeApiUrl(apiUrl), '/api/projects/mine', {
+    method: 'GET',
+    headers: {
+      'X-API-Key': apiKey.trim()
+    },
+    timeoutMs,
+    signal
+  });
+  const payload = (await response.json()) as { projects?: MyProjectItem[] };
+  return Array.isArray(payload.projects) ? payload.projects : [];
 }
 
 export async function checkHealth(apiUrl: string, { timeoutMs, signal }: ApiCallOptions = {}): Promise<HealthResponse> {
