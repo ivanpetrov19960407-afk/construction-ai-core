@@ -33,6 +33,7 @@ jobs:
           uv run --no-project pytest tests/ -v --tb=short
           -p timeout --timeout=120 -o faulthandler_timeout=60
           --ignore=tests/test_rag_engine.py
+      - run: uv run --no-project pytest tests/test_smoke_api.py -q
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
