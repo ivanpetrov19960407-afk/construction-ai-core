@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from hashlib import sha256
 from io import BytesIO
 from tempfile import NamedTemporaryFile
 from urllib.parse import unquote
@@ -42,7 +43,7 @@ def _resolve_actor(request: Request) -> str:
         return str(username)
     api_key = request.headers.get("X-API-Key")
     if api_key:
-        return f"api-key:{api_key[:8]}"
+        return f"api-key:{sha256(api_key.encode('utf-8')).hexdigest()}"
     raise HTTPException(status_code=401, detail="Authentication required")
 
 

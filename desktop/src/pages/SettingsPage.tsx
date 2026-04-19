@@ -86,6 +86,7 @@ export default function SettingsPage() {
     await store.set('default_role', nextDefaultRole);
     await store.save();
     await invoke('set_api_url', { url: normalizedUrl });
+    window.dispatchEvent(new Event('auth:credentials-changed'));
   };
 
   const onSave = async (event: FormEvent) => {

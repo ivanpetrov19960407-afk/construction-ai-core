@@ -34,9 +34,9 @@ class _DummyRAGEngine:
         )
 
     def ingest_pdf(self, filepath: str, source_name: str, metadata: dict | None = None) -> int:
-        assert filepath.endswith('.pdf')
+        assert filepath.endswith(".pdf")
         if metadata:
-            assert metadata.get('username') == 'pto'
+            assert metadata.get("username") == "pto"
         return 2
 
 
@@ -46,19 +46,19 @@ def test_pto_forbidden_on_global_sources_and_allowed_on_personal(monkeypatch):
     settings.api_keys = []
     settings.admin_api_keys = []
 
-    monkeypatch.setattr(rag_routes, 'get_rag_engine', lambda: _DummyRAGEngine())
+    monkeypatch.setattr(rag_routes, "get_rag_engine", lambda: _DummyRAGEngine())
 
-    token = _create_token('pto', 'pto_engineer')
+    token = _create_token("pto", "pto_engineer")
     with TestClient(app) as client:
-        forbidden = client.get('/api/rag/sources', headers={'Authorization': f'Bearer {token}'})
-        my_sources = client.get('/api/rag/my-sources', headers={'Authorization': f'Bearer {token}'})
+        forbidden = client.get("/api/rag/sources", headers={"Authorization": f"Bearer {token}"})
+        my_sources = client.get("/api/rag/my-sources", headers={"Authorization": f"Bearer {token}"})
 
     settings.api_keys = old_api_keys
     settings.admin_api_keys = old_admin_keys
 
     assert forbidden.status_code == 403
     assert my_sources.status_code == 200
-    assert my_sources.json() == {'sources': [{'source': 'my.pdf', 'chunks': 2}]}
+    assert my_sources.json() == {"sources": [{"source": "my.pdf", "chunks": 2}]}
 
 
 def test_pto_can_chat_upload(monkeypatch):
@@ -67,22 +67,22 @@ def test_pto_can_chat_upload(monkeypatch):
     settings.api_keys = []
     settings.admin_api_keys = []
 
-    monkeypatch.setattr(rag_routes, 'get_rag_engine', lambda: _DummyRAGEngine())
-    monkeypatch.setattr(rag_routes.pdf_parser, 'parse', lambda file_bytes, filename: object())
+    monkeypatch.setattr(rag_routes, "get_rag_engine", lambda: _DummyRAGEngine())
+    monkeypatch.setattr(rag_routes.pdf_parser, "parse", lambda file_bytes, filename: object())
 
-    token = _create_token('pto', 'pto_engineer')
+    token = _create_token("pto", "pto_engineer")
     with TestClient(app) as client:
         response = client.post(
-            '/api/rag/chat-upload',
+            "/api/rag/chat-upload",
             files={
-                'file': ('my.pdf', b'%PDF-1.4 fake', 'application/pdf'),
-                'session_id': (None, 'chat-pto'),
+                "file": ("my.pdf", b"%PDF-1.4 fake", "application/pdf"),
+                "session_id": (None, "chat-pto"),
             },
-            headers={'Authorization': f'Bearer {token}'},
+            headers={"Authorization": f"Bearer {token}"},
         )
 
     settings.api_keys = old_api_keys
     settings.admin_api_keys = old_admin_keys
 
     assert response.status_code == 200
-    assert response.json() == {'chunks_added': 2, 'source': 'my.pdf'}
+    assert response.json() == {"chunks_added": 2, "source": "my.pdf"}

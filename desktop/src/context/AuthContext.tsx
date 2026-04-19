@@ -35,6 +35,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void loadMe();
   }, [loadMe]);
 
+  useEffect(() => {
+    const handleReload = () => {
+      void loadMe();
+    };
+
+    window.addEventListener('auth:credentials-changed', handleReload);
+    window.addEventListener('focus', handleReload);
+
+    return () => {
+      window.removeEventListener('auth:credentials-changed', handleReload);
+      window.removeEventListener('focus', handleReload);
+    };
+  }, [loadMe]);
+
   const value = useMemo<AuthContextValue>(
     () => ({
       me,

@@ -7,6 +7,7 @@ import logging
 import time
 import traceback
 from collections.abc import Awaitable, Callable
+from hashlib import sha256
 from typing import Any, cast
 
 import structlog
@@ -33,6 +34,12 @@ EXCLUDED_PATHS = {
 }
 PUBLIC_AUTH_PATHS = {"/auth/register", "/auth/login"}
 limiter = Limiter(key_func=get_remote_address, default_limits=[])
+
+
+def _api_key_actor_id(api_key: str) -> str:
+    """Build collision-resistant actor id for API key-authenticated requests."""
+    digest = sha256(api_key.encode("utf-8")).hexdigest()
+    return f"api-key:{digest}"
 
 
 class APIKeyMiddleware(BaseHTTPMiddleware):
@@ -65,7 +72,7 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         provided_key = request.headers.get("X-API-Key")
         if provided_key not in settings.api_keys:
             return JSONResponse(status_code=401, content={"detail": "Invalid API key"})
-        request.state.username = f"api-key:{provided_key[:8]}"
+        request.state.username = _api_key_actor_id(provided_key)
         request.state.user_role = (
             "admin" if provided_key in settings.admin_api_keys else "pto_engineer"
         )
