@@ -25,6 +25,9 @@ jobs:
       - name: Install desktop deps
         working-directory: desktop
         run: npm install --no-audit --no-fund
+      - name: Build desktop frontend (required by tauri generate_context!)
+        working-directory: desktop
+        run: npm run build
       - name: Run pre-commit
         run: pre-commit run --all-files
 

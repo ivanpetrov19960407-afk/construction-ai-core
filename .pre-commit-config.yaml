@@ -27,16 +27,14 @@ repos:
         files: ^desktop/.*\.(ts|tsx|js|jsx|json|css|md|html)$
         exclude: ^desktop/(node_modules|dist|src-tauri/(target|gen|Cargo\.lock))
 
-  - repo: https://github.com/pre-commit/mirrors-eslint
-    rev: v9.39.1
+  - repo: local
     hooks:
-      - id: eslint
+      - id: eslint-desktop
+        name: eslint (desktop)
+        language: system
         files: ^desktop/src/.*\.(ts|tsx|js|jsx)$
-        types: [file]
-        additional_dependencies:
-          - eslint@9.39.1
-          - '@typescript-eslint/parser@8.46.2'
-          - '@typescript-eslint/eslint-plugin@8.46.2'
+        pass_filenames: false
+        entry: bash -c 'cd desktop && npx --no-install eslint "src/**/*.{ts,tsx,js,jsx}"'
 
   - repo: local
     hooks:
