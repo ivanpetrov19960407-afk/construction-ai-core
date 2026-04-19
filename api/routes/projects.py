@@ -83,7 +83,10 @@ async def create_project(
     members = sorted(set(payload.members + [user.username]))
 
     with session_local() as session:
-        next_short_id = int(session.query(func.coalesce(func.max(Project.short_id), 0)).scalar() or 0) + 1
+        max_short_id = session.query(
+            func.coalesce(func.max(Project.short_id), 0)
+        ).scalar()
+        next_short_id = int(max_short_id or 0) + 1
         project = Project(
             name=payload.name,
             description=payload.description,
@@ -113,7 +116,11 @@ async def list_projects(
             .order_by(desc(Project.created_at))
             .all()
         )
-        visible = [p for p in projects if user.username == p.owner_id or user.username in (p.members or [])]
+        visible = [
+            project
+            for project in projects
+            if user.username == project.owner_id or user.username in (project.members or [])
+        ]
         return {"projects": [_serialize_project(project) for project in visible]}
 
 

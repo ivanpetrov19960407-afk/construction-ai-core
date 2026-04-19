@@ -221,14 +221,22 @@ def test_gsn_checklist_short_id_with_api_key(tmp_path, monkeypatch):
     settings.users_db_path = str(tmp_path / "users.db")
     settings.api_keys = ["desktop-key"]
 
-    project_id = _seed_project_docs(settings.sqlite_db_path, section="KZH", include_journals=True, owner="tester")
+    project_id = _seed_project_docs(
+        settings.sqlite_db_path,
+        section="KZH",
+        include_journals=True,
+        owner="tester",
+    )
     _ = project_id
     _bind_api_key_user("desktop-key", "tester")
     monkeypatch.setattr(compliance, "checker", GSNReadinessChecker())
 
     try:
         with TestClient(app) as client:
-            ok = client.get("/api/compliance/gsn-checklist/11", headers={"X-API-Key": "desktop-key"})
+            ok = client.get(
+                "/api/compliance/gsn-checklist/11",
+                headers={"X-API-Key": "desktop-key"},
+            )
             not_found = client.get(
                 "/api/compliance/gsn-checklist/does-not-exist",
                 headers={"X-API-Key": "desktop-key"},

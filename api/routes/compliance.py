@@ -12,11 +12,11 @@ from fastapi.responses import Response
 from sqlalchemy import select
 
 from api.deps import CurrentUser, current_user
+from config.settings import settings
 from core.branding import BrandingConfig, get_branding
+from core.compliance.gsn_checklist import GSNReadinessChecker
 from core.multitenancy import get_tenant_id
 from core.projects import Project, get_projects_sessionmaker
-from config.settings import settings
-from core.compliance.gsn_checklist import GSNReadinessChecker
 
 router = APIRouter(prefix="/compliance", tags=["compliance"])
 checker = GSNReadinessChecker()
