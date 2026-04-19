@@ -62,5 +62,12 @@ line-length = 100
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]
 
+[tool.mypy]
+python_version = "3.11"
+strict = true
+ignore_missing_imports = true
+files = ["core", "api"]
+disable_error_code = ["misc", "no-untyped-def", "no-untyped-call", "type-arg"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

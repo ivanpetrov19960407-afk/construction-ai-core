@@ -17,7 +17,7 @@ repos:
       - id: mypy
         name: mypy --strict (core/api)
         files: ^(core|api)/.*\.py$
-        args: [--strict, --ignore-missing-imports, core/, api/]
+        args: [core/, api/]
         pass_filenames: false
 
   - repo: local
