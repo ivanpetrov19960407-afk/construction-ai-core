@@ -5,6 +5,7 @@ import asyncio
 from httpx import ASGITransport, AsyncClient
 
 from api.main import app
+
 ALLOWED_ORIGIN = "tauri://localhost"
 DISALLOWED_ORIGIN = "https://evil.example"
 

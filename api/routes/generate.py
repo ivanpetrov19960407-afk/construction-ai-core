@@ -859,7 +859,9 @@ async def generate_letter_sse(
         task = asyncio.create_task(_generate_letter_response())
         stage_index = 0
         while not task.done():
-            stage_data = LETTER_GENERATION_PROGRESS[min(stage_index, len(LETTER_GENERATION_PROGRESS) - 1)]
+            stage_data = LETTER_GENERATION_PROGRESS[
+                min(stage_index, len(LETTER_GENERATION_PROGRESS) - 1)
+            ]
             yield _sse_event(
                 "progress",
                 {
