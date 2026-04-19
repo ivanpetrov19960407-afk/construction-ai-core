@@ -6,6 +6,7 @@ import Input from '../components/ui/Input';
 import { colors, spacing } from '../styles/tokens';
 import { downloadLetterDocx, generateLetter, getApiConfig } from '../api/coreClient';
 import { DEFAULT_GENERATION_TIMEOUT_MS } from '../lib/apiClient';
+import { validateLetter } from '../lib/validation';
 
 const letterTypeMap: Record<string, 'запрос' | 'претензия' | 'уведомление' | 'ответ'> = {
   Запрос: 'запрос',
@@ -33,26 +34,40 @@ export default function GenerateLetterPage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [downloadLoading, setDownloadLoading] = useState(false);
+  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
 
   const handleSubmit = async (data: Record<string, string>) => {
+    const bodyPoints = (data.body ?? '')
+      .split('\n')
+      .map((item) => item.trim())
+      .filter(Boolean);
+
+    const validation = validateLetter({
+      addressee: data.addressee ?? '',
+      subject: data.subject ?? '',
+      body_points: bodyPoints
+    });
+    setValidationErrors(validation.fieldErrors);
+
+    if (!validation.isValid) {
+      setError('Исправьте ошибки формы перед отправкой.');
+      setSuccess(false);
+      return;
+    }
+
     setIsLoading(true);
     setError('');
     setSuccess(false);
 
     try {
       const { apiUrl, apiKey } = await getApiConfig();
-      const bodyPoints = data.body
-        .split('\n')
-        .map((item) => item.trim())
-        .filter(Boolean);
-
       const response = await generateLetter(
         apiUrl,
         apiKey,
         {
           letter_type: letterTypeMap[data.letter_type] ?? 'запрос',
-          addressee: data.addressee,
-          subject: data.subject,
+          addressee: data.addressee?.trim() ?? '',
+          subject: data.subject?.trim() ?? '',
           body_points: bodyPoints
         },
         { timeoutMs: DEFAULT_GENERATION_TIMEOUT_MS }
@@ -105,7 +120,21 @@ export default function GenerateLetterPage() {
     <Card>
       <section style={{ display: 'grid', gap: spacing.md }}>
         <h2>Генерация письма</h2>
-        <DocumentForm fields={fields} onSubmit={handleSubmit} isLoading={isLoading} error={error} />
+        <DocumentForm
+          fields={fields}
+          onSubmit={handleSubmit}
+          onValuesChange={() => {
+            if (Object.keys(validationErrors).length) {
+              setValidationErrors({});
+            }
+            if (error === 'Исправьте ошибки формы перед отправкой.') {
+              setError('');
+            }
+          }}
+          isLoading={isLoading}
+          error={error}
+          fieldErrors={validationErrors}
+        />
         {success && <p style={{ color: colors.success, fontWeight: 600 }}>✓ Письмо сгенерировано</p>}
         {error && <p style={{ color: colors.error }}>{error}</p>}
         {sessionId && <p style={{ color: colors.textSecondary, fontSize: 12 }}>session_id: {sessionId}</p>}

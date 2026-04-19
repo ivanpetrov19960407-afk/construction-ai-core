@@ -15,6 +15,7 @@ import {
   type KSWorkItem
 } from '../api/coreClient';
 import { DEFAULT_GENERATION_TIMEOUT_MS } from '../lib/apiClient';
+import { validateKS } from '../lib/validation';
 
 const unitOptions = ['м²', 'м³', 'пог.м.', 'шт.', 'т', 'кг', 'компл.', 'услуга'] as const;
 
@@ -34,13 +35,6 @@ interface KSFormValues {
   dateTo: string;
 }
 
-interface ValidationErrors {
-  objectName?: string;
-  contractNumber?: string;
-  dateFrom?: string;
-  dateTo?: string;
-  workItems?: string;
-}
 
 function createEmptyWorkRow(): WorkRow {
   return {
@@ -116,7 +110,6 @@ export default function GenerateKSPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState('');
   const [error, setError] = useState('');
-  const [warning, setWarning] = useState('');
   const [importInfo, setImportInfo] = useState('');
   const [sessionId, setSessionId] = useState('');
   const [success, setSuccess] = useState(false);
@@ -124,10 +117,16 @@ export default function GenerateKSPage() {
   const [summary, setSummary] = useState<KSSummary | null>(null);
   const [progress, setProgress] = useState(0);
   const [stage, setStage] = useState<GenerationStage>('queued');
-  const [validationErrors, setValidationErrors] = useState<ValidationErrors>({});
+  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
 
   const handleRowChange = (rowId: string, key: keyof Omit<WorkRow, 'id'>, value: string) => {
     setWorkRows((prev) => prev.map((row) => (row.id === rowId ? { ...row, [key]: value } : row)));
+    if (Object.keys(validationErrors).length > 0) {
+      setValidationErrors({});
+    }
+    if (error === 'Исправьте ошибки формы перед отправкой.') {
+      setError('');
+    }
   };
 
   const addRow = () => {
@@ -138,52 +137,18 @@ export default function GenerateKSPage() {
     setWorkRows((prev) => (prev.length > 1 ? prev.filter((row) => row.id !== rowId) : prev));
   };
 
-  const buildWorkItems = (): KSWorkItem[] => {
-    const zeroValueRows: string[] = [];
-    const workItems = workRows
-      .map((row) => ({ ...row, name: row.name.trim() }))
-      .filter((row) => row.name.length > 0)
-      .map((row) => {
-        const volume = Number(row.volume || '0');
-        const normHours = Number(row.normHours || '0');
-        const pricePerUnit = Number(row.pricePerUnit || '0');
-
-        if (
-          Number.isNaN(volume) ||
-          Number.isNaN(normHours) ||
-          Number.isNaN(pricePerUnit) ||
-          volume < 0 ||
-          normHours < 0 ||
-          pricePerUnit < 0
-        ) {
-          throw new Error(`Строка «${row.name}» содержит некорректные числовые значения.`);
-        }
-
-        if (volume === 0 || normHours === 0 || pricePerUnit === 0) {
-          zeroValueRows.push(row.name);
-        }
-
-        return {
-          name: row.name,
-          unit: row.unit,
-          volume,
-          norm_hours: normHours,
-          price_per_unit: pricePerUnit
-        };
-      });
-
-    if (zeroValueRows.length) {
-      setWarning(`Предупреждение: у работ с нулевыми значениями: ${zeroValueRows.join(', ')}.`);
-    } else {
-      setWarning('');
-    }
-
-    return workItems;
+  const buildWorkItems = (rows: WorkRow[] = workRows): KSWorkItem[] => {
+    return rows.map((row) => ({
+      name: row.name.trim(),
+      unit: row.unit,
+      volume: Number(row.volume),
+      norm_hours: Number(row.normHours),
+      price_per_unit: Number(row.pricePerUnit)
+    }));
   };
 
   const handleImportFromClipboard = async () => {
     setError('');
-    setWarning('');
     setImportInfo('');
     try {
       const clipboardText = await navigator.clipboard.readText();
@@ -222,49 +187,7 @@ export default function GenerateKSPage() {
     }
   };
 
-  const validateBeforeSubmit = (): ValidationErrors => {
-    const nextErrors: ValidationErrors = {};
-    const objectName = formValues.objectName.trim();
-    const contractNumber = formValues.contractNumber.trim();
 
-    if (objectName.length < 3) {
-      nextErrors.objectName = 'Название объекта: минимум 3 символа.';
-    }
-    if (contractNumber.length < 2) {
-      nextErrors.contractNumber = 'Номер договора: минимум 2 символа.';
-    }
-
-    if (!formValues.dateFrom.trim()) {
-      nextErrors.dateFrom = 'Укажите дату начала периода.';
-    }
-    if (!formValues.dateTo.trim()) {
-      nextErrors.dateTo = 'Укажите дату окончания периода.';
-    }
-
-    if (!nextErrors.dateFrom && !nextErrors.dateTo) {
-      try {
-        const fromIso = parseDateRU(formValues.dateFrom);
-        const toIso = parseDateRU(formValues.dateTo);
-        if (fromIso > toIso) {
-          nextErrors.dateTo = 'Дата окончания не может быть раньше даты начала.';
-        }
-      } catch {
-        if (!nextErrors.dateFrom) {
-          nextErrors.dateFrom = 'Используйте формат ДД.ММ.ГГГГ или YYYY-MM-DD.';
-        }
-        if (!nextErrors.dateTo) {
-          nextErrors.dateTo = 'Используйте формат ДД.ММ.ГГГГ или YYYY-MM-DD.';
-        }
-      }
-    }
-
-    const validWorkRows = workRows.filter((row) => row.name.trim().length >= 2);
-    if (validWorkRows.length === 0) {
-      nextErrors.workItems = 'Добавьте хотя бы одну работу с названием минимум 2 символа.';
-    }
-
-    return nextErrors;
-  };
 
   const normalizeKSResponse = (response: KSGenerationResponse, payloadHeader: KSHeader): KSSummary => {
     const normalizedKs2Raw = (response.ks2 && typeof response.ks2 === 'object' ? response.ks2 : {}) as Partial<KS2Data>;
@@ -313,16 +236,19 @@ export default function GenerateKSPage() {
     setValidationErrors({});
 
     try {
-      const nextErrors = validateBeforeSubmit();
-      if (Object.keys(nextErrors).length > 0) {
-        setValidationErrors(nextErrors);
+      const workItems = buildWorkItems(workRows);
+
+      const validation = validateKS({
+        object_name: formValues.objectName,
+        contract_number: formValues.contractNumber,
+        period_from: formValues.dateFrom,
+        period_to: formValues.dateTo,
+        work_items: workItems
+      });
+
+      if (!validation.isValid) {
+        setValidationErrors(validation.fieldErrors);
         throw new Error('Исправьте ошибки формы перед отправкой.');
-      }
-
-      const workItems = buildWorkItems();
-
-      if (!workItems.length) {
-        throw new Error('Добавьте хотя бы одну строку работ');
       }
 
       const payloadHeader: KSHeader = {
@@ -407,19 +333,27 @@ export default function GenerateKSPage() {
           <Input
             label="Название объекта"
             value={formValues.objectName}
-            onChange={(event) => setFormValues((prev) => ({ ...prev, objectName: event.target.value }))}
+            onChange={(event) => {
+              setFormValues((prev) => ({ ...prev, objectName: event.target.value }));
+              if (Object.keys(validationErrors).length > 0) setValidationErrors({});
+              if (error === 'Исправьте ошибки формы перед отправкой.') setError('');
+            }}
             disabled={isLoading}
             required
           />
-          {validationErrors.objectName && <p style={{ color: colors.error }}>{validationErrors.objectName}</p>}
+          {validationErrors.object_name && <p style={{ color: colors.error }}>{validationErrors.object_name}</p>}
           <Input
             label="Номер договора"
             value={formValues.contractNumber}
-            onChange={(event) => setFormValues((prev) => ({ ...prev, contractNumber: event.target.value }))}
+            onChange={(event) => {
+              setFormValues((prev) => ({ ...prev, contractNumber: event.target.value }));
+              if (Object.keys(validationErrors).length > 0) setValidationErrors({});
+              if (error === 'Исправьте ошибки формы перед отправкой.') setError('');
+            }}
             disabled={isLoading}
             required
           />
-          {validationErrors.contractNumber && <p style={{ color: colors.error }}>{validationErrors.contractNumber}</p>}
+          {validationErrors.contract_number && <p style={{ color: colors.error }}>{validationErrors.contract_number}</p>}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: spacing.md }}>
             <label style={{ display: 'grid', gap: spacing.xs }}>
               <span style={{ color: colors.textPrimary, fontSize: typography.label.fontSize, fontWeight: typography.label.fontWeight }}>
@@ -431,6 +365,8 @@ export default function GenerateKSPage() {
                 onChange={(event) => {
                   const nextValue = event.currentTarget.value.trim();
                   setFormValues((prev) => ({ ...prev, dateFrom: nextValue }));
+                  if (Object.keys(validationErrors).length > 0) setValidationErrors({});
+                  if (error === 'Исправьте ошибки формы перед отправкой.') setError('');
                 }}
                 placeholder="ДД.ММ.ГГГГ или YYYY-MM-DD"
                 required
@@ -447,7 +383,7 @@ export default function GenerateKSPage() {
               <span style={{ color: colors.textSecondary, fontSize: typography.small.fontSize }}>
                 {formatDateRuFromIso(formValues.dateFrom)}
               </span>
-              {validationErrors.dateFrom && <span style={{ color: colors.error }}>{validationErrors.dateFrom}</span>}
+              {validationErrors.period_from && <span style={{ color: colors.error }}>{validationErrors.period_from}</span>}
             </label>
             <label style={{ display: 'grid', gap: spacing.xs }}>
               <span style={{ color: colors.textPrimary, fontSize: typography.label.fontSize, fontWeight: typography.label.fontWeight }}>
@@ -459,6 +395,8 @@ export default function GenerateKSPage() {
                 onChange={(event) => {
                   const nextValue = event.currentTarget.value.trim();
                   setFormValues((prev) => ({ ...prev, dateTo: nextValue }));
+                  if (Object.keys(validationErrors).length > 0) setValidationErrors({});
+                  if (error === 'Исправьте ошибки формы перед отправкой.') setError('');
                 }}
                 placeholder="ДД.ММ.ГГГГ или YYYY-MM-DD"
                 required
@@ -475,7 +413,7 @@ export default function GenerateKSPage() {
               <span style={{ color: colors.textSecondary, fontSize: typography.small.fontSize }}>
                 {formatDateRuFromIso(formValues.dateTo)}
               </span>
-              {validationErrors.dateTo && <span style={{ color: colors.error }}>{validationErrors.dateTo}</span>}
+              {validationErrors.period_to && <span style={{ color: colors.error }}>{validationErrors.period_to}</span>}
             </label>
           </div>
           <div style={{ display: 'grid', gap: spacing.sm }}>
@@ -503,10 +441,11 @@ export default function GenerateKSPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {workRows.map((row) => (
+                  {workRows.map((row, rowIndex) => (
                     <tr key={row.id}>
                       <td style={{ border: `1px solid ${colors.border}`, padding: spacing.xs }}>
                         <Input
+                          error={validationErrors[`work_items.${rowIndex}.name`]}
                           value={row.name}
                           onChange={(event) => handleRowChange(row.id, 'name', event.target.value)}
                           placeholder="Наименование работы"
@@ -538,11 +477,12 @@ export default function GenerateKSPage() {
                         <td key={`${row.id}-${field}`} style={{ border: `1px solid ${colors.border}`, padding: spacing.xs }}>
                           <Input
                             type="number"
-                            min="0"
+                            min="0.01"
                             step="0.01"
                             value={row[field]}
                             onChange={(event) => handleRowChange(row.id, field, event.target.value)}
                             placeholder="0.00"
+                            error={validationErrors[`work_items.${rowIndex}.${field === 'normHours' ? 'norm_hours' : field === 'pricePerUnit' ? 'price_per_unit' : field}`]}
                             disabled={isLoading}
                           />
                         </td>
@@ -572,7 +512,7 @@ export default function GenerateKSPage() {
               </Button>
             </div>
             {importInfo && <p style={{ color: colors.textSecondary }}>{importInfo}</p>}
-            {validationErrors.workItems && <p style={{ color: colors.error }}>{validationErrors.workItems}</p>}
+            {validationErrors.work_items && <p style={{ color: colors.error }}>{validationErrors.work_items}</p>}
           </div>
           <div style={{ display: 'flex', gap: spacing.sm, alignItems: 'center', flexWrap: 'wrap' }}>
             <Button type="submit" loading={isLoading} disabled={isLoading}>
@@ -598,7 +538,6 @@ export default function GenerateKSPage() {
           )}
         </form>
         {success && <p style={{ color: colors.success, fontWeight: 600 }}>✓ КС сгенерирована</p>}
-        {warning && <p style={{ color: colors.warning }}>{warning}</p>}
         {error && <p style={{ color: colors.error }}>{error}</p>}
         {sessionId && <p style={{ color: colors.textSecondary, fontSize: 12 }}>session_id: {sessionId}</p>}
         {summary && (

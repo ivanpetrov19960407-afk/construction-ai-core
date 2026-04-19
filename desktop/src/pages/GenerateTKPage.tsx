@@ -6,6 +6,7 @@ import Input from '../components/ui/Input';
 import { colors, spacing } from '../styles/tokens';
 import { downloadTKDocx, generateTKStream, getApiConfig, type GenerationStage } from '../api/coreClient';
 import { DEFAULT_GENERATION_TIMEOUT_MS } from '../lib/apiClient';
+import { validateTK } from '../lib/validation';
 
 const fields: DocumentField[] = [
   { name: 'work_type', label: 'Тип работ', type: 'text' },
@@ -29,8 +30,24 @@ export default function GenerateTKPage() {
   const [downloadLoading, setDownloadLoading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [stage, setStage] = useState<GenerationStage>('queued');
+  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
 
   const handleSubmit = async (data: Record<string, string>) => {
+    const normalizedData = {
+      work_type: data.work_type ?? '',
+      object_name: data.object_name ?? '',
+      volume: Number(data.volume),
+      unit: data.unit ?? ''
+    };
+    const validation = validateTK(normalizedData);
+    setValidationErrors(validation.fieldErrors);
+
+    if (!validation.isValid) {
+      setError('Исправьте ошибки формы перед отправкой.');
+      setSuccess(false);
+      return;
+    }
+
     setIsLoading(true);
     setError('');
     setSuccess(false);
@@ -43,10 +60,10 @@ export default function GenerateTKPage() {
         apiUrl,
         apiKey,
         {
-          work_type: data.work_type,
-          object_name: data.object_name,
-          volume: Number(data.volume),
-          unit: data.unit
+          work_type: normalizedData.work_type,
+          object_name: normalizedData.object_name,
+          volume: normalizedData.volume,
+          unit: normalizedData.unit
         },
         (event) => {
           setProgress(event.progress ?? 0);
@@ -102,7 +119,21 @@ export default function GenerateTKPage() {
     <Card>
       <section style={{ display: 'grid', gap: spacing.md }}>
         <h2>Генерация ТК</h2>
-        <DocumentForm fields={fields} onSubmit={handleSubmit} isLoading={isLoading} error={error} />
+        <DocumentForm
+          fields={fields}
+          onSubmit={handleSubmit}
+          onValuesChange={() => {
+            if (Object.keys(validationErrors).length) {
+              setValidationErrors({});
+            }
+            if (error === 'Исправьте ошибки формы перед отправкой.') {
+              setError('');
+            }
+          }}
+          isLoading={isLoading}
+          error={error}
+          fieldErrors={validationErrors}
+        />
         {isLoading && (
           <div style={{ display: 'grid', gap: spacing.xs }}>
             <div style={{ color: colors.textSecondary }}>Текущий шаг: {stage}</div>
