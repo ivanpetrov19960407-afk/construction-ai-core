@@ -8,6 +8,10 @@ import {
   generateKSStream,
   getApiConfig,
   type GenerationStage,
+  type KS2Data,
+  type KS3Data,
+  type KSGenerationResponse,
+  type KSHeader,
   type KSWorkItem
 } from '../api/coreClient';
 import { DEFAULT_GENERATION_TIMEOUT_MS } from '../lib/apiClient';
@@ -28,6 +32,14 @@ interface KSFormValues {
   contractNumber: string;
   dateFrom: string;
   dateTo: string;
+}
+
+interface ValidationErrors {
+  objectName?: string;
+  contractNumber?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  workItems?: string;
 }
 
 function createEmptyWorkRow(): WorkRow {
@@ -74,15 +86,22 @@ function parseDateRU(val: string): string {
 }
 
 interface KSSummary {
-  ks2: string;
-  ks3: string;
-  total_cost: string;
-  total_hours: string;
+  header: KSHeader;
+  ks2: KS2Data;
+  ks3: KS3Data;
+  total_cost: number;
+  total_hours: number;
 }
 
 function formatDateRuFromIso(isoDate: string): string {
   if (!isoDate) return '—';
-  const parsed = new Date(`${isoDate}T00:00:00`);
+  let normalizedIso = isoDate;
+  try {
+    normalizedIso = parseDateRU(isoDate);
+  } catch {
+    return '—';
+  }
+  const parsed = new Date(`${normalizedIso}T00:00:00`);
   return Number.isNaN(parsed.getTime()) ? '—' : parsed.toLocaleDateString('ru-RU');
 }
 
@@ -105,6 +124,7 @@ export default function GenerateKSPage() {
   const [summary, setSummary] = useState<KSSummary | null>(null);
   const [progress, setProgress] = useState(0);
   const [stage, setStage] = useState<GenerationStage>('queued');
+  const [validationErrors, setValidationErrors] = useState<ValidationErrors>({});
 
   const handleRowChange = (rowId: string, key: keyof Omit<WorkRow, 'id'>, value: string) => {
     setWorkRows((prev) => prev.map((row) => (row.id === rowId ? { ...row, [key]: value } : row)));
@@ -202,6 +222,85 @@ export default function GenerateKSPage() {
     }
   };
 
+  const validateBeforeSubmit = (): ValidationErrors => {
+    const nextErrors: ValidationErrors = {};
+    const objectName = formValues.objectName.trim();
+    const contractNumber = formValues.contractNumber.trim();
+
+    if (objectName.length < 3) {
+      nextErrors.objectName = 'Название объекта: минимум 3 символа.';
+    }
+    if (contractNumber.length < 2) {
+      nextErrors.contractNumber = 'Номер договора: минимум 2 символа.';
+    }
+
+    if (!formValues.dateFrom.trim()) {
+      nextErrors.dateFrom = 'Укажите дату начала периода.';
+    }
+    if (!formValues.dateTo.trim()) {
+      nextErrors.dateTo = 'Укажите дату окончания периода.';
+    }
+
+    if (!nextErrors.dateFrom && !nextErrors.dateTo) {
+      try {
+        const fromIso = parseDateRU(formValues.dateFrom);
+        const toIso = parseDateRU(formValues.dateTo);
+        if (fromIso > toIso) {
+          nextErrors.dateTo = 'Дата окончания не может быть раньше даты начала.';
+        }
+      } catch {
+        if (!nextErrors.dateFrom) {
+          nextErrors.dateFrom = 'Используйте формат ДД.ММ.ГГГГ или YYYY-MM-DD.';
+        }
+        if (!nextErrors.dateTo) {
+          nextErrors.dateTo = 'Используйте формат ДД.ММ.ГГГГ или YYYY-MM-DD.';
+        }
+      }
+    }
+
+    const validWorkRows = workRows.filter((row) => row.name.trim().length >= 2);
+    if (validWorkRows.length === 0) {
+      nextErrors.workItems = 'Добавьте хотя бы одну работу с названием минимум 2 символа.';
+    }
+
+    return nextErrors;
+  };
+
+  const normalizeKSResponse = (response: KSGenerationResponse, payloadHeader: KSHeader): KSSummary => {
+    const normalizedKs2Raw = (response.ks2 && typeof response.ks2 === 'object' ? response.ks2 : {}) as Partial<KS2Data>;
+    const normalizedKs3Raw = (response.ks3 && typeof response.ks3 === 'object' ? response.ks3 : {}) as Partial<KS3Data>;
+
+    const header: KSHeader = {
+      object_name: normalizedKs2Raw.object_name || normalizedKs3Raw.object_name || payloadHeader.object_name,
+      contract_number: normalizedKs2Raw.contract_number || normalizedKs3Raw.contract_number || payloadHeader.contract_number,
+      period_from: normalizedKs2Raw.period_from || normalizedKs3Raw.period_from || payloadHeader.period_from,
+      period_to: normalizedKs2Raw.period_to || normalizedKs3Raw.period_to || payloadHeader.period_to
+    };
+
+    const workItems = Array.isArray(normalizedKs2Raw.work_items) ? normalizedKs2Raw.work_items : [];
+    const ks2: KS2Data = {
+      ...header,
+      work_items: workItems,
+      total_cost: Number(normalizedKs2Raw.total_cost ?? response.total_cost ?? 0),
+      total_hours: Number(normalizedKs2Raw.total_hours ?? response.total_hours ?? 0)
+    };
+    const ks3: KS3Data = {
+      ...header,
+      period_days: Number(normalizedKs3Raw.period_days ?? 0),
+      total_cost: Number(normalizedKs3Raw.total_cost ?? response.total_cost ?? 0),
+      total_hours: Number(normalizedKs3Raw.total_hours ?? response.total_hours ?? 0),
+      workers_needed: Number(normalizedKs3Raw.workers_needed ?? 0)
+    };
+
+    return {
+      header,
+      ks2,
+      ks3,
+      total_cost: Number(response.total_cost ?? ks2.total_cost ?? 0),
+      total_hours: Number(response.total_hours ?? ks2.total_hours ?? 0)
+    };
+  };
+
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
     setIsLoading(true);
@@ -211,16 +310,13 @@ export default function GenerateKSPage() {
     setImportInfo('');
     setProgress(0);
     setStage('queued');
+    setValidationErrors({});
 
     try {
-      if (!formValues.objectName.trim()) {
-        throw new Error('Заполните поле "Название объекта"');
-      }
-      if (!formValues.contractNumber.trim()) {
-        throw new Error('Заполните поле "Номер договора"');
-      }
-      if (!formValues.dateFrom || !formValues.dateTo) {
-        throw new Error('Заполните обе даты периода');
+      const nextErrors = validateBeforeSubmit();
+      if (Object.keys(nextErrors).length > 0) {
+        setValidationErrors(nextErrors);
+        throw new Error('Исправьте ошибки формы перед отправкой.');
       }
 
       const workItems = buildWorkItems();
@@ -229,15 +325,18 @@ export default function GenerateKSPage() {
         throw new Error('Добавьте хотя бы одну строку работ');
       }
 
+      const payloadHeader: KSHeader = {
+        object_name: formValues.objectName.trim(),
+        contract_number: formValues.contractNumber.trim(),
+        period_from: parseDateRU(formValues.dateFrom),
+        period_to: parseDateRU(formValues.dateTo)
+      };
       const { apiUrl, apiKey } = await getApiConfig();
       const response = await generateKSStream(
         apiUrl,
         apiKey,
         {
-          object_name: formValues.objectName.trim(),
-          contract_number: formValues.contractNumber.trim(),
-          period_from: parseDateRU(formValues.dateFrom),
-          period_to: parseDateRU(formValues.dateTo),
+          ...payloadHeader,
           work_items: workItems
         },
         (event) => {
@@ -248,18 +347,19 @@ export default function GenerateKSPage() {
 
       setSessionId(String(response.session_id ?? ''));
       setSuccess(true);
-      setSummary({
-        ks2: String(response.ks2 ?? ''),
-        ks3: String(response.ks3 ?? ''),
-        total_cost: String(response.total_cost ?? ''),
-        total_hours: String(response.total_hours ?? '')
-      });
+      const normalized = normalizeKSResponse(response, payloadHeader);
+      setSummary(normalized);
 
-      const normalizedResult =
-        response.document ??
-        (response.ks2 || response.ks3
-          ? { ks2: response.ks2, ks3: response.ks3, total_cost: response.total_cost, total_hours: response.total_hours }
-          : response.result ?? response.text ?? response.content ?? '');
+      const normalizedResult = response.document ?? {
+        session_id: response.session_id,
+        docx_bytes_key: response.docx_bytes_key,
+        sha256: response.sha256,
+        header: normalized.header,
+        ks2: normalized.ks2,
+        ks3: normalized.ks3,
+        total_cost: normalized.total_cost,
+        total_hours: normalized.total_hours
+      };
       setResult(
         typeof normalizedResult === 'string'
           ? normalizedResult
@@ -311,6 +411,7 @@ export default function GenerateKSPage() {
             disabled={isLoading}
             required
           />
+          {validationErrors.objectName && <p style={{ color: colors.error }}>{validationErrors.objectName}</p>}
           <Input
             label="Номер договора"
             value={formValues.contractNumber}
@@ -318,22 +419,20 @@ export default function GenerateKSPage() {
             disabled={isLoading}
             required
           />
+          {validationErrors.contractNumber && <p style={{ color: colors.error }}>{validationErrors.contractNumber}</p>}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: spacing.md }}>
             <label style={{ display: 'grid', gap: spacing.xs }}>
               <span style={{ color: colors.textPrimary, fontSize: typography.label.fontSize, fontWeight: typography.label.fontWeight }}>
                 Период с
               </span>
               <input
-                type="date"
+                type="text"
                 value={formValues.dateFrom}
                 onChange={(event) => {
-                  const nextValue = event.currentTarget.valueAsDate
-                    ? event.currentTarget.valueAsDate.toISOString().slice(0, 10)
-                    : event.currentTarget.value;
+                  const nextValue = event.currentTarget.value.trim();
                   setFormValues((prev) => ({ ...prev, dateFrom: nextValue }));
                 }}
-                min="1900-01-01"
-                max="2100-12-31"
+                placeholder="ДД.ММ.ГГГГ или YYYY-MM-DD"
                 required
                 disabled={isLoading}
                 style={{
@@ -348,22 +447,20 @@ export default function GenerateKSPage() {
               <span style={{ color: colors.textSecondary, fontSize: typography.small.fontSize }}>
                 {formatDateRuFromIso(formValues.dateFrom)}
               </span>
+              {validationErrors.dateFrom && <span style={{ color: colors.error }}>{validationErrors.dateFrom}</span>}
             </label>
             <label style={{ display: 'grid', gap: spacing.xs }}>
               <span style={{ color: colors.textPrimary, fontSize: typography.label.fontSize, fontWeight: typography.label.fontWeight }}>
                 Период по
               </span>
               <input
-                type="date"
+                type="text"
                 value={formValues.dateTo}
                 onChange={(event) => {
-                  const nextValue = event.currentTarget.valueAsDate
-                    ? event.currentTarget.valueAsDate.toISOString().slice(0, 10)
-                    : event.currentTarget.value;
+                  const nextValue = event.currentTarget.value.trim();
                   setFormValues((prev) => ({ ...prev, dateTo: nextValue }));
                 }}
-                min="1900-01-01"
-                max="2100-12-31"
+                placeholder="ДД.ММ.ГГГГ или YYYY-MM-DD"
                 required
                 disabled={isLoading}
                 style={{
@@ -378,6 +475,7 @@ export default function GenerateKSPage() {
               <span style={{ color: colors.textSecondary, fontSize: typography.small.fontSize }}>
                 {formatDateRuFromIso(formValues.dateTo)}
               </span>
+              {validationErrors.dateTo && <span style={{ color: colors.error }}>{validationErrors.dateTo}</span>}
             </label>
           </div>
           <div style={{ display: 'grid', gap: spacing.sm }}>
@@ -474,6 +572,7 @@ export default function GenerateKSPage() {
               </Button>
             </div>
             {importInfo && <p style={{ color: colors.textSecondary }}>{importInfo}</p>}
+            {validationErrors.workItems && <p style={{ color: colors.error }}>{validationErrors.workItems}</p>}
           </div>
           <div style={{ display: 'flex', gap: spacing.sm, alignItems: 'center', flexWrap: 'wrap' }}>
             <Button type="submit" loading={isLoading} disabled={isLoading}>
@@ -504,8 +603,8 @@ export default function GenerateKSPage() {
         {sessionId && <p style={{ color: colors.textSecondary, fontSize: 12 }}>session_id: {sessionId}</p>}
         {summary && (
           <p style={{ color: colors.textPrimary, fontWeight: 600 }}>
-            Итого работ: {workRows.filter((row) => row.name.trim()).length} | Общая стоимость: {summary.total_cost || '0'} руб. | Всего
-            нормо-часов: {summary.total_hours || '0'} ч.
+            Итого работ: {summary.ks2.work_items.length} | Общая стоимость: {summary.total_cost || 0} руб. | Всего нормо-часов:{' '}
+            {summary.total_hours || 0} ч.
           </p>
         )}
         <Input type="textarea" label="Результат" value={result} rows={12} readOnly />

@@ -56,6 +56,43 @@ export interface KSRequest {
   work_items: KSWorkItem[];
 }
 
+export interface KSHeader {
+  object_name: string;
+  contract_number: string;
+  period_from: string;
+  period_to: string;
+}
+
+export interface KSWorkItemResult extends KSWorkItem {
+  index: number;
+  subtotal_cost: number;
+  subtotal_hours: number;
+}
+
+export interface KS2Data extends Partial<KSHeader> {
+  work_items: KSWorkItemResult[];
+  total_cost: number;
+  total_hours: number;
+}
+
+export interface KS3Data extends Partial<KSHeader> {
+  period_days: number;
+  total_cost: number;
+  total_hours: number;
+  workers_needed: number;
+}
+
+export interface KSGenerationResponse extends GenerateDocumentResponse {
+  session_id: string;
+  result: string;
+  ks2: KS2Data;
+  ks3: KS3Data;
+  docx_bytes_key: string;
+  total_cost: number;
+  total_hours: number;
+  sha256: string | null;
+}
+
 export interface GenerateDocumentResponse {
   result?: string;
   text?: string;
@@ -300,7 +337,7 @@ export function generateLetter(apiUrl: string, apiKey: string, payload: LetterRe
 }
 
 export function generateKS(apiUrl: string, apiKey: string, payload: KSRequest, options?: ApiCallOptions) {
-  return postJson(apiUrl, apiKey, '/api/generate/ks', payload, options);
+  return postJson(apiUrl, apiKey, '/api/generate/ks', payload, options) as Promise<KSGenerationResponse>;
 }
 export function generateKSStream(
   apiUrl: string,
@@ -309,7 +346,7 @@ export function generateKSStream(
   onEvent: (event: GenerationStreamEvent) => void,
   options?: ApiCallOptions
 ) {
-  return postJsonSSE(apiUrl, apiKey, '/api/generate/ks?stream=true', payload, onEvent, options);
+  return postJsonSSE(apiUrl, apiKey, '/api/generate/ks?stream=true', payload, onEvent, options) as Promise<KSGenerationResponse>;
 }
 
 export async function downloadTKDocx(
