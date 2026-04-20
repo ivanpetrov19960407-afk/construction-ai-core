@@ -383,8 +383,7 @@ export default function SettingsPage() {
               {!health.llm.ok ? ' (не настроен)' : ' (готов)'}
             </p>
             <p style={{ margin: 0, color: colors.textSecondary }}>
-              Доступные:{' '}
-              {health.llm.available.length > 0 ? health.llm.available.join(', ') : 'нет'}
+              Доступные: {health.llm.available.length > 0 ? health.llm.available.join(', ') : 'нет'}
             </p>
           </Card>
         </Card>

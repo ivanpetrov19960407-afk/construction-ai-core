@@ -26,9 +26,7 @@ def _check_llm_router() -> dict[str, object]:
     provider_name = settings.default_llm_provider.strip().lower()
     available = LLMRouter.detect_available_providers()
     missing_keys = [
-        name
-        for name in LLM_PROVIDER_TO_SETTING
-        if name not in settings.configured_llm_providers
+        name for name in LLM_PROVIDER_TO_SETTING if name not in settings.configured_llm_providers
     ]
 
     try:
