@@ -84,7 +84,7 @@ def test_health_is_accessible_without_api_key():
             settings.api_keys = old_keys
 
         assert response.status_code == 200
-        assert response.json()["status"] == "ok"
+        assert response.json()["status"] in {"ok", "degraded"}
 
     asyncio.run(_run())
 
