@@ -36,6 +36,7 @@ def test_health_llm_degraded_when_keys_missing(monkeypatch):
     monkeypatch.setattr(settings, "yandexgpt_api_key", "")
     monkeypatch.setattr(settings, "deepseek_api_key", "")
     monkeypatch.setattr(settings, "perplexity_api_key", "")
+    monkeypatch.setattr(settings, "groq_api_key", "")
 
     async def _run() -> None:
         transport = ASGITransport(app=app)
@@ -45,8 +46,11 @@ def test_health_llm_degraded_when_keys_missing(monkeypatch):
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "degraded"
+        assert data["llm"]["ok"] is False
         assert data["llm"]["degraded"] is True
+        assert data["llm"]["active"] == "openai"
         assert data["llm"]["available"] == []
+        assert data["checks"]["llm_router"]["reason"] == "no_llm_keys"
         assert set(data["checks"]["llm_router"]["missing_keys"]) == {
             "openai",
             "claude",
@@ -69,6 +73,7 @@ def test_health_llm_ok_when_any_provider_configured(monkeypatch):
     monkeypatch.setattr(settings, "yandexgpt_api_key", "")
     monkeypatch.setattr(settings, "deepseek_api_key", "")
     monkeypatch.setattr(settings, "perplexity_api_key", "")
+    monkeypatch.setattr(settings, "groq_api_key", "")
 
     async def _run() -> None:
         transport = ASGITransport(app=app)
@@ -78,7 +83,9 @@ def test_health_llm_ok_when_any_provider_configured(monkeypatch):
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "ok"
+        assert data["llm"]["ok"] is True
         assert data["llm"]["degraded"] is False
+        assert data["llm"]["active"] == "openai"
         assert data["checks"]["llm_router"]["status"] == "ok"
         assert "openai" in data["llm"]["available"]
 

@@ -157,8 +157,10 @@ export interface HealthResponse {
   version: string;
   uptime_seconds: number;
   llm: {
+    active: string;
     default: string;
     available: string[];
+    ok: boolean;
     degraded: boolean;
   };
   components: Record<string, { status: string; [key: string]: unknown }>;

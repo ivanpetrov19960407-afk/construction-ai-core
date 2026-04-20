@@ -192,6 +192,10 @@ helm install construction-ai helm/construction-ai/ \\n  --set image.tag=latest \
 
 - **OpenAI**: зайдите в https://platform.openai.com/api-keys, создайте новый API key и сохраните его в `OPENAI_API_KEY`.
 - **GigaChat**: в кабинете разработчика Сбера (https://developers.sber.ru/) создайте OAuth-клиент и заполните `GIGACHAT_CREDENTIALS` в формате `base64(client_id:client_secret)`.
+- **Anthropic (Claude)**: создайте ключ в https://console.anthropic.com/settings/keys и сохраните его в `ANTHROPIC_API_KEY`.
+- **DeepSeek**: создайте ключ в https://platform.deepseek.com/api_keys и сохраните его в `DEEPSEEK_API_KEY`.
+- **YandexGPT**: создайте API Key/IAM в Yandex Cloud и сохраните в `YANDEXGPT_API_KEY`.
+- **Groq**: создайте API key в https://console.groq.com/keys и сохраните в `GROQ_API_KEY`.
 
 ---
 

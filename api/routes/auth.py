@@ -16,6 +16,7 @@ ALGORITHM = "HS256"
 UTC = getattr(dt, "UTC", dt.timezone.utc)  # noqa: UP017
 router = APIRouter(prefix="/auth", tags=["auth"])
 api_router = APIRouter(prefix="/api/auth", tags=["auth"])
+legacy_router = APIRouter(tags=["auth"])
 
 
 def _ensure_users_table() -> None:
@@ -156,6 +157,12 @@ async def me(request: Request) -> dict[str, str | bool]:
 
 @api_router.get("/me", include_in_schema=False)
 async def api_auth_me(request: Request) -> dict[str, str | bool]:
+    return _build_me_response(request)
+
+
+@legacy_router.get("/api/me", include_in_schema=False)
+async def api_me_legacy(request: Request) -> dict[str, str | bool]:
+    """Backward-compatible alias for desktop clients using GET /api/me."""
     return _build_me_response(request)
 
 

@@ -129,3 +129,17 @@ def test_query_raises_when_requested_provider_not_configured(monkeypatch):
     except LLMProviderNotConfiguredError as exc:
         assert exc.code == "llm_not_configured"
         assert exc.status_code == 503
+
+
+def test_router_detects_available_providers_on_startup(monkeypatch):
+    monkeypatch.setattr(settings, "openai_api_key", "openai-test")
+    monkeypatch.setattr(settings, "perplexity_api_key", "")
+    monkeypatch.setattr(settings, "anthropic_api_key", "")
+    monkeypatch.setattr(settings, "deepseek_api_key", "")
+    monkeypatch.setattr(settings, "groq_api_key", "")
+
+    router = LLMRouter(default_provider=LLMProvider.OPENAI)
+
+    assert router.available_providers == ["openai"]
+    assert router.is_available("openai") is True
+    assert router.is_available(LLMProvider.PERPLEXITY) is False
