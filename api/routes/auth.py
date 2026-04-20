@@ -15,7 +15,7 @@ from config.settings import settings
 ALGORITHM = "HS256"
 UTC = getattr(dt, "UTC", dt.timezone.utc)  # noqa: UP017
 router = APIRouter(prefix="/auth", tags=["auth"])
-api_router = APIRouter(prefix="/api", tags=["auth"])
+api_router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
 def _ensure_users_table() -> None:
@@ -68,9 +68,7 @@ def _create_token(username: str, role: str, org_id: str = "default") -> str:
     return encode_jwt(payload, settings.jwt_secret, algorithm=ALGORITHM)
 
 
-@router.post("/register")
-async def register_user(payload: UserCreate) -> dict[str, str]:
-    """Register user using invite code mapped to a role."""
+async def _register_impl(payload: UserCreate) -> dict[str, str]:
     role = settings.invite_codes.get(payload.invite_code)
     if role is None:
         raise HTTPException(status_code=403, detail="Invalid invite code")
@@ -93,9 +91,7 @@ async def register_user(payload: UserCreate) -> dict[str, str]:
     return {"username": payload.username, "role": role, "org_id": payload.org_id or "default"}
 
 
-@router.post("/login", response_model=TokenResponse)
-async def login_user(payload: UserLogin) -> TokenResponse:
-    """Authenticate user and return bearer JWT."""
+async def _login_impl(payload: UserLogin) -> TokenResponse:
     user = _get_user(payload.username)
     if user is None:
         raise HTTPException(status_code=401, detail="Invalid username or password")
@@ -110,6 +106,26 @@ async def login_user(payload: UserLogin) -> TokenResponse:
         expires_in=settings.jwt_expire_minutes * 60,
         role=role,
     )
+
+
+@router.post("/register")
+async def register_user(payload: UserCreate) -> dict[str, str]:
+    return await _register_impl(payload)
+
+
+@router.post("/login", response_model=TokenResponse)
+async def login_user(payload: UserLogin) -> TokenResponse:
+    return await _login_impl(payload)
+
+
+@api_router.post("/register")
+async def api_register_user(payload: UserCreate) -> dict[str, str]:
+    return await _register_impl(payload)
+
+
+@api_router.post("/login", response_model=TokenResponse)
+async def api_login_user(payload: UserLogin) -> TokenResponse:
+    return await _login_impl(payload)
 
 
 def _build_me_response(request: Request) -> dict[str, str | bool]:
@@ -138,8 +154,8 @@ async def me(request: Request) -> dict[str, str | bool]:
     return _build_me_response(request)
 
 
-@api_router.get("/me")
-async def api_me(request: Request) -> dict[str, str | bool]:
+@api_router.get("/me", include_in_schema=False)
+async def api_auth_me(request: Request) -> dict[str, str | bool]:
     return _build_me_response(request)
 
 
