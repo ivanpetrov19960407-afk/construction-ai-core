@@ -32,7 +32,12 @@ EXCLUDED_PATHS = {
     "/telegram/webhook",
     "/metrics",
 }
-PUBLIC_AUTH_PATHS = {"/auth/register", "/auth/login"}
+PUBLIC_AUTH_PATHS = {
+    "/auth/register",
+    "/auth/login",
+    "/api/auth/register",
+    "/api/auth/login",
+}
 API_KEY_IDENTITY_PATHS = {
     "/api/me",
     "/api/chat",
