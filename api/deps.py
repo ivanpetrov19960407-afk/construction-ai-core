@@ -8,7 +8,7 @@ from pathlib import Path
 
 from fastapi import Header, HTTPException, Request
 
-from api.routes.auth import decode_jwt_token
+from api.security import JWTError, decode_jwt
 from config.settings import settings
 
 
@@ -46,6 +46,20 @@ def _lookup_api_key_user(api_key: str) -> str | None:
     return str(row[0])
 
 
+def _decode_jwt_token(token: str) -> dict[str, str]:
+    try:
+        payload = decode_jwt(token, settings.jwt_secret, algorithms=["HS256"])
+    except JWTError as exc:
+        raise HTTPException(status_code=401, detail="Invalid token") from exc
+
+    username = payload.get("sub")
+    role = payload.get("role")
+    org_id = payload.get("org_id")
+    if not username or not role:
+        raise HTTPException(status_code=401, detail="Invalid token payload")
+    return {"username": str(username), "role": str(role), "org_id": str(org_id or "default")}
+
+
 async def current_user(
     request: Request,
     authorization: str | None = Header(default=None),
@@ -53,12 +67,21 @@ async def current_user(
 ) -> CurrentUser:
     """Resolve authenticated user from JWT first, then API key mapping."""
     if authorization and authorization.startswith("Bearer "):
-        payload = decode_jwt_token(authorization.removeprefix("Bearer ").strip())
+        payload = _decode_jwt_token(authorization.removeprefix("Bearer ").strip())
         return CurrentUser(
             username=payload["username"],
             role=payload["role"],
             org_id=payload.get("org_id", "default"),
         )
+
+    if x_api_key:
+        if x_api_key not in settings.api_keys:
+            raise HTTPException(status_code=401, detail="Authentication required")
+        username = _lookup_api_key_user(x_api_key)
+        role = "admin" if x_api_key in settings.admin_api_keys else "pto_engineer"
+        if username:
+            return CurrentUser(username=username, role=role, org_id="default")
+        return CurrentUser(username=f"api_key:{x_api_key[-6:]}", role=role, org_id="default")
 
     state_username = getattr(request.state, "username", None)
     state_role = getattr(request.state, "user_role", None)
@@ -69,12 +92,4 @@ async def current_user(
             org_id=str(getattr(request.state, "org_id", "default") or "default"),
         )
 
-    if not x_api_key or x_api_key not in settings.api_keys:
-        raise HTTPException(status_code=401, detail="Authentication required")
-
-    username = _lookup_api_key_user(x_api_key)
-    if not username:
-        raise HTTPException(status_code=401, detail="Authentication required")
-
-    role = "admin" if x_api_key in settings.admin_api_keys else "pto_engineer"
-    return CurrentUser(username=username, role=role, org_id="default")
+    raise HTTPException(status_code=401, detail="Authentication required")

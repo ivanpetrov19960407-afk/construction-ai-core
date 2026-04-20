@@ -11,7 +11,7 @@ from hashlib import sha256
 from typing import Any, cast
 
 import structlog
-from fastapi import Request
+from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from fastapi.routing import APIRoute
 from slowapi import Limiter
@@ -74,7 +74,10 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         auth_header = request.headers.get("Authorization", "")
         if auth_header.startswith("Bearer "):
             token = auth_header.removeprefix("Bearer ").strip()
-            payload = decode_jwt_token(token)
+            try:
+                payload = decode_jwt_token(token)
+            except HTTPException as exc:
+                return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
             request.state.username = payload["username"]
             request.state.user_role = payload["role"]
             request.state.org_id = payload.get("org_id", "default")

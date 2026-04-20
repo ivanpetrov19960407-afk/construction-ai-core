@@ -60,6 +60,7 @@ ROLE_NAMES = {
 
 _PERIOD_RE = re.compile(r"^\d{2}\.\d{2}\.\d{4}\s*-\s*\d{2}\.\d{2}\.\d{4}$")
 _API_KEY_RE = re.compile(r"^[a-zA-Z0-9_-]{16,64}$")
+PROFILE_ENDPOINT = "/api/me"
 
 
 def _get_api_key() -> str:
@@ -244,7 +245,7 @@ async def link_handler(message: Message) -> None:
     try:
         async with httpx.AsyncClient(timeout=20.0) as client:
             response = await client.get(
-                f"{settings.core_api_url.rstrip('/')}/api/me",
+                f"{settings.core_api_url.rstrip('/')}{PROFILE_ENDPOINT}",
                 headers={"X-API-Key": api_key},
             )
     except httpx.HTTPError:
@@ -279,7 +280,7 @@ async def whoami_handler(message: Message) -> None:
     try:
         async with httpx.AsyncClient(timeout=20.0) as client:
             response = await client.get(
-                f"{settings.core_api_url.rstrip('/')}/api/me",
+                f"{settings.core_api_url.rstrip('/')}{PROFILE_ENDPOINT}",
                 headers={"X-API-Key": api_key},
             )
             response.raise_for_status()

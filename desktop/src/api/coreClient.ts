@@ -184,6 +184,7 @@ export interface RagSourceItem {
 export interface MeResponse {
   username: string;
   role: string;
+  org_id: string;
   is_admin: boolean;
 }
 

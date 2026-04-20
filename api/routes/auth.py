@@ -6,8 +6,9 @@ import datetime as dt
 import sqlite3
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 
+from api.deps import CurrentUser, current_user
 from api.models import TokenResponse, UserCreate, UserLogin
 from api.security import JWTError, decode_jwt, encode_jwt, hash_password, verify_password
 from config.settings import settings
@@ -129,41 +130,37 @@ async def api_login_user(payload: UserLogin) -> TokenResponse:
     return await _login_impl(payload)
 
 
-def _build_me_response(request: Request) -> dict[str, str | bool]:
-    """Return current user profile based on middleware-populated JWT context."""
-    username = getattr(request.state, "username", None)
-    user_role = getattr(request.state, "user_role", None)
-    if username is None or user_role is None:
-        raise HTTPException(status_code=401, detail="Authentication required")
+def _build_me_response(user: CurrentUser) -> dict[str, str | bool]:
+    """Return current user profile in stable API contract format."""
+    username = str(user.username)
+    role = str(user.role)
+    org_id = str(user.org_id or "default")
 
-    user = _get_user(username)
-    if user is None:
-        role = str(user_role)
-        return {
-            "username": username,
-            "role": role,
-            "org_id": "default",
-            "is_admin": role == "admin",
-        }
+    user_row = _get_user(username)
+    if user_row is not None:
+        _username, _password_hash, db_role, db_org_id, _created_at = user_row
+        role = db_role
+        org_id = db_org_id or "default"
 
-    _username, _password_hash, role, org_id, _created_at = user
     return {"username": username, "role": role, "org_id": org_id, "is_admin": role == "admin"}
 
 
-@router.get("/me")
-async def me(request: Request) -> dict[str, str | bool]:
-    return _build_me_response(request)
+@legacy_router.get("/api/me")
+async def api_me(user: CurrentUser = Depends(current_user)) -> dict[str, str | bool]:
+    """Canonical profile endpoint with JWT + X-API-Key authentication support."""
+    return _build_me_response(user)
+
+
+@router.get("/me", include_in_schema=False)
+async def me_alias_auth(user: CurrentUser = Depends(current_user)) -> dict[str, str | bool]:
+    """Backward-compatible alias for GET /auth/me."""
+    return _build_me_response(user)
 
 
 @api_router.get("/me", include_in_schema=False)
-async def api_auth_me(request: Request) -> dict[str, str | bool]:
-    return _build_me_response(request)
-
-
-@legacy_router.get("/api/me", include_in_schema=False)
-async def api_me_legacy(request: Request) -> dict[str, str | bool]:
-    """Backward-compatible alias for desktop clients using GET /api/me."""
-    return _build_me_response(request)
+async def me_alias_api_auth(user: CurrentUser = Depends(current_user)) -> dict[str, str | bool]:
+    """Backward-compatible alias for GET /api/auth/me."""
+    return _build_me_response(user)
 
 
 def decode_jwt_token(token: str) -> dict[str, str]:
