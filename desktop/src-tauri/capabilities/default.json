@@ -13,7 +13,14 @@
     "core:path:default",
     "dialog:allow-message",
     "dialog:allow-ask",
-    "http:default",
+    {
+      "identifier": "http:default",
+      "allow": [
+        { "url": "https://vanekpetrov1997.fvds.ru/*" },
+        { "url": "http://vanekpetrov1997.fvds.ru/*" },
+        { "url": "https://*.fvds.ru/*" }
+      ]
+    },
     "allow-get-api-url",
     "allow-set-api-url",
     "allow-pick-pdf-file",
