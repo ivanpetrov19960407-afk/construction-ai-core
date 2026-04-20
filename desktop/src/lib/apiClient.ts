@@ -1,3 +1,5 @@
+import { fetch as tauriFetch } from '@tauri-apps/plugin-http';
+
 export const DEFAULT_CHAT_TIMEOUT_MS = 120_000;
 export const DEFAULT_GENERATION_TIMEOUT_MS = 300_000;
 
@@ -109,7 +111,7 @@ export async function apiRequest(
   }
 
   try {
-    const response = await fetch(`${apiUrl}${endpoint}`, {
+    const response = await tauriFetch(`${apiUrl}${endpoint}`, {
       ...init,
       signal: mergedSignal,
     });
