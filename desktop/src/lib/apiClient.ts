@@ -24,6 +24,33 @@ interface ApiRequestOptions extends Omit<RequestInit, 'signal'> {
   signal?: AbortSignal;
 }
 
+function isLikelyJwt(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed.startsWith('eyJ')) return false;
+  return trimmed.split('.').length === 3;
+}
+
+function normalizeAuthHeaders(headers: HeadersInit | undefined): HeadersInit | undefined {
+  if (!headers) return headers;
+
+  const entries: Array<[string, string]> =
+    headers instanceof Headers
+      ? Array.from(headers.entries())
+      : Array.isArray(headers)
+        ? (headers as Array<[string, string]>)
+        : Object.entries(headers as Record<string, string>);
+
+  const out: Record<string, string> = {};
+  for (const [k, v] of entries) {
+    if (k.toLowerCase() === 'x-api-key' && typeof v === 'string' && isLikelyJwt(v)) {
+      out['Authorization'] = `Bearer ${v.trim()}`;
+    } else {
+      out[k] = v;
+    }
+  }
+  return out;
+}
+
 function combineSignals(...signals: Array<AbortSignal | undefined>): AbortSignal | undefined {
   const activeSignals = signals.filter((signal): signal is AbortSignal => Boolean(signal));
   if (!activeSignals.length) return undefined;
@@ -96,9 +123,10 @@ export async function apiRequest(
   endpoint: string,
   options: ApiRequestOptions = {},
 ): Promise<Response> {
-  const { timeoutMs, signal, ...init } = options;
+  const { timeoutMs, signal, headers, ...init } = options;
   const controller = new AbortController();
   const mergedSignal = combineSignals(signal, controller.signal);
+  const finalHeaders = normalizeAuthHeaders(headers);
 
   let timeoutId: number | null = null;
   let timedOut = false;
@@ -113,6 +141,7 @@ export async function apiRequest(
   try {
     const response = await tauriFetch(`${apiUrl}${endpoint}`, {
       ...init,
+      headers: finalHeaders,
       signal: mergedSignal,
     });
 
