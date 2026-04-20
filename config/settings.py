@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     gigachat_credentials: str = ""
     yandexgpt_api_key: str = ""
     deepseek_api_key: str = ""
+    groq_api_key: str = ""
     default_llm_provider: str = "perplexity"
 
     # ── Database ───────────────────────────────
@@ -111,6 +112,7 @@ class Settings(BaseSettings):
             "gigachat": self.gigachat_credentials,
             "yandexgpt": self.yandexgpt_api_key,
             "deepseek": self.deepseek_api_key,
+            "groq": self.groq_api_key,
         }
         return [name for name, token in providers.items() if token.strip()]
 

@@ -1,3 +1,8 @@
+## [0.2.2] - 2026-04-20
+
+### Added
+- feat(llm): honest health-check + startup validation
+
 ## [0.2.1] - 2026-04-19
 
 ### Fixed

@@ -25,6 +25,7 @@ class LLMProvider(str, Enum):  # noqa: UP042
     OPENAI = "openai"
     CLAUDE = "claude"
     DEEPSEEK = "deepseek"
+    GROQ = "groq"
 
 
 @dataclass
@@ -60,6 +61,11 @@ PROVIDER_CONFIG = {
         "default_model": "deepseek-chat",
         "api_key_field": "deepseek_api_key",
     },
+    LLMProvider.GROQ: {
+        "base_url": "https://api.groq.com/openai/v1",
+        "default_model": "llama-3.3-70b-versatile",
+        "api_key_field": "groq_api_key",
+    },
 }
 
 
@@ -78,15 +84,20 @@ class LLMRouter:
         self._logger = structlog.get_logger("core.llm_router")
         self._cache = RedisCache(settings.redis_url)
         self._intent_cache_ttl_seconds = 3600
-        self.available_providers: set[LLMProvider] = self._detect_available_providers()
+        self.available_providers: list[str] = self.detect_available_providers()
         self._logger.info(
             "llm_router_initialized",
             default_provider=self.default_provider.value,
-            available_providers=sorted(provider.value for provider in self.available_providers),
+            available_providers=self.available_providers,
         )
 
-    def _detect_available_providers(self) -> set[LLMProvider]:
-        return {provider for provider in LLMProvider if self._provider_api_key(provider).strip()}
+    @classmethod
+    def detect_available_providers(cls) -> list[str]:
+        return [
+            provider.value
+            for provider in LLMProvider
+            if str(getattr(settings, str(PROVIDER_CONFIG[provider]["api_key_field"]), "")).strip()
+        ]
 
     def _provider_api_key_field(self, provider: LLMProvider) -> str:
         return str(PROVIDER_CONFIG[provider]["api_key_field"])
@@ -96,7 +107,17 @@ class LLMRouter:
 
     def is_available(self, provider: LLMProvider | str) -> bool:
         resolved = provider if isinstance(provider, LLMProvider) else LLMProvider(provider)
-        return bool(self._provider_api_key(resolved).strip())
+        return resolved.value in self.available_providers
+
+    def get_provider(self, provider: LLMProvider | None = None) -> LLMProvider:
+        requested_provider = provider or self.default_provider
+        self.available_providers = self.detect_available_providers()
+        if not self.is_available(requested_provider):
+            raise LLMProviderNotConfiguredError(
+                requested_provider.value,
+                self._provider_api_key_field(requested_provider),
+            )
+        return requested_provider
 
     async def query(
         self,
@@ -121,20 +142,14 @@ class LLMRouter:
         Returns:
             LLMResponse с текстом ответа и метаданными.
         """
-        requested_provider = provider or self.default_provider
-        self.available_providers = self._detect_available_providers()
-        if not self.is_available(requested_provider):
-            raise LLMProviderNotConfiguredError(
-                requested_provider.value,
-                self._provider_api_key_field(requested_provider),
-            )
+        requested_provider = self.get_provider(provider)
 
         providers_chain = [
             requested_provider,
             *[
                 candidate
                 for candidate in LLMProvider
-                if candidate != requested_provider and candidate in self.available_providers
+                if candidate != requested_provider and self.is_available(candidate)
             ],
         ]
 

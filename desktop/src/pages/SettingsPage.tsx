@@ -363,6 +363,30 @@ export default function SettingsPage() {
               Нормативы (СП, ГОСТ) не загружены — качество ответов снижено.
             </p>
           )}
+
+          <Card
+            padding="md"
+            style={{
+              marginTop: spacing.md,
+              border: `1px solid ${health.llm.ok ? colors.border : colors.error}`,
+            }}
+          >
+            <h4 style={{ marginTop: 0, marginBottom: spacing.xs }}>LLM-провайдеры</h4>
+            <p
+              style={{
+                marginTop: 0,
+                marginBottom: spacing.xs,
+                color: health.llm.ok ? colors.textPrimary : colors.error,
+              }}
+            >
+              Активный: {health.llm.active}
+              {!health.llm.ok ? ' (не настроен)' : ' (готов)'}
+            </p>
+            <p style={{ margin: 0, color: colors.textSecondary }}>
+              Доступные:{' '}
+              {health.llm.available.length > 0 ? health.llm.available.join(', ') : 'нет'}
+            </p>
+          </Card>
         </Card>
       )}
       <Card padding="md" style={{ marginTop: spacing.lg }}>

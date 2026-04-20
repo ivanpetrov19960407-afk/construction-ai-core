@@ -7,7 +7,7 @@ from fastapi import APIRouter, Request
 
 from config.settings import settings
 from core.database import get_db, init_db
-from core.llm_router import LLMProvider
+from core.llm_router import LLMProvider, LLMRouter
 from core.rag_engine import RAGEngine
 
 router = APIRouter()
@@ -23,9 +23,13 @@ LLM_PROVIDER_TO_SETTING = {
 
 
 def _check_llm_router() -> dict[str, object]:
-    provider_name = settings.default_llm_provider
-    available = settings.configured_llm_providers
-    missing_keys = [name for name in LLM_PROVIDER_TO_SETTING if name not in available]
+    provider_name = settings.default_llm_provider.strip().lower()
+    available = LLMRouter.detect_available_providers()
+    missing_keys = [
+        name
+        for name in LLM_PROVIDER_TO_SETTING
+        if name not in settings.configured_llm_providers
+    ]
 
     try:
         _ = LLMProvider(provider_name)
@@ -34,6 +38,7 @@ def _check_llm_router() -> dict[str, object]:
         default_supported = False
 
     default_configured = provider_name in available
+    no_llm_keys = len(available) == 0
     is_degraded = not default_supported or not default_configured
 
     status = "ok"
@@ -48,7 +53,9 @@ def _check_llm_router() -> dict[str, object]:
         "available_providers": available,
         "missing_keys": missing_keys,
     }
-    if not default_supported:
+    if no_llm_keys:
+        check["reason"] = "no_llm_keys"
+    elif not default_supported:
         check["reason"] = "unsupported_default_provider"
     elif not default_configured:
         check["reason"] = "missing_default_provider_key"
@@ -125,10 +132,14 @@ async def health_check(request: Request):
         now = datetime.now(timezone.utc)  # noqa: UP017
         uptime_seconds = max(0.0, (now - started_at).total_seconds())
 
+    llm_ok = bool(llm_check["status"] == "ok")
     llm = {
+        "active": settings.default_llm_provider,
+        "available": llm_check["available_providers"],
+        "ok": llm_ok,
+        # Backward-compatible поля для desktop, пока клиенты полностью не обновлены.
         "default": settings.default_llm_provider,
-        "available": settings.configured_llm_providers,
-        "degraded": bool(llm_check["status"] != "ok"),
+        "degraded": not llm_ok,
     }
 
     return {
