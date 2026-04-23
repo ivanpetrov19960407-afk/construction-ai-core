@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
+import re
 from time import perf_counter
 from typing import Any
 
@@ -29,7 +31,7 @@ from core.cache import RedisCache
 from core.llm_router import LLMRouter
 from core.rag_engine import RAGEngine
 from core.tools.web_search import WebSearchTool
-from schemas.research import Diagnostic, ResearchFact, ResearchResponse
+from schemas.research import Diagnostic, ResearchFact, ResearchResponse, ResearchSource
 
 logger = logging.getLogger(__name__)
 struct_logger = structlog.get_logger("agents.researcher")
@@ -72,21 +74,15 @@ class ResearcherAgent(BaseAgent):
         context = str(state.get("context", "")).strip()
         trace_id = str(state.get("trace_id") or hashlib.sha256(message.encode()).hexdigest()[:12])
 
-        collector = SourceCollector(
-            rag_engine=self.rag_engine,
-            web_search_tool=self.web_search_tool,
-            cache=await self._get_cache(),
-            config=self._config,
-        )
-        sources, collection_diag = await collector.collect(
+        sources, collection_diagnostics = await self._collect_sources(
             message,
             topic_scope=topic_scope,
             access_scope=access_scope,
             context=context,
         )
-        if any(diag.code == "web_fallback" for diag in collection_diag):
+        if "web_fallback_triggered" in collection_diagnostics:
             RESEARCHER_WEB_FALLBACK_TOTAL.inc()
-        if not collection_diag:
+        if not collection_diagnostics:
             RESEARCHER_CACHE_HITS_TOTAL.inc()
 
         prompt = PromptBuilder.build(message, context=context, sources=sources, config=self._config)
@@ -102,10 +98,15 @@ class ResearcherAgent(BaseAgent):
         except Exception as exc:
             logger.warning("researcher.llm_failed: %s", exc)
             llm_data = {"facts": [], "gaps": ["Не удалось получить структурированный ответ от LLM"]}
+            error_code = "llm_timeout" if isinstance(exc, TimeoutError) else "llm_failed"
             llm_diagnostics.append(
                 Diagnostic(
-                    code="llm_failed",
-                    message="LLM вернул ответ не в JSON-формате",
+                    code=error_code,
+                    message=(
+                        "LLM вернул ответ не в JSON-формате"
+                        if error_code == "llm_failed"
+                        else error_code
+                    ),
                     severity="error",
                     stage="llm",
                 )
@@ -142,20 +143,24 @@ class ResearcherAgent(BaseAgent):
             )
 
         confidence = ConfidenceScorer.score(facts, sources, self._config)
-        diagnostics_struct = [*collection_diag, *llm_diagnostics, *validator_diags]
+        collection_diag_struct = [
+            Diagnostic(code=item, message=item, severity="warn", stage="collect")
+            for item in collection_diagnostics
+        ]
+        diagnostics_struct = [*collection_diag_struct, *llm_diagnostics, *validator_diags]
         response = ResearchResponse(
             query=message,
             facts=facts,
             sources=sources,
             gaps=list(dict.fromkeys(gaps)),
-            diagnostics=[diag.message for diag in diagnostics_struct],
+            diagnostics=list(dict.fromkeys(diag.message for diag in diagnostics_struct)),
             diagnostics_struct=diagnostics_struct,
             confidence_overall=confidence.overall,
             confidence_breakdown=confidence.model_dump(),
         )
 
         raw_facts = llm_data if llm_data else {}
-        state["research_facts"] = str(raw_facts)
+        state["research_facts"] = "" if any(d.code in {"llm_timeout", "llm_failed"} for d in llm_diagnostics) else str(raw_facts)
         state["research_payload"] = response.model_dump()
 
         struct_logger.info(
@@ -163,11 +168,50 @@ class ResearcherAgent(BaseAgent):
             agent_id=self.agent_id,
             trace_id=trace_id,
             duration_ms=round((perf_counter() - started) * 1000, 2),
-            cache_hit=not bool(collection_diag),
+            cache_hit=not bool(collection_diagnostics),
             sources_count=len(sources),
             message=sanitize_pii(message),
         )
         return self._update_state(state, str(raw_facts))
+
+    async def _collect_sources(
+        self,
+        message: str,
+        *,
+        topic_scope: str | None,
+        access_scope: str | None,
+        context: str,
+    ) -> tuple[list[ResearchSource], list[str]]:
+        collector = SourceCollector(
+            rag_engine=self.rag_engine,
+            web_search_tool=self.web_search_tool,
+            cache=await self._get_cache(),
+            config=self._config,
+        )
+        self._config.rag_timeout_seconds = float(
+            getattr(settings, "research_rag_timeout_seconds", self._config.rag_timeout_seconds)
+        )
+        self._config.web_timeout_seconds = float(
+            getattr(settings, "research_web_timeout_seconds", self._config.web_timeout_seconds)
+        )
+        self._config.llm_timeout_seconds = float(
+            getattr(settings, "research_llm_timeout_seconds", self._config.llm_timeout_seconds)
+        )
+        sources, diagnostics = await collector.collect(
+            message,
+            topic_scope=topic_scope,
+            access_scope=access_scope,
+            context=context,
+        )
+        legacy: list[str] = []
+        for item in diagnostics:
+            if item.code == "rag_failed" and item.message == "TimeoutError":
+                legacy.append("rag_timeout")
+            elif item.code == "rag_failed":
+                legacy.append(f"rag_failed:{item.message}")
+            else:
+                legacy.append(item.code)
+        return sources, list(dict.fromkeys(legacy))
 
     async def run_standalone(
         self,
@@ -214,3 +258,122 @@ class ResearcherAgent(BaseAgent):
         if sanitized == "[REDACTED: suspected prompt injection]":
             return "[sanitized potential prompt-injection snippet]"
         return sanitized
+
+    def _parse_llm_json(
+        self,
+        query: str,
+        raw: str,
+        sources: list[ResearchSource],
+    ) -> ResearchResponse:
+        facts: list[ResearchFact] = []
+        gaps: list[str] = []
+        diagnostics: list[str] = []
+        payload = self._extract_json_payload(raw)
+        if isinstance(payload, dict):
+            try:
+                facts = [ResearchFact.model_validate(item) for item in payload.get("facts", [])]
+                gaps = [str(item) for item in payload.get("gaps", [])]
+            except ValidationError:
+                diagnostics.append("llm_invalid_json")
+        else:
+            diagnostics.append("llm_invalid_json")
+        facts, source_diag = self._validate_fact_source_ids(facts, sources)
+        diagnostics.extend(source_diag)
+        return ResearchResponse(
+            query=query,
+            facts=facts,
+            sources=sources,
+            gaps=gaps,
+            diagnostics=list(dict.fromkeys(diagnostics)),
+            confidence_overall=self._compute_confidence_overall(facts, sources),
+        )
+
+    @classmethod
+    def _extract_json_payload(cls, raw: str) -> dict[str, Any] | None:
+        fenced = re.search(r"```(?:json)?\\s*(.*?)```", raw, flags=re.IGNORECASE | re.DOTALL)
+        candidates = [fenced.group(1).strip()] if fenced else []
+        candidates.extend([raw.strip(), cls._extract_first_json(raw)])
+        for candidate in candidates:
+            if not candidate:
+                continue
+            try:
+                parsed = json.loads(candidate)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(parsed, dict):
+                return parsed
+        return None
+
+    @staticmethod
+    def _extract_first_json(text: str) -> str | None:
+        decoder = json.JSONDecoder()
+        for idx, char in enumerate(text):
+            if char != "{":
+                continue
+            try:
+                parsed, _ = decoder.raw_decode(text, idx)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(parsed, dict):
+                return json.dumps(parsed, ensure_ascii=False)
+        return None
+
+    @staticmethod
+    def _validate_fact_source_ids(
+        facts: list[ResearchFact], sources: list[ResearchSource]
+    ) -> tuple[list[ResearchFact], list[str]]:
+        valid_ids = {source.id for source in sources}
+        diagnostics: list[str] = []
+        validated: list[ResearchFact] = []
+        for idx, fact in enumerate(facts):
+            source_ids = [sid for sid in fact.source_ids if sid in valid_ids]
+            if not source_ids:
+                diagnostics.append(f"Факт #{idx + 1} отброшен: нет валидных source_ids")
+                continue
+            if len(source_ids) != len(fact.source_ids):
+                diagnostics.append(f"Факт #{idx + 1}: удалены невалидные source_ids")
+            validated.append(fact.model_copy(update={"source_ids": source_ids}))
+        return validated, diagnostics
+
+    def _need_web_fallback(self, rag_sources: list[ResearchSource]) -> bool:
+        min_sources = int(getattr(settings, "research_web_min_rag_sources", 2))
+        min_avg_score = float(getattr(settings, "research_web_min_avg_score", 0.35))
+        min_snippet_chars = int(getattr(settings, "research_web_min_snippet_chars", 500))
+        if len(rag_sources) < min_sources:
+            return True
+        avg_score = sum(source.score for source in rag_sources) / max(len(rag_sources), 1)
+        if avg_score < min_avg_score:
+            return True
+        return sum(len(source.snippet or "") for source in rag_sources) < min_snippet_chars
+
+    @staticmethod
+    def _normalize_rag_score(chunk: dict[str, Any]) -> float:
+        raw_score = float(chunk.get("score", 0.0) or 0.0)
+        score_type = str(chunk.get("score_type") or getattr(settings, "rag_score_mode", "similarity"))
+        if score_type.lower() == "distance":
+            return max(0.0, min(1.0, 1.0 - raw_score if raw_score <= 1 else 1.0 / (1.0 + raw_score)))
+        return max(0.0, min(1.0, raw_score if raw_score <= 1 else raw_score / 100))
+
+    @staticmethod
+    def _deduplicate_rag_sources(rag_sources: list[ResearchSource]) -> list[ResearchSource]:
+        deduped: dict[tuple[str, int], ResearchSource] = {}
+        for source in rag_sources:
+            key = ((source.document or source.title).lower(), source.page or -1)
+            current = deduped.get(key)
+            if current is None or source.score > current.score:
+                deduped[key] = source
+        return list(deduped.values())
+
+    @classmethod
+    def _compute_confidence_overall(
+        cls, facts: list[ResearchFact], sources: list[ResearchSource]
+    ) -> float:
+        avg_fact = sum(f.confidence for f in facts) / len(facts) if facts else 0.0
+        avg_src = sum(s.score for s in sources) / len(sources) if sources else 0.0
+        if facts and sources:
+            return round(min(1.0, 0.6 * avg_fact + 0.4 * avg_src), 2)
+        if sources:
+            return round(min(1.0, 0.4 * avg_src), 2)
+        if facts:
+            return round(min(1.0, 0.6 * avg_fact), 2)
+        return 0.0

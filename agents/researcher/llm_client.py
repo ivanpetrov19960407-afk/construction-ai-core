@@ -36,20 +36,28 @@ class StructuredLLMClient:
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential_jitter(initial=0.5, max=4),
-        retry=retry_if_exception_type((TimeoutError, ValueError)),
+        retry=retry_if_exception_type((TimeoutError,)),
         reraise=True,
     )
     async def generate(self, prompt: str, *, system_prompt: str) -> dict[str, Any]:
-        response = await self._router.query(prompt=prompt, system_prompt=system_prompt)
+        try:
+            response = await self._router.query(prompt=prompt, system_prompt=system_prompt)
+        except StopAsyncIteration as exc:
+            raise ValueError("llm_empty_response") from exc
         parsed = self._parse_json(response.text)
         if parsed is not None:
             return parsed
+        if "{" not in response.text:
+            raise ValueError("invalid_json_no_reask")
 
         reask_prompt = (
             "Return ONLY valid JSON object with keys facts and gaps. "
             f"Previous output was invalid:\n{response.text}"
         )
-        reask = await self._router.query(prompt=reask_prompt, system_prompt=system_prompt)
+        try:
+            reask = await self._router.query(prompt=reask_prompt, system_prompt=system_prompt)
+        except StopAsyncIteration as exc:
+            raise ValueError("llm_empty_response") from exc
         reparsed = self._parse_json(reask.text)
         if reparsed is None:
             raise ValueError("invalid_json_after_reask")

@@ -60,13 +60,31 @@ class SourceCollector:
         diagnostics: list[Diagnostic] = []
         cache_key = self._cache_key(query, topic_scope, access_scope, context)
         if self._cache is not None:
-            cached = await self._cache.get(cache_key)
+            try:
+                cached = await self._cache.get(cache_key)
+            except Exception:  # noqa: BLE001
+                cached = None
+                diagnostics.append(
+                    Diagnostic(
+                        code="cache_unavailable",
+                        message="cache_unavailable",
+                        severity="warn",
+                        stage="collect",
+                    )
+                )
             if cached:
                 try:
                     items = json.loads(cached)
                     return [ResearchSource.model_validate(i) for i in items], diagnostics
                 except (TypeError, ValueError, json.JSONDecodeError):
-                    diagnostics.append(Diagnostic(code="cache_parse_failed", message="cache parse failed", severity="warn", stage="collect"))
+                    diagnostics.append(
+                        Diagnostic(
+                            code="cache_parse_failed",
+                            message="cache parse failed",
+                            severity="warn",
+                            stage="collect",
+                        )
+                    )
 
         rag_task = asyncio.create_task(self._collect_rag(query, topic_scope, access_scope, context))
         web_task = asyncio.create_task(self._collect_web_deferred(query, topic_scope, delay_seconds=0.05))
@@ -105,11 +123,21 @@ class SourceCollector:
         compact_sources = self._truncate_sources(top_sources)
 
         if compact_sources and self._cache is not None:
-            await self._cache.set(
-                cache_key,
-                json.dumps([source.model_dump() for source in compact_sources], ensure_ascii=False),
-                ttl=self._config.cache_ttl_seconds,
-            )
+            try:
+                await self._cache.set(
+                    cache_key,
+                    json.dumps([source.model_dump() for source in compact_sources], ensure_ascii=False),
+                    ttl=self._config.cache_ttl_seconds,
+                )
+            except Exception:  # noqa: BLE001
+                diagnostics.append(
+                    Diagnostic(
+                        code="cache_unavailable",
+                        message="cache_unavailable",
+                        severity="warn",
+                        stage="collect",
+                    )
+                )
 
         return compact_sources, diagnostics
 

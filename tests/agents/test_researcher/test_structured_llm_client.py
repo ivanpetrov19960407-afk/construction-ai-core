@@ -1,5 +1,7 @@
 import asyncio
 
+import pytest
+
 from agents.researcher.config import ResearcherConfig
 from agents.researcher.llm_client import StructuredLLMClient
 
@@ -23,5 +25,5 @@ class _Router:
 
 def test_structured_llm_client_reask_on_invalid_json() -> None:
     client = StructuredLLMClient(_Router(), ResearcherConfig())  # type: ignore[arg-type]
-    result = asyncio.run(client.generate("prompt", system_prompt="sys"))
-    assert result["facts"] == []
+    with pytest.raises(ValueError):
+        asyncio.run(client.generate("prompt", system_prompt="sys"))
