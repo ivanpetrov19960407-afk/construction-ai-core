@@ -203,8 +203,7 @@ def test_deduplicate_rag_sources() -> None:
     assert any(item.document == "СП 2" for item in deduped)
 
 
-@pytest.mark.anyio
-async def test_llm_timeout_sets_diagnostics_and_state_keys() -> None:
+def test_llm_timeout_sets_diagnostics_and_state_keys() -> None:
     async def rag_search(
         query: str, n_results: int = 5, filter_scope: str | None = None
     ) -> list[dict[str, Any]]:
@@ -217,7 +216,7 @@ async def test_llm_timeout_sets_diagnostics_and_state_keys() -> None:
         cache=_FakeCache(),
     )
 
-    result = await agent.run({"message": "q", "history": []})
+    result = asyncio.run(agent.run({"message": "q", "history": []}))
 
     assert result["research_facts"] == ""
     payload = result["research_payload"]
@@ -226,8 +225,7 @@ async def test_llm_timeout_sets_diagnostics_and_state_keys() -> None:
     assert "research_payload" in result
 
 
-@pytest.mark.anyio
-async def test_rag_timeout_falls_back_to_web_and_keeps_running(
+def test_rag_timeout_falls_back_to_web_and_keeps_running(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     async def slow_search(
@@ -250,19 +248,20 @@ async def test_rag_timeout_falls_back_to_web_and_keeps_running(
     )
     monkeypatch.setattr(settings, "research_rag_timeout_seconds", 0.001)
 
-    sources, diagnostics = await agent._collect_sources(
-        "q",
-        topic_scope=None,
-        access_scope=None,
-        context="",
+    sources, diagnostics = asyncio.run(
+        agent._collect_sources(
+            "q",
+            topic_scope=None,
+            access_scope=None,
+            context="",
+        )
     )
 
     assert any(source.type == "web" for source in sources)
     assert "rag_timeout" in diagnostics or "rag_failed:TimeoutError" in diagnostics
 
 
-@pytest.mark.anyio
-async def test_cache_failure_does_not_break_agent() -> None:
+def test_cache_failure_does_not_break_agent() -> None:
     async def rag_search(
         query: str, n_results: int = 5, filter_scope: str | None = None
     ) -> list[dict[str, Any]]:
@@ -275,7 +274,7 @@ async def test_cache_failure_does_not_break_agent() -> None:
         cache=_FakeCache(get_side_effect=ConnectionError("redis down")),
     )
 
-    result = await agent.run({"message": "q", "history": []})
+    result = asyncio.run(agent.run({"message": "q", "history": []}))
     diagnostics = result["research_payload"]["diagnostics"]
 
     assert "cache_unavailable" in diagnostics
@@ -297,14 +296,13 @@ def test_compute_confidence_overall_edge_cases() -> None:
     assert empty == pytest.approx(0.0)
 
 
-@pytest.mark.anyio
-async def test_collection_diagnostics_are_merged_and_deduplicated() -> None:
+def test_collection_diagnostics_are_merged_and_deduplicated() -> None:
     agent = _mk_agent(llm_reply='{"facts":[],"gaps":["g1","g1"]}')
     agent._collect_sources = AsyncMock(
         return_value=([], ["cache_unavailable", "cache_unavailable"])
     )  # type: ignore[method-assign]
 
-    result = await agent.run({"message": "q", "history": []})
+    result = asyncio.run(agent.run({"message": "q", "history": []}))
     payload = result["research_payload"]
 
     assert payload["diagnostics"][0] == "cache_unavailable"

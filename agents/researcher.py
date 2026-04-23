@@ -303,9 +303,9 @@ class ResearcherAgent(BaseAgent):
                 gaps = [str(g) for g in data.get("gaps", [])]
             except (TypeError, ValueError) as exc:
                 logger.info("researcher.json_payload_invalid: %s", exc)
-                diagnostics.append("llm_invalid_json")
+                diagnostics.extend(["llm_invalid_json", "LLM вернул ответ не в JSON-формате"])
         else:
-            diagnostics.append("llm_invalid_json")
+            diagnostics.extend(["llm_invalid_json", "LLM вернул ответ не в JSON-формате"])
 
         facts, source_diagnostics = self._validate_fact_source_ids(facts, sources)
         diagnostics.extend(source_diagnostics)
