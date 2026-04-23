@@ -34,7 +34,7 @@ class BaseAgent(ABC):
         """Внутренняя реализация выполнения конкретного агента."""
 
     def _build_prompt(self, state: dict[str, Any]) -> str:
-        """Собрать финальный prompt из message и context."""
+        """Собрать финальный prompt из message, context и истории пайплайна."""
         message = str(state.get("message", ""))
         context = str(state.get("context", ""))
         prompt = message
@@ -42,21 +42,45 @@ class BaseAgent(ABC):
             prompt = f"Контекст:\n{context}\n\nЗапрос:\n{message}"
 
         conversation_history = state.get("conversation_history", [])
-        if not conversation_history:
-            return prompt
-
-        lines: list[str] = []
+        conversation_lines: list[str] = []
         for item in conversation_history:
             if not isinstance(item, dict):
                 continue
             role = str(item.get("role", "unknown"))
             content = str(item.get("content", ""))
             timestamp = str(item.get("timestamp", ""))
-            lines.append(f"- [{timestamp}] {role}: {content}")
+            conversation_lines.append(f"- [{timestamp}] {role}: {content}")
 
-        if not lines:
-            return prompt
-        return f"{prompt}\n\nИстория диалога:\n" + "\n".join(lines)
+        pipeline_lines = self._build_pipeline_history(state)
+
+        sections = [prompt]
+        if conversation_lines:
+            sections.append("История диалога:\n" + "\n".join(conversation_lines))
+        if pipeline_lines:
+            sections.append("Pipeline artifacts:\n" + "\n".join(pipeline_lines))
+        return "\n\n".join(sections)
+
+    def _build_pipeline_history(self, state: dict[str, Any], *, limit: int = 3) -> list[str]:
+        """Краткая выжимка последних результатов агентов и ключевых артефактов."""
+        history = state.get("history", [])
+        lines: list[str] = []
+
+        if isinstance(history, list):
+            for item in history[-limit:]:
+                if not isinstance(item, dict):
+                    continue
+                agent = str(item.get("agent_name") or item.get("agent") or "unknown")
+                output = str(item.get("output", "")).strip().replace("\n", " ")
+                lines.append(f"- {agent}: {output[:300]}")
+
+        artifact_keys = ["research_facts", "risk_report", "draft", "verification"]
+        for key in artifact_keys:
+            value = state.get(key)
+            if value is None:
+                continue
+            text = str(value).strip().replace("\n", " ")
+            lines.append(f"- {key}: {text[:240]}")
+        return lines
 
     def _update_state(self, state: dict[str, Any], reply: str) -> dict[str, Any]:
         """Добавить результат агента в историю."""
