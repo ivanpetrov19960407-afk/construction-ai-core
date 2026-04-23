@@ -316,7 +316,16 @@ class ResearcherAgent(BaseAgent):
     @staticmethod
     def _sanitize_source_snippet(snippet: str) -> str:
         lowered = snippet.lower()
-        injection_markers = ("ignore previous", "system prompt", "developer message", "инструкц")
+        injection_markers = (
+            "ignore previous",
+            "ignore all previous",
+            "follow these instructions instead",
+            "system prompt",
+            "developer message",
+            "игнорируй предыдущ",
+            "системный промпт",
+            "сообщение разработчика",
+        )
         if any(marker in lowered for marker in injection_markers):
             return "[sanitized potential prompt-injection snippet]"
         return snippet
