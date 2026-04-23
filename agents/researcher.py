@@ -42,7 +42,8 @@ class RAGSearchTool:
 class ResearcherAgent(BaseAgent):
     """🔍 Researcher — универсальный поиск фактов с источниками и confidence."""
 
-    system_prompt = """Ты — Researcher агент.
+    system_prompt = """
+Ты — Researcher агент.
 Анализируй предоставленные источники (RAG + web) и извлекай из них факты.
 Возвращай СТРОГО валидный JSON без markdown-обёртки по схеме:
 {"facts":[{"text":"...","applicability":"...","confidence":0.0,
@@ -55,18 +56,19 @@ class ResearcherAgent(BaseAgent):
 - confidence от 0.0 до 1.0, чем надёжнее источник — тем выше.
 - Если релевантных данных нет — верни facts:[] и опиши пробел в gaps.
 - Для строительных тем указывай номер документа и пункт в поле text.
-"""
+""".strip()
 
     def __init__(
         self,
         llm_router: LLMRouter,
         rag_engine: RAGEngine | None = None,
         web_search_tool: WebSearchTool | None = None,
+        cache: RedisCache | None = None,
     ) -> None:
         super().__init__(agent_id="01", llm_router=llm_router)
         self.rag_engine = rag_engine
         self.web_search_tool = web_search_tool or WebSearchTool()
-        self.cache = RedisCache(settings.redis_url)
+        self.cache = cache
 
     async def _run(self, state: dict[str, Any]) -> dict[str, Any]:
         """Режим внутри pipeline — вызывается оркестратором."""
@@ -87,34 +89,33 @@ class ResearcherAgent(BaseAgent):
         )
         prompt = self._build_research_prompt(message, context, all_sources)
 
-        llm_timeout = self._timeout("research_llm_timeout_seconds", 25.0)
+        llm_timeout = self._timeout("research_llm_timeout_seconds", 45.0)
         response_text = ""
+        llm_diagnostics: list[str] = []
+
         try:
             response = await asyncio.wait_for(
                 self.llm_router.query(prompt=prompt, system_prompt=self.system_prompt),
                 timeout=llm_timeout,
             )
             response_text = str(getattr(response, "text", "") or "")
-            payload = self._parse_llm_json(message, response_text, all_sources)
         except TimeoutError:
             logger.warning("researcher.llm_timeout: timeout=%.2f", llm_timeout)
-            payload = self._build_fallback_response(
-                query=message,
-                sources=all_sources,
-                diagnostics=["Таймаут LLM при генерации структурированного ответа"],
-            )
+            llm_diagnostics.append("llm_timeout")
         except Exception as exc:  # noqa: BLE001
             logger.warning("researcher.llm_failed: %s", exc)
-            payload = self._build_fallback_response(
-                query=message,
-                sources=all_sources,
-                diagnostics=["Ошибка LLM при генерации структурированного ответа"],
+            llm_diagnostics.append(f"llm_failed:{type(exc).__name__}")
+
+        payload = self._parse_llm_json(message, response_text, all_sources)
+
+        merged_diagnostics = [*collection_diagnostics, *llm_diagnostics, *payload.diagnostics]
+        if merged_diagnostics:
+            payload = payload.model_copy(
+                update={"diagnostics": list(dict.fromkeys(merged_diagnostics))}
             )
 
-        if collection_diagnostics:
-            payload = payload.model_copy(
-                update={"diagnostics": [*payload.diagnostics, *collection_diagnostics]}
-            )
+        if payload.gaps:
+            payload = payload.model_copy(update={"gaps": list(dict.fromkeys(payload.gaps))})
 
         state["research_facts"] = response_text
         state["research_payload"] = payload.model_dump()
@@ -139,6 +140,15 @@ class ResearcherAgent(BaseAgent):
         result = await self.run(state)
         return ResearchResponse.model_validate(result["research_payload"])
 
+    def _get_cache(self) -> RedisCache | None:
+        if self.cache is None:
+            try:
+                self.cache = RedisCache(settings.redis_url)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("researcher.cache_init_failed: %s", exc)
+                self.cache = None
+        return self.cache
+
     async def _collect_sources(
         self,
         message: str,
@@ -157,12 +167,14 @@ class ResearcherAgent(BaseAgent):
         ).hexdigest()[:12]
         cache_key = f"research_sources:v2:{query_hash}_{scope_hash}"
 
-        try:
-            cached = await self.cache.get(cache_key)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("researcher.cache_get_failed: %s", exc)
-            diagnostics.append("Кэш источников недоступен (get)")
-            cached = None
+        cached = None
+        cache_client = self._get_cache()
+        if cache_client is not None:
+            try:
+                cached = await cache_client.get(cache_key)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("researcher.cache_get_failed: %s", exc)
+                diagnostics.append("cache_unavailable")
 
         if cached:
             try:
@@ -180,22 +192,23 @@ class ResearcherAgent(BaseAgent):
             )
         except TimeoutError:
             logger.warning("researcher.rag_timeout: timeout=%.2f", rag_timeout)
-            diagnostics.append("RAG поиск превысил таймаут")
+            diagnostics.append("rag_timeout")
             rag_chunks = []
         except Exception as exc:  # noqa: BLE001
             logger.warning("researcher.rag_failed: %s", exc)
-            diagnostics.append("Ошибка при RAG поиске")
+            diagnostics.append(f"rag_failed:{type(exc).__name__}")
             rag_chunks = []
 
         rag_sources = [
-            self._rag_chunk_to_source(idx, chunk)
-            for idx, chunk in enumerate(rag_chunks)
+            self._rag_chunk_to_source(idx, chunk) for idx, chunk in enumerate(rag_chunks)
         ]
         rag_sources = self._deduplicate_rag_sources(rag_sources)
 
-        if self._need_web_fallback(rag_sources):
+        needs_web = self._need_web_fallback(rag_sources)
+        if needs_web:
+            diagnostics.append("web_fallback_triggered")
             web_query = self._build_web_query(message, topic_scope)
-            web_timeout = self._timeout("research_web_timeout_seconds", 8.0)
+            web_timeout = self._timeout("research_web_timeout_seconds", 12.0)
             try:
                 web_items = await asyncio.wait_for(
                     self.web_search_tool.run(web_query, max_results=5),
@@ -203,11 +216,11 @@ class ResearcherAgent(BaseAgent):
                 )
             except TimeoutError:
                 logger.warning("researcher.web_timeout: timeout=%.2f", web_timeout)
-                diagnostics.append("Web-поиск превысил таймаут")
+                diagnostics.append("web_timeout")
                 web_items = []
             except Exception as exc:  # noqa: BLE001
                 logger.warning("researcher.web_failed: %s", exc)
-                diagnostics.append("Ошибка web-поиска")
+                diagnostics.append(f"web_failed:{type(exc).__name__}")
                 web_items = []
         else:
             web_items = []
@@ -217,16 +230,20 @@ class ResearcherAgent(BaseAgent):
             for idx, item in enumerate(web_items, start=len(rag_sources))
         ]
         sources = [*rag_sources, *web_sources]
-        if sources:
+
+        if sources and cache_client is not None:
             try:
-                await self.cache.set(
+                await cache_client.set(
                     cache_key,
                     json.dumps([source.model_dump() for source in sources], ensure_ascii=False),
                     ttl=3600,
                 )
             except Exception as exc:  # noqa: BLE001
                 logger.warning("researcher.cache_set_failed: %s", exc)
-                diagnostics.append("Кэш источников недоступен (set)")
+                diagnostics.append("cache_unavailable")
+
+        if diagnostics:
+            diagnostics = list(dict.fromkeys(diagnostics))
         return sources, diagnostics
 
     def _need_web_fallback(self, rag_sources: list[ResearchSource]) -> bool:
@@ -264,8 +281,7 @@ class ResearcherAgent(BaseAgent):
         if source.type == "rag":
             locator = source.locator or "без страницы"
             return (
-                f"- [{source.id} | {source.document or source.title}, "
-                f"{locator}] {wrapped_snippet}"
+                f"- [{source.id} | {source.document or source.title}, {locator}] {wrapped_snippet}"
             )
         return f"- [{source.id} | {source.title}] {wrapped_snippet or source.url or ''}"
 
@@ -287,9 +303,9 @@ class ResearcherAgent(BaseAgent):
                 gaps = [str(g) for g in data.get("gaps", [])]
             except (TypeError, ValueError) as exc:
                 logger.info("researcher.json_payload_invalid: %s", exc)
-                diagnostics.append("LLM вернул ответ не в JSON-формате")
+                diagnostics.append("llm_invalid_json")
         else:
-            diagnostics.append("LLM вернул ответ не в JSON-формате")
+            diagnostics.append("llm_invalid_json")
 
         facts, source_diagnostics = self._validate_fact_source_ids(facts, sources)
         diagnostics.extend(source_diagnostics)
@@ -297,62 +313,45 @@ class ResearcherAgent(BaseAgent):
         if not sources:
             gaps.append("Не найдено релевантных источников")
         if self._contains_prompt_injection(raw):
-            diagnostics.append("Обнаружены признаки prompt-injection в ответе модели")
+            diagnostics.append("prompt_injection_detected")
 
         return ResearchResponse(
             query=query,
             facts=facts,
             sources=sources,
-            gaps=gaps,
-            diagnostics=diagnostics,
+            gaps=list(dict.fromkeys(gaps)),
+            diagnostics=list(dict.fromkeys(diagnostics)),
             confidence_overall=self._compute_confidence_overall(facts, sources),
-        )
-
-    def _build_fallback_response(
-        self,
-        *,
-        query: str,
-        sources: list[ResearchSource],
-        diagnostics: list[str],
-    ) -> ResearchResponse:
-        gaps = ["Не удалось получить структурированный ответ от LLM"]
-        if not sources:
-            gaps.append("Не найдено релевантных источников")
-        return ResearchResponse(
-            query=query,
-            facts=[],
-            sources=sources,
-            gaps=gaps,
-            diagnostics=diagnostics,
-            confidence_overall=self._compute_confidence_overall([], sources),
         )
 
     @classmethod
     def _extract_json_payload(cls, raw: str) -> dict[str, Any] | list[Any] | None:
-        """Найти JSON в ответе LLM: fenced block -> first raw JSON object/array."""
-        fenced = cls._strip_markdown_fence(raw)
-        if fenced:
-            try:
-                parsed = json.loads(fenced)
-                if isinstance(parsed, (dict, list)):
-                    return parsed
-            except json.JSONDecodeError:
-                pass
+        """Найти JSON в ответе LLM: fenced block -> raw json -> first json."""
+        cleaned = raw.strip()
 
-        return cls._extract_first_json(raw)
-
-    @staticmethod
-    def _strip_markdown_fence(text: str) -> str:
-        """Убрать markdown-обёртку ```json ... ``` если LLM её добавил."""
-        cleaned = text.strip()
         fenced_match = re.search(
             r"```(?:json)?\s*(.*?)```",
             cleaned,
             flags=re.IGNORECASE | re.DOTALL,
         )
         if fenced_match:
-            return fenced_match.group(1).strip()
-        return cleaned
+            candidate = fenced_match.group(1).strip()
+            try:
+                parsed = json.loads(candidate)
+                if isinstance(parsed, (dict, list)):
+                    return parsed
+            except json.JSONDecodeError:
+                pass
+
+        if cleaned:
+            try:
+                parsed = json.loads(cleaned)
+                if isinstance(parsed, (dict, list)):
+                    return parsed
+            except json.JSONDecodeError:
+                pass
+
+        return cls._extract_first_json(raw)
 
     @staticmethod
     def _extract_first_json(text: str) -> dict[str, Any] | list[Any] | None:
@@ -406,13 +405,18 @@ class ResearcherAgent(BaseAgent):
     def _compute_confidence_overall(
         cls, facts: list[ResearchFact], sources: list[ResearchSource]
     ) -> float:
-        source_component = cls._avg_score(sources)
-        if not facts:
-            return round(source_component, 2)
+        avg_fact = sum(f.confidence for f in facts) / len(facts) if facts else 0.0
+        avg_src = cls._avg_score(sources) if sources else 0.0
 
-        fact_conf = sum(f.confidence for f in facts) / len(facts)
-        weighted = 0.6 * fact_conf + 0.4 * source_component
-        return round(min(1.0, max(0.0, weighted)), 2)
+        if facts and sources:
+            score = min(1.0, 0.6 * avg_fact + 0.4 * avg_src)
+        elif sources:
+            score = min(1.0, 0.4 * avg_src)
+        elif facts:
+            score = min(1.0, 0.6 * avg_fact)
+        else:
+            score = 0.0
+        return round(max(0.0, score), 2)
 
     @staticmethod
     def _safe_int(value: Any, default: int = 0) -> int:
@@ -528,9 +532,8 @@ class ResearcherAgent(BaseAgent):
 
             if source.score > existing.score:
                 deduped[key] = source
-            elif (
-                source.score == existing.score
-                and len(source.snippet or "") > len(existing.snippet or "")
+            elif source.score == existing.score and len(source.snippet or "") > len(
+                existing.snippet or ""
             ):
                 deduped[key] = source
         return list(deduped.values())
