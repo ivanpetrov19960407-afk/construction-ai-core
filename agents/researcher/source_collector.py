@@ -30,11 +30,16 @@ from core.rag_engine import RAGEngine
 from core.tools.web_search import WebSearchTool
 from schemas.research import Diagnostic, ResearchSource
 
+try:
+    from api.metrics import RESEARCHER_INJECTION_DETECTED_TOTAL
+except Exception:  # pragma: no cover - metrics optional in tests
+    RESEARCHER_INJECTION_DETECTED_TOTAL = None  # type: ignore[assignment]
+
 _WHITESPACE_RE = re.compile(r"\s+")
 
 
 class SourceCollector:
-    """Collect RAG and web sources with dedup and cache."""
+    """Collect RAG and web sources with dedup, sanitization and cache."""
 
     def __init__(
         self,
@@ -42,11 +47,13 @@ class SourceCollector:
         web_search_tool: WebSearchTool,
         cache: RedisCache | None,
         config: ResearcherConfig,
+        injection_guard: InjectionGuard | None = None,
     ) -> None:
         self._rag_engine = rag_engine
         self._web_search_tool = web_search_tool
         self._cache = cache
         self._config = config
+        self._injection_guard = injection_guard or InjectionGuard(config)
         self._web_limiter = AsyncLimiter(max_rate=config.web_rate_limit_per_second, time_period=1)
 
     async def collect(
@@ -57,7 +64,13 @@ class SourceCollector:
         access_scope: str | None,
         context: str,
         user_id: str | None = None,
-    ) -> tuple[list[ResearchSource], list[Diagnostic]]:
+    ) -> tuple[list[ResearchSource], list[Diagnostic], bool]:
+        """Collect, sanitize and rank sources.
+
+        Returns: (sources, diagnostics, cache_hit).
+        Sanitization of snippets happens before caching, dedup and return,
+        so no raw untrusted content leaves this method.
+        """
         diagnostics: list[Diagnostic] = []
         _ = user_id
         cache_key = self._cache_key(query, topic_scope, access_scope, context)
@@ -77,7 +90,12 @@ class SourceCollector:
             if cached:
                 try:
                     items = json.loads(cached)
-                    return [ResearchSource.model_validate(i) for i in items], diagnostics
+                    # Cached sources are already sanitized (see below).
+                    return (
+                        [ResearchSource.model_validate(i) for i in items],
+                        diagnostics,
+                        True,
+                    )
                 except (TypeError, ValueError, json.JSONDecodeError):
                     diagnostics.append(
                         Diagnostic(
@@ -124,11 +142,16 @@ class SourceCollector:
         top_sources = sorted([*rag_sources, *web_sources], key=lambda s: s.score, reverse=True)[: self._config.top_k_sources]
         compact_sources = self._truncate_sources(top_sources)
 
-        if compact_sources and self._cache is not None:
+        # Final sanitization pass ensures no untrusted content reaches the prompt
+        # or the cache layer. Must happen AFTER dedup/truncate and BEFORE caching.
+        sanitized_sources, sec_diag = self._sanitize_sources(compact_sources)
+        diagnostics.extend(sec_diag)
+
+        if sanitized_sources and self._cache is not None:
             try:
                 await self._cache.set(
                     cache_key,
-                    json.dumps([source.model_dump() for source in compact_sources], ensure_ascii=False),
+                    json.dumps([source.model_dump() for source in sanitized_sources], ensure_ascii=False),
                     ttl=self._config.cache_ttl_seconds,
                 )
             except Exception:  # noqa: BLE001
@@ -141,7 +164,7 @@ class SourceCollector:
                     )
                 )
 
-        return compact_sources, diagnostics
+        return sanitized_sources, diagnostics, False
 
     async def _collect_web_deferred(
         self, query: str, topic_scope: str | None, delay_seconds: float
@@ -164,7 +187,8 @@ class SourceCollector:
         sources: list[ResearchSource] = []
         for idx, chunk in enumerate(chunks or []):
             page = int(chunk.get("page", 0) or 0)
-            snippet, _ = InjectionGuard.sanitize_snippet(str(chunk.get("text", ""))[: self._config.snippet_max_chars])
+            # Raw snippet; central sanitization happens later in _sanitize_sources.
+            snippet = str(chunk.get("text", ""))[: self._config.snippet_max_chars]
             source_name = str(chunk.get("source", "unknown"))
             sources.append(
                 ResearchSource(
@@ -193,7 +217,8 @@ class SourceCollector:
             url = str(item.get("url", "") or "")
             if not self._is_allowed_url(url):
                 continue
-            snippet, _ = InjectionGuard.sanitize_snippet(str(item.get("snippet", ""))[: self._config.snippet_max_chars])
+            # Raw snippet; central sanitization happens later in _sanitize_sources.
+            snippet = str(item.get("snippet", ""))[: self._config.snippet_max_chars]
             sources.append(
                 ResearchSource(
                     id=f"web-{idx}",
@@ -253,6 +278,33 @@ class SourceCollector:
         except ValueError:
             pass
         return True
+
+    def _sanitize_sources(
+        self, sources: list[ResearchSource]
+    ) -> tuple[list[ResearchSource], list[Diagnostic]]:
+        """Strip prompt-injection payloads from snippets before they reach LLM/cache."""
+        sanitized: list[ResearchSource] = []
+        diagnostics: list[Diagnostic] = []
+        redacted_count = 0
+        for source in sources:
+            clean_snippet, was_redacted = InjectionGuard.sanitize_snippet(source.snippet or "")
+            if was_redacted:
+                redacted_count += 1
+                diagnostics.append(
+                    Diagnostic(
+                        code="prompt_injection_detected",
+                        message=f"Snippet from {source.id} redacted",
+                        severity="warn",
+                        stage="security",
+                    )
+                )
+            sanitized.append(source.model_copy(update={"snippet": clean_snippet}))
+        if redacted_count and RESEARCHER_INJECTION_DETECTED_TOTAL is not None:
+            try:
+                RESEARCHER_INJECTION_DETECTED_TOTAL.inc(redacted_count)
+            except Exception:  # noqa: BLE001 - metrics must never break pipeline
+                pass
+        return sanitized, diagnostics
 
     def _truncate_sources(self, sources: list[ResearchSource]) -> list[ResearchSource]:
         total_chars = sum(len(s.snippet or "") for s in sources)
