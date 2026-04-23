@@ -221,6 +221,7 @@ def test_llm_timeout_sets_diagnostics_and_state_keys() -> None:
     assert result["research_facts"] == ""
     payload = result["research_payload"]
     assert "llm_timeout" in payload["diagnostics"]
+    assert "llm_invalid_json" not in payload["diagnostics"]
     assert "research_facts" in result
     assert "research_payload" in result
 

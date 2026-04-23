@@ -106,7 +106,21 @@ class ResearcherAgent(BaseAgent):
             logger.warning("researcher.llm_failed: %s", exc)
             llm_diagnostics.append(f"llm_failed:{type(exc).__name__}")
 
-        payload = self._parse_llm_json(message, response_text, all_sources)
+        if llm_diagnostics:
+            payload = ResearchResponse(
+                query=message,
+                facts=[],
+                sources=all_sources,
+                gaps=["Не удалось получить структурированный ответ от LLM"],
+                diagnostics=[],
+                confidence_overall=self._compute_confidence_overall([], all_sources),
+            )
+            if not all_sources:
+                payload = payload.model_copy(
+                    update={"gaps": [*payload.gaps, "Не найдено релевантных источников"]}
+                )
+        else:
+            payload = self._parse_llm_json(message, response_text, all_sources)
 
         merged_diagnostics = [*collection_diagnostics, *llm_diagnostics, *payload.diagnostics]
         if merged_diagnostics:
