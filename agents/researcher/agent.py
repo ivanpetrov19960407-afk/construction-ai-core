@@ -97,7 +97,7 @@ class ResearcherAgent(BaseAgent):
             logger.info(
                 "research_completed",
                 duration_ms=round((perf_counter() - started) * 1000, 2),
-                sources_count=len(result["research_payload"]["sources"]),
+                sources_count=len(result.get("research_payload", {}).get("sources", [])),
             )
             return result
         except Exception as exc:  # noqa: BLE001
@@ -126,7 +126,10 @@ class ResearcherAgent(BaseAgent):
 
         retrieval_query = self._build_retrieval_query(message, topic_scope, context)
 
-        sources, collection_diag = await self._collector.collect(  # type: ignore[union-attr]
+        assert self._collector is not None, "Collector not initialized"
+        assert self._llm_client is not None, "LLM client not initialized"
+
+        sources, collection_diag = await self._collector.collect(
             retrieval_query,
             topic_scope=topic_scope,
             access_scope=access_scope,
@@ -142,7 +145,7 @@ class ResearcherAgent(BaseAgent):
         prompt = PromptBuilder.build(message, context, sources)
 
         llm_start = perf_counter()
-        llm_response = await self._llm_client.query(prompt, PromptBuilder.SYSTEM_PROMPT)  # type: ignore[union-attr]
+        llm_response = await self._llm_client.query(prompt, PromptBuilder.SYSTEM_PROMPT)
         RESEARCHER_LLM_DURATION_SECONDS.observe(perf_counter() - llm_start)
 
         validated_facts, validation_diag = self._validator.validate(llm_response.facts, sources)
