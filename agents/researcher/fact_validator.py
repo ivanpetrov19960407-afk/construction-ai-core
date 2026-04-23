@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import difflib
+from types import ModuleType
+
 try:
     from rapidfuzz import fuzz
 except Exception:  # pragma: no cover
-    fuzz = None
-import difflib
+    fuzz: ModuleType | None = None
 
 from agents.researcher.config import ResearcherConfig
 from schemas.research import Diagnostic, ResearchFact, ResearchSource

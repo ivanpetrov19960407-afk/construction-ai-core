@@ -124,7 +124,11 @@ class SourceCollector:
     ) -> list[ResearchSource]:
         retrieval_query = "\n".join(part for part in [query, topic_scope, context] if part).strip()
         chunks = await asyncio.wait_for(
-            self._rag_engine.search(retrieval_query, n_results=self._config.top_k_sources, filter_scope=topic_scope),
+            self._rag_engine.search(
+                retrieval_query,
+                n_results=self._config.top_k_sources,
+                filter_scope=access_scope,
+            ),
             timeout=self._config.rag_timeout_seconds,
         )
         sources: list[ResearchSource] = []

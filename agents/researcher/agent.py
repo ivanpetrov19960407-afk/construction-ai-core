@@ -7,6 +7,7 @@ from time import perf_counter
 from typing import Any
 
 import structlog
+from pydantic import ValidationError
 
 from agents.base import BaseAgent
 from agents.researcher.config import ResearcherConfig
@@ -64,7 +65,10 @@ class ResearcherAgent(BaseAgent):
         RESEARCHER_REQUESTS_TOTAL.inc()
         message = str(state.get("message", "")).strip()
         topic_scope = str(state.get("topic_scope") or "").strip() or None
-        access_scope = self._validate_access_scope(str(state.get("access_scope") or "").strip() or None)
+        raw_access_scope = str(state.get("access_scope") or "").strip() or None
+        if raw_access_scope is None:
+            raw_access_scope = str(state.get("scope") or state.get("role") or "").strip() or None
+        access_scope = self._validate_access_scope(raw_access_scope)
         context = str(state.get("context", "")).strip()
         trace_id = str(state.get("trace_id") or hashlib.sha256(message.encode()).hexdigest()[:12])
 
@@ -107,7 +111,19 @@ class ResearcherAgent(BaseAgent):
                 )
             )
 
-        facts = [ResearchFact.model_validate(item) for item in llm_data.get("facts", [])]
+        facts: list[ResearchFact] = []
+        for item in llm_data.get("facts", []):
+            try:
+                facts.append(ResearchFact.model_validate(item))
+            except ValidationError:
+                llm_diagnostics.append(
+                    Diagnostic(
+                        code="llm_fact_validation_error",
+                        message="Факт LLM отброшен: невалидная структура",
+                        severity="warn",
+                        stage="llm",
+                    )
+                )
         gaps = [str(item) for item in llm_data.get("gaps", [])]
 
         validator_diags: list[Diagnostic]
