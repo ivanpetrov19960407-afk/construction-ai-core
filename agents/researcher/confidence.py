@@ -15,6 +15,16 @@ class ConfidenceBreakdown(BaseModel):
 
 
 class ConfidenceScorer:
+    def __init__(self, config: ResearcherConfig) -> None:
+        self._config = config
+
+    def compute(
+        self,
+        facts: list[ResearchFact],
+        sources: list[ResearchSource],
+    ) -> ConfidenceBreakdown:
+        return self.score(facts, sources, self._config)
+
     @staticmethod
     def score(
         facts: list[ResearchFact],

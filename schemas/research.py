@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, computed_field
 
@@ -47,14 +47,15 @@ class ResearchResponse(BaseModel):
     sources: list[ResearchSource] = Field(default_factory=list)
     gaps: list[str] = Field(default_factory=list)
     diagnostics: list[str] = Field(default_factory=list)
-    diagnostics_struct: list[Diagnostic] = Field(default_factory=list)
+    diagnostics_struct: list[Diagnostic] | None = None
     confidence_overall: float = Field(default=0.0, ge=0.0, le=1.0)
-    confidence_breakdown: dict[str, object] = Field(default_factory=dict)
+    confidence_breakdown: dict[str, Any] | None = None
 
     @computed_field  # type: ignore[prop-decorator]
     @property
     def diagnostics_legacy(self) -> list[str]:
-        legacy = [*self.diagnostics]
-        for item in self.diagnostics_struct:
-            legacy.append(f"{item.code}:{item.message}")
-        return legacy
+        """Legacy compat aggregated diagnostics list."""
+        legacy = list(dict.fromkeys(self.diagnostics or []))
+        if self.diagnostics_struct:
+            legacy.extend(f"{item.code}:{item.message}" for item in self.diagnostics_struct)
+        return list(dict.fromkeys(legacy))
