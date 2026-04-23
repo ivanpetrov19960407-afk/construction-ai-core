@@ -54,8 +54,7 @@ class ResearcherAgent(BaseAgent):
         rag_tool = RAGSearchTool(self.rag_engine)
         rag_chunks = await rag_tool.run(message, role=role)
         rag_sources = [
-            self._rag_chunk_to_source(index, chunk)
-            for index, chunk in enumerate(rag_chunks)
+            self._rag_chunk_to_source(index, chunk) for index, chunk in enumerate(rag_chunks)
         ]
 
         should_use_web = len(rag_sources) < 2 or self._avg_score(rag_sources) < 0.35

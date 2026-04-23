@@ -237,8 +237,6 @@ class LLMRouter:
             usage=usage,
         )
 
-
-
     def parse_json_response(self, response_text: str) -> dict | None:
         """Безопасно распарсить JSON из текстового ответа LLM."""
         text = response_text.strip()
