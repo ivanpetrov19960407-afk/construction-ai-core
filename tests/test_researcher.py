@@ -19,8 +19,8 @@ def test_researcher_uses_rag_first():
         async def search(self, query: str, n_results: int = 5, filter_scope: str | None = None):
             _ = (query, n_results, filter_scope)
             return [
-                {"source": "СП 70.13330", "page": 18, "text": "Про бетон", "score": 0.9},
-                {"source": "ГОСТ 7473", "page": 5, "text": "Смесь", "score": 0.8},
+                {"source": "СП 70.13330", "page": 18, "text": "Про бетон " * 40, "score": 0.9},
+                {"source": "ГОСТ 7473", "page": 5, "text": "Смесь " * 40, "score": 0.8},
             ]
 
     agent.rag_engine = cast(Any, _Rag())
@@ -103,3 +103,26 @@ def test_researcher_falls_back_when_llm_returns_non_object_json():
     assert payload["facts"]
     assert payload["facts"][0]["text"] == "[]"
     assert "LLM вернул ответ не в JSON-формате" in payload["gaps"]
+
+
+def test_researcher_does_not_cache_empty_sources():
+    agent = ResearcherAgent(cast(Any, _mock_llm_router("Ответ")))
+
+    class _Rag:
+        async def search(self, query: str, n_results: int = 5, filter_scope: str | None = None):
+            _ = (query, n_results, filter_scope)
+            return []
+
+    agent.rag_engine = cast(Any, _Rag())
+    agent.web_search_tool = cast(Any, SimpleNamespace(run=AsyncMock(return_value=[])))
+    agent.cache = cast(
+        Any,
+        SimpleNamespace(
+            get=AsyncMock(return_value=None),
+            set=AsyncMock(),
+        ),
+    )
+
+    asyncio.run(agent.run({"message": "пустой поиск", "history": []}))
+
+    assert agent.cache.set.await_count == 0

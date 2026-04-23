@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import json
 import logging
+import hashlib
 from typing import Any
 
 from agents.base import BaseAgent
+from config.settings import settings
+from core.cache import RedisCache
 from core.llm_router import LLMRouter
 from core.rag_engine import RAGEngine
 from core.tools.web_search import WebSearchTool
@@ -46,6 +49,7 @@ class ResearcherAgent(BaseAgent):
         '"gaps":["что не удалось найти"]}\n'
         "Правила:\n"
         "- Каждый факт должен ссылаться хотя бы на один source_id из списка источников.\n"
+        "- applicability: 'высокая/средняя/низкая' по релевантности стройке.\n"
         "- confidence от 0.0 до 1.0, чем надёжнее источник — тем выше.\n"
         "- Если релевантных данных нет — верни facts:[] и опиши пробел в gaps.\n"
         "- Для строительных тем указывай номер документа и пункт в поле text."
@@ -60,6 +64,7 @@ class ResearcherAgent(BaseAgent):
         super().__init__(agent_id="01", llm_router=llm_router)
         self.rag_engine = rag_engine
         self.web_search_tool = web_search_tool or WebSearchTool()
+        self.cache = RedisCache(settings.redis_url)
 
     async def _run(self, state: dict[str, Any]) -> dict[str, Any]:
         """Режим внутри pipeline — вызывается оркестратором."""
@@ -101,6 +106,16 @@ class ResearcherAgent(BaseAgent):
 
     async def _collect_sources(self, message: str, scope: str | None) -> list[ResearchSource]:
         """Собрать источники из RAG и (если надо) из веба."""
+        message_hash = hashlib.sha256(message.encode("utf-8")).hexdigest()[:16]
+        cache_key = f"research_sources:{message_hash}_{scope or 'all'}"
+        cached = await self.cache.get(cache_key)
+        if cached:
+            try:
+                payload = json.loads(cached)
+                return [ResearchSource.model_validate(item) for item in payload]
+            except (TypeError, ValueError, json.JSONDecodeError) as exc:
+                logger.info("researcher.cache_parse_failed: %s", exc)
+
         rag_tool = RAGSearchTool(self.rag_engine)  # type: ignore[arg-type]
         try:
             rag_chunks = await rag_tool.run(message, scope=scope)
@@ -123,13 +138,22 @@ class ResearcherAgent(BaseAgent):
             self._web_item_to_source(idx, item)
             for idx, item in enumerate(web_items, start=len(rag_sources))
         ]
-        return [*rag_sources, *web_sources]
+        sources = [*rag_sources, *web_sources]
+        if sources:
+            await self.cache.set(
+                cache_key,
+                json.dumps([source.model_dump() for source in sources], ensure_ascii=False),
+                ttl=3600,
+            )
+        return sources
 
     def _need_web_fallback(self, rag_sources: list[ResearchSource]) -> bool:
         """Нужно ли подключать web search: мало источников или слабый avg score."""
         if len(rag_sources) < 2:
             return True
-        return self._avg_score(rag_sources) < 0.35
+        if self._avg_score(rag_sources) < 0.35:
+            return True
+        return sum(len(source.snippet or "") for source in rag_sources) < 500
 
     def _build_research_prompt(self, message: str, context: str, sources: list[ResearchSource]) -> str:
         chunks_text = "\n".join(self._source_brief(s) for s in sources) or "(релевантные источники не найдены)"
