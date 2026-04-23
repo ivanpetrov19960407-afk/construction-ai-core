@@ -8,6 +8,7 @@ try:
 except Exception:  # pragma: no cover
     fuzz: ModuleType | None = None
 
+from agents.researcher.config import ResearcherConfig
 from schemas.research import Diagnostic, ResearchFact, ResearchSource
 
 
@@ -17,10 +18,26 @@ class FactValidator:
     def __init__(self, min_similarity: float) -> None:
         self._min_similarity = min_similarity
 
-    def validate(
+    def validate_facts(
         self,
         facts: list[ResearchFact],
         sources: list[ResearchSource],
+    ) -> tuple[list[ResearchFact], list[Diagnostic]]:
+        return self._validate_impl(facts, sources, self._min_similarity)
+
+    @staticmethod
+    def validate(
+        facts: list[ResearchFact],
+        sources: list[ResearchSource],
+        config: ResearcherConfig,
+    ) -> tuple[list[ResearchFact], list[Diagnostic]]:
+        return FactValidator._validate_impl(facts, sources, config.fact_citation_min_similarity)
+
+    @staticmethod
+    def _validate_impl(
+        facts: list[ResearchFact],
+        sources: list[ResearchSource],
+        threshold: float,
     ) -> tuple[list[ResearchFact], list[Diagnostic]]:
         by_id = {source.id: source for source in sources}
         validated: list[ResearchFact] = []
@@ -46,7 +63,7 @@ class FactValidator:
                     similarity = fuzz.partial_ratio(fact.text, snippet) / 100.0
                 else:
                     similarity = difflib.SequenceMatcher(None, fact.text, snippet).ratio()
-                if similarity >= self._min_similarity:
+                if similarity >= threshold:
                     matched = True
                     break
 
