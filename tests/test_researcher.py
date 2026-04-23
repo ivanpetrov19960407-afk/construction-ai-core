@@ -100,9 +100,30 @@ def test_researcher_falls_back_when_llm_returns_non_object_json():
     state = asyncio.run(agent.run({"message": "что по СП 48", "history": []}))
     payload = state["research_payload"]
 
-    assert payload["facts"]
-    assert payload["facts"][0]["text"] == "[]"
-    assert "LLM вернул ответ не в JSON-формате" in payload["gaps"]
+    assert payload["facts"] == []
+    assert "LLM вернул ответ не в JSON-формате" in payload["diagnostics"]
+
+
+def test_researcher_drops_facts_with_invalid_source_ids():
+    llm_reply = (
+        '{"facts":[{"text":"Факт","applicability":"высокая","confidence":0.8,'
+        '"source_ids":["missing-id"]}],"gaps":[]}'
+    )
+    agent = ResearcherAgent(cast(Any, _mock_llm_router(llm_reply)))
+
+    class _Rag:
+        async def search(self, query: str, n_results: int = 5, filter_scope: str | None = None):
+            _ = (query, n_results, filter_scope)
+            return [{"source": "СП 48", "page": 1, "text": "Факт", "score": 0.6}]
+
+    agent.rag_engine = cast(Any, _Rag())
+    agent.web_search_tool = cast(Any, SimpleNamespace(run=AsyncMock(return_value=[])))
+
+    state = asyncio.run(agent.run({"message": "что по СП 48", "history": []}))
+    payload = state["research_payload"]
+
+    assert payload["facts"] == []
+    assert any("отброшен" in msg for msg in payload["diagnostics"])
 
 
 def test_researcher_does_not_cache_empty_sources():
@@ -126,3 +147,30 @@ def test_researcher_does_not_cache_empty_sources():
     asyncio.run(agent.run({"message": "пустой поиск", "history": []}))
 
     assert agent.cache.set.await_count == 0
+
+
+def test_researcher_cache_key_is_context_aware():
+    agent = ResearcherAgent(cast(Any, _mock_llm_router("Ответ")))
+
+    class _Rag:
+        async def search(self, query: str, n_results: int = 5, filter_scope: str | None = None):
+            _ = (query, n_results, filter_scope)
+            return [{"source": "СП 48", "page": 1, "text": "Факт", "score": 0.6}]
+
+    agent.rag_engine = cast(Any, _Rag())
+    agent.web_search_tool = cast(Any, SimpleNamespace(run=AsyncMock(return_value=[])))
+    agent.cache = cast(
+        Any,
+        SimpleNamespace(
+            get=AsyncMock(return_value=None),
+            set=AsyncMock(),
+        ),
+    )
+
+    asyncio.run(agent.run({"message": "поиск", "context": "контекст 1", "history": []}))
+    asyncio.run(agent.run({"message": "поиск", "context": "контекст 2", "history": []}))
+
+    assert agent.cache.set.await_count == 2
+    first_key = agent.cache.set.await_args_list[0].args[0]
+    second_key = agent.cache.set.await_args_list[1].args[0]
+    assert first_key != second_key
