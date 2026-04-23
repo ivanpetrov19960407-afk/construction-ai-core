@@ -11,7 +11,11 @@ class _Resp:
 class _Router:
     async def query(self, prompt: str, system_prompt: str):
         _ = (prompt, system_prompt)
-        return _Resp('{"facts":[{"text":"Бетон B30","applicability":"высокая","confidence":0.8,"source_ids":["rag-0"]}],"gaps":[]}')
+        response = (
+            '{"facts":[{"text":"Бетон B30","applicability":"высокая",'
+            '"confidence":0.8,"source_ids":["rag-0"]}],"gaps":[]}'
+        )
+        return _Resp(response)
 
 
 class _Rag:
@@ -32,3 +36,5 @@ def test_researcher_integration_flow() -> None:
     payload = result["research_payload"]
     assert payload["query"] == "бетон"
     assert "research_facts" in result
+    assert payload["facts"]
+    assert "Бетон B30" in result["research_facts"]

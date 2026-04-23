@@ -5,19 +5,19 @@ repos:
     rev: v0.6.9
     hooks:
       - id: ruff
-        name: ruff (core/api)
-        files: ^(core|api)/.*\.py$
+        name: ruff (core/api/agents/schemas)
+        files: ^(core|api|agents|schemas)/.*\.py$
       - id: ruff-format
-        name: ruff-format (core/api)
-        files: ^(core|api)/.*\.py$
+        name: ruff-format (core/api/agents/schemas)
+        files: ^(core|api|agents|schemas)/.*\.py$
 
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.11.2
     hooks:
       - id: mypy
-        name: mypy --strict (core/api)
-        files: ^(core|api)/.*\.py$
-        args: [core/, api/]
+        name: mypy --strict (core/api + researcher)
+        files: ^(core|api|agents/researcher|schemas/research\.py).*$
+        args: [core/, api/, agents/researcher/, schemas/research.py]
         pass_filenames: false
 
   - repo: local

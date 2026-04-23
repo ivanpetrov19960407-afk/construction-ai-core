@@ -156,3 +156,17 @@ def test_source_collector_cache_hit_flag() -> None:
     )
     assert hit1 is False
     assert hit2 is True
+
+
+def test_source_collector_private_scope_cache_key_includes_identity() -> None:
+    collector = SourceCollector(_Rag(), _Web(), None, ResearcherConfig(top_k_sources=5))  # type: ignore[arg-type]
+    key1 = collector._cache_key("бетон", None, "admin", "", user_id="u1", org_id="o1")
+    key2 = collector._cache_key("бетон", None, "admin", "", user_id="u2", org_id="o1")
+    assert key1 != key2
+
+
+def test_source_collector_public_scope_cache_key_is_shared() -> None:
+    collector = SourceCollector(_Rag(), _Web(), None, ResearcherConfig(top_k_sources=5))  # type: ignore[arg-type]
+    key1 = collector._cache_key("бетон", None, "public", "", user_id="u1", org_id="o1")
+    key2 = collector._cache_key("бетон", None, "public", "", user_id="u2", org_id="o2")
+    assert key1 == key2

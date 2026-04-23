@@ -10,8 +10,8 @@ from typing import Any
 import structlog
 
 from agents.base import BaseAgent
-from agents.researcher.config import ResearcherConfig
 from agents.researcher.confidence import ConfidenceScorer
+from agents.researcher.config import ResearcherConfig
 from agents.researcher.fact_validator import FactValidator
 from agents.researcher.llm_client import LLMResearchResponse, StructuredLLMClient
 from agents.researcher.prompt_builder import PromptBuilder
@@ -120,7 +120,9 @@ class ResearcherAgent(BaseAgent):
         logger = struct_logger.bind(agent="researcher", trace_id=trace_id, agent_id=self.agent_id)
 
         RESEARCHER_REQUESTS_TOTAL.labels(status="started").inc()
-        logger.info("research_started", message=self._security.mask_pii(str(state.get("message", ""))))
+        logger.info(
+            "research_started", message=self._security.mask_pii(str(state.get("message", "")))
+        )
 
         try:
             await self._ensure_initialized()
@@ -146,7 +148,9 @@ class ResearcherAgent(BaseAgent):
             }
             return self._update_state(state, "")
 
-    async def _orchestrate(self, state: dict[str, Any], logger: structlog.stdlib.BoundLogger) -> dict[str, Any]:
+    async def _orchestrate(
+        self, state: dict[str, Any], logger: structlog.stdlib.BoundLogger
+    ) -> dict[str, Any]:
         message = str(state.get("message", "")).strip()
         if not message:
             raise ValueError("Пустой запрос")
@@ -167,6 +171,9 @@ class ResearcherAgent(BaseAgent):
         access_scope = self._validate_access_scope(raw_scope)
         context = str(state.get("context", "")).strip()
         user_id = state.get("user_id")
+        org_id = state.get("org_id")
+        tenant_id = state.get("tenant_id")
+        project_id = state.get("project_id")
 
         sources, collection_diag, cache_hit = await self._collect_sources(
             message,
@@ -174,6 +181,9 @@ class ResearcherAgent(BaseAgent):
             access_scope=access_scope,
             context=context,
             user_id=user_id,
+            org_id=org_id,
+            tenant_id=tenant_id,
+            project_id=project_id,
         )
 
         RESEARCHER_SOURCES_COUNT.observe(len(sources))
@@ -197,7 +207,9 @@ class ResearcherAgent(BaseAgent):
         finally:
             RESEARCHER_LLM_DURATION_SECONDS.observe(perf_counter() - llm_start)
 
-        validated_facts, validation_diag = self._validator.validate_facts(llm_response.facts, sources)
+        validated_facts, validation_diag = self._validator.validate_facts(
+            llm_response.facts, sources
+        )
 
         # NOTE: prompt-injection detection moved into SourceCollector.
         # By the time we reach this point, snippets are already sanitized
@@ -211,7 +223,9 @@ class ResearcherAgent(BaseAgent):
         if not validated_facts and sources and llm_response.facts:
             gaps.append("Факты не прошли валидацию источников")
 
-        diagnostics_legacy = list(dict.fromkeys(collection_diag + llm_diag + [d.message for d in validation_diag]))
+        diagnostics_legacy = list(
+            dict.fromkeys(collection_diag + llm_diag + [d.message for d in validation_diag])
+        )
         if injection_flagged and "prompt_injection_detected" not in diagnostics_legacy:
             diagnostics_legacy.append("prompt_injection_detected")
 
@@ -225,9 +239,12 @@ class ResearcherAgent(BaseAgent):
             confidence_breakdown=confidence.model_dump(),
         )
 
-        state["research_facts"] = "" if "llm_timeout" in llm_diag else llm_response.model_dump_json()
+        safe_facts_artifact = json.dumps(
+            [fact.model_dump() for fact in validated_facts], ensure_ascii=False
+        )
+        state["research_facts"] = safe_facts_artifact
         state["research_payload"] = payload.model_dump()
-        return self._update_state(state, state["research_facts"])
+        return self._update_state(state, safe_facts_artifact)
 
     async def _collect_sources(
         self,
@@ -237,24 +254,21 @@ class ResearcherAgent(BaseAgent):
         access_scope: str | None,
         context: str,
         user_id: str | None = None,
+        org_id: str | None = None,
+        tenant_id: str | None = None,
+        project_id: str | None = None,
     ) -> tuple[list[ResearchSource], list[str], bool]:
         await self._ensure_initialized()
         assert self._collector is not None, "Collector not initialized"
-        self._config.rag_timeout_seconds = float(
-            getattr(settings, "research_rag_timeout_seconds", self._config.rag_timeout_seconds)
-        )
-        self._config.web_timeout_seconds = float(
-            getattr(settings, "research_web_timeout_seconds", self._config.web_timeout_seconds)
-        )
-        self._config.llm_timeout_seconds = float(
-            getattr(settings, "research_llm_timeout_seconds", self._config.llm_timeout_seconds)
-        )
         sources, diagnostics, cache_hit = await self._collector.collect(
             message,
             topic_scope=topic_scope,
             access_scope=access_scope,
             context=context,
             user_id=user_id,
+            org_id=org_id,
+            tenant_id=tenant_id,
+            project_id=project_id,
         )
         legacy: list[str] = []
         for item in diagnostics:
@@ -374,8 +388,12 @@ class ResearcherAgent(BaseAgent):
         return out, diagnostics
 
     def _need_web_fallback(self, rag_sources: list[ResearchSource]) -> bool:
-        min_sources = int(getattr(settings, "research_web_min_rag_sources", self._config.web_min_rag_sources))
-        min_avg = float(getattr(settings, "research_web_min_avg_score", self._config.web_min_avg_score))
+        min_sources = int(
+            getattr(settings, "research_web_min_rag_sources", self._config.web_min_rag_sources)
+        )
+        min_avg = float(
+            getattr(settings, "research_web_min_avg_score", self._config.web_min_avg_score)
+        )
         min_chars = int(getattr(settings, "research_web_min_snippet_chars", 5))
         if len(rag_sources) < min_sources:
             return True
@@ -404,7 +422,9 @@ class ResearcherAgent(BaseAgent):
         return list(dedup.values())
 
     @staticmethod
-    def _compute_confidence_overall(facts: list[ResearchFact], sources: list[ResearchSource]) -> float:
+    def _compute_confidence_overall(
+        facts: list[ResearchFact], sources: list[ResearchSource]
+    ) -> float:
         fact_avg = sum(f.confidence for f in facts) / len(facts) if facts else 0.0
         src_avg = sum(s.score for s in sources) / len(sources) if sources else 0.0
         return round((fact_avg * 0.6) + (src_avg * 0.4), 2)
