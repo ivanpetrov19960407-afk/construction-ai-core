@@ -36,4 +36,5 @@ class ResearchResponse(BaseModel):
     facts: list[ResearchFact] = Field(default_factory=list)
     sources: list[ResearchSource] = Field(default_factory=list)
     gaps: list[str] = Field(default_factory=list)
+    diagnostics: list[str] = Field(default_factory=list)
     confidence_overall: float = Field(default=0.0, ge=0.0, le=1.0)
