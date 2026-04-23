@@ -53,8 +53,8 @@ class Settings(BaseSettings):
 
     # ── Researcher ───────────────────────────────
     research_rag_timeout_seconds: float = 12.0
-    research_web_timeout_seconds: float = 8.0
-    research_llm_timeout_seconds: float = 25.0
+    research_web_timeout_seconds: float = 12.0
+    research_llm_timeout_seconds: float = 45.0
     research_web_min_rag_sources: int = 2
     research_web_min_avg_score: float = 0.35
     research_web_min_snippet_chars: int = 500
