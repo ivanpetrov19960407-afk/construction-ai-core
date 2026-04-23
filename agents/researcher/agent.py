@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
+import warnings
 from time import perf_counter
 from typing import Any
 
@@ -18,7 +19,6 @@ from agents.researcher.security import InjectionGuard
 from agents.researcher.source_collector import SourceCollector
 from api.metrics import (
     RESEARCHER_CACHE_HITS_TOTAL,
-    RESEARCHER_INJECTION_DETECTED_TOTAL,
     RESEARCHER_LLM_DURATION_SECONDS,
     RESEARCHER_REQUESTS_TOTAL,
     RESEARCHER_SOURCES_COUNT,
@@ -93,7 +93,13 @@ class ResearcherAgent(BaseAgent):
                 rag_engine = self._rag_engine or RAGEngine()
                 web_tool = self._web_search_tool or WebSearchTool()
                 cache = await self._get_or_create_cache()
-                self._collector = SourceCollector(rag_engine, web_tool, cache, self._config)
+                self._collector = SourceCollector(
+                    rag_engine,
+                    web_tool,
+                    cache,
+                    self._config,
+                    injection_guard=self._security,
+                )
                 self._llm_client = StructuredLLMClient(self.llm_router, self._config)
 
     async def _get_or_create_cache(self) -> RedisCache | None:
@@ -146,12 +152,23 @@ class ResearcherAgent(BaseAgent):
             raise ValueError("Пустой запрос")
 
         topic_scope = str(state.get("topic_scope") or "").strip() or None
-        raw_scope = str(state.get("access_scope") or state.get("scope") or state.get("role") or "").strip() or None
+
+        # Access scope resolution with deprecation warning for legacy keys.
+        explicit_access = str(state.get("access_scope") or "").strip() or None
+        legacy_scope = str(state.get("scope") or state.get("role") or "").strip() or None
+        if explicit_access is None and legacy_scope is not None:
+            warnings.warn(
+                "Keys 'scope' and 'role' are deprecated for ResearcherAgent; "
+                "use 'access_scope' instead. Fallback will be removed in a future release.",
+                DeprecationWarning,
+                stacklevel=3,
+            )
+        raw_scope = explicit_access or legacy_scope
         access_scope = self._validate_access_scope(raw_scope)
         context = str(state.get("context", "")).strip()
         user_id = state.get("user_id")
 
-        sources, collection_diag = await self._collect_sources(
+        sources, collection_diag, cache_hit = await self._collect_sources(
             message,
             topic_scope=topic_scope,
             access_scope=access_scope,
@@ -162,7 +179,7 @@ class ResearcherAgent(BaseAgent):
         RESEARCHER_SOURCES_COUNT.observe(len(sources))
         if "web_fallback" in collection_diag:
             RESEARCHER_WEB_FALLBACK_TOTAL.inc()
-        if not collection_diag:
+        if cache_hit:
             RESEARCHER_CACHE_HITS_TOTAL.inc()
 
         prompt = PromptBuilder.build(message, context, sources, self._config)
@@ -182,9 +199,11 @@ class ResearcherAgent(BaseAgent):
 
         validated_facts, validation_diag = self._validator.validate_facts(llm_response.facts, sources)
 
-        suspicious = any(self._security._contains_prompt_injection(s.snippet or "") for s in sources)
-        if suspicious:
-            RESEARCHER_INJECTION_DETECTED_TOTAL.inc()
+        # NOTE: prompt-injection detection moved into SourceCollector.
+        # By the time we reach this point, snippets are already sanitized
+        # (redacted or normalized). The injection metric is incremented inside
+        # the collector when a real redaction happens. Do NOT inspect snippets here.
+        injection_flagged = any(code == "prompt_injection_detected" for code in collection_diag)
 
         confidence = self._scorer.compute(validated_facts, sources)
 
@@ -193,9 +212,8 @@ class ResearcherAgent(BaseAgent):
             gaps.append("Факты не прошли валидацию источников")
 
         diagnostics_legacy = list(dict.fromkeys(collection_diag + llm_diag + [d.message for d in validation_diag]))
-        if suspicious:
+        if injection_flagged and "prompt_injection_detected" not in diagnostics_legacy:
             diagnostics_legacy.append("prompt_injection_detected")
-            diagnostics_legacy = list(dict.fromkeys(diagnostics_legacy))
 
         payload = ResearchResponse(
             query=message,
@@ -219,7 +237,7 @@ class ResearcherAgent(BaseAgent):
         access_scope: str | None,
         context: str,
         user_id: str | None = None,
-    ) -> tuple[list[ResearchSource], list[str]]:
+    ) -> tuple[list[ResearchSource], list[str], bool]:
         await self._ensure_initialized()
         assert self._collector is not None, "Collector not initialized"
         self._config.rag_timeout_seconds = float(
@@ -231,7 +249,7 @@ class ResearcherAgent(BaseAgent):
         self._config.llm_timeout_seconds = float(
             getattr(settings, "research_llm_timeout_seconds", self._config.llm_timeout_seconds)
         )
-        sources, diagnostics = await self._collector.collect(
+        sources, diagnostics, cache_hit = await self._collector.collect(
             message,
             topic_scope=topic_scope,
             access_scope=access_scope,
@@ -246,7 +264,7 @@ class ResearcherAgent(BaseAgent):
                 legacy.append(f"rag_failed:{item.message}")
             else:
                 legacy.append(item.code)
-        return sources, list(dict.fromkeys(legacy))
+        return sources, list(dict.fromkeys(legacy)), cache_hit
 
     async def run_standalone(
         self,

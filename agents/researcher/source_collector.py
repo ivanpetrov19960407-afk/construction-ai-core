@@ -30,11 +30,16 @@ from core.rag_engine import RAGEngine
 from core.tools.web_search import WebSearchTool
 from schemas.research import Diagnostic, ResearchSource
 
+try:
+    from api.metrics import RESEARCHER_INJECTION_DETECTED_TOTAL
+except Exception:  # pragma: no cover - metrics optional in tests
+    RESEARCHER_INJECTION_DETECTED_TOTAL = None  # type: ignore[assignment]
+
 _WHITESPACE_RE = re.compile(r"\s+")
 
 
 class SourceCollector:
-    """Collect RAG and web sources with dedup and cache."""
+    """Collect RAG and web sources with dedup, sanitization and cache."""
 
     def __init__(
         self,
@@ -42,11 +47,13 @@ class SourceCollector:
         web_search_tool: WebSearchTool,
         cache: RedisCache | None,
         config: ResearcherConfig,
+        injection_guard: InjectionGuard | None = None,
     ) -> None:
         self._rag_engine = rag_engine
         self._web_search_tool = web_search_tool
         self._cache = cache
         self._config = config
+        self._injection_guard = injection_guard or InjectionGuard(config)
         self._web_limiter = AsyncLimiter(max_rate=config.web_rate_limit_per_second, time_period=1)
 
     async def collect(
@@ -57,7 +64,13 @@ class SourceCollector:
         access_scope: str | None,
         context: str,
         user_id: str | None = None,
-    ) -> tuple[list[ResearchSource], list[Diagnostic]]:
+    ) -> tuple[list[ResearchSource], list[Diagnostic], bool]:
+        """Collect, sanitize and rank sources.
+
+        Returns: (sources, diagnostics, cache_hit).
+        Sanitization of snippets happens before caching, dedup and return,
+        so no raw untrusted content leaves this method.
+        """
         diagnostics: list[Diagnostic] = []
         _ = user_id
         cache_key = self._cache_key(query, topic_scope, access_scope, context)
@@ -77,7 +90,12 @@ class SourceCollector:
             if cached:
                 try:
                     items = json.loads(cached)
-                    return [ResearchSource.model_validate(i) for i in items], diagnostics
+                    # Cached sources are already sanitized (see below).
+                    return (
+                        [ResearchSource.model_validate(i) for i in items],
+                        diagnostics,
+                        True,
+                    )
                 except (TypeError, ValueError, json.JSONDecodeError):
                     diagnostics.append(
                         Diagnostic(
@@ -95,9 +113,30 @@ class SourceCollector:
             rag_result = await rag_task
         except Exception as exc:  # noqa: BLE001
             rag_result = exc
-        if not isinstance(rag_result, Exception) and not self._need_web_fallback(
-            self._deduplicate_rag_sources(rag_result)
-        ):
+
+        # IMPORTANT: sanitize RAG snippets BEFORE the fallback decision.
+        # Otherwise a prompt-injection chunk with inflated word count could
+        # artificially raise info_density in _need_web_fallback and suppress
+        # a legitimate web fallback, leaving us with low-information redacted
+        # snippets at the end.
+        rag_sanitization_diag: list[Diagnostic] = []
+        if isinstance(rag_result, Exception):
+            diagnostics.append(
+                Diagnostic(
+                    code="rag_failed",
+                    message=type(rag_result).__name__,
+                    severity="error",
+                    stage="collect",
+                )
+            )
+            rag_sources: list[ResearchSource] = []
+        else:
+            sanitized_rag, rag_sanitization_diag = self._sanitize_sources(rag_result)
+            rag_sources = self._deduplicate_rag_sources(sanitized_rag)
+
+        # Fallback decision uses post-sanitization snippets.
+        need_web = self._need_web_fallback(rag_sources)
+        if not need_web:
             web_task.cancel()
             web_result: list[ResearchSource] | Exception = []
         else:
@@ -106,22 +145,35 @@ class SourceCollector:
             except Exception as exc:  # noqa: BLE001
                 web_result = exc
 
-        rag_sources: list[ResearchSource] = []
         web_sources: list[ResearchSource] = []
-
-        if isinstance(rag_result, Exception):
-            diagnostics.append(Diagnostic(code="rag_failed", message=type(rag_result).__name__, severity="error", stage="collect"))
-        else:
-            rag_sources = self._deduplicate_rag_sources(rag_result)
-
-        use_web = self._need_web_fallback(rag_sources)
+        web_sanitization_diag: list[Diagnostic] = []
         if isinstance(web_result, Exception):
-            diagnostics.append(Diagnostic(code="web_failed", message=type(web_result).__name__, severity="warn", stage="collect"))
-        elif use_web:
-            web_sources = web_result
-            diagnostics.append(Diagnostic(code="web_fallback", message="web fallback used", severity="info", stage="collect"))
+            diagnostics.append(
+                Diagnostic(
+                    code="web_failed",
+                    message=type(web_result).__name__,
+                    severity="warn",
+                    stage="collect",
+                )
+            )
+        elif need_web:
+            sanitized_web, web_sanitization_diag = self._sanitize_sources(web_result)
+            web_sources = sanitized_web
+            diagnostics.append(
+                Diagnostic(
+                    code="web_fallback",
+                    message="web fallback used",
+                    severity="info",
+                    stage="collect",
+                )
+            )
 
-        top_sources = sorted([*rag_sources, *web_sources], key=lambda s: s.score, reverse=True)[: self._config.top_k_sources]
+        diagnostics.extend(rag_sanitization_diag)
+        diagnostics.extend(web_sanitization_diag)
+
+        top_sources = sorted(
+            [*rag_sources, *web_sources], key=lambda s: s.score, reverse=True
+        )[: self._config.top_k_sources]
         compact_sources = self._truncate_sources(top_sources)
 
         if compact_sources and self._cache is not None:
@@ -141,7 +193,7 @@ class SourceCollector:
                     )
                 )
 
-        return compact_sources, diagnostics
+        return compact_sources, diagnostics, False
 
     async def _collect_web_deferred(
         self, query: str, topic_scope: str | None, delay_seconds: float
@@ -164,7 +216,8 @@ class SourceCollector:
         sources: list[ResearchSource] = []
         for idx, chunk in enumerate(chunks or []):
             page = int(chunk.get("page", 0) or 0)
-            snippet, _ = InjectionGuard.sanitize_snippet(str(chunk.get("text", ""))[: self._config.snippet_max_chars])
+            # Raw snippet; central sanitization happens later in _sanitize_sources.
+            snippet = str(chunk.get("text", ""))[: self._config.snippet_max_chars]
             source_name = str(chunk.get("source", "unknown"))
             sources.append(
                 ResearchSource(
@@ -193,7 +246,8 @@ class SourceCollector:
             url = str(item.get("url", "") or "")
             if not self._is_allowed_url(url):
                 continue
-            snippet, _ = InjectionGuard.sanitize_snippet(str(item.get("snippet", ""))[: self._config.snippet_max_chars])
+            # Raw snippet; central sanitization happens later in _sanitize_sources.
+            snippet = str(item.get("snippet", ""))[: self._config.snippet_max_chars]
             sources.append(
                 ResearchSource(
                     id=f"web-{idx}",
@@ -253,6 +307,33 @@ class SourceCollector:
         except ValueError:
             pass
         return True
+
+    def _sanitize_sources(
+        self, sources: list[ResearchSource]
+    ) -> tuple[list[ResearchSource], list[Diagnostic]]:
+        """Strip prompt-injection payloads from snippets before they reach LLM/cache."""
+        sanitized: list[ResearchSource] = []
+        diagnostics: list[Diagnostic] = []
+        redacted_count = 0
+        for source in sources:
+            clean_snippet, was_redacted = InjectionGuard.sanitize_snippet(source.snippet or "")
+            if was_redacted:
+                redacted_count += 1
+                diagnostics.append(
+                    Diagnostic(
+                        code="prompt_injection_detected",
+                        message=f"Snippet from {source.id} redacted",
+                        severity="warn",
+                        stage="security",
+                    )
+                )
+            sanitized.append(source.model_copy(update={"snippet": clean_snippet}))
+        if redacted_count and RESEARCHER_INJECTION_DETECTED_TOTAL is not None:
+            try:
+                RESEARCHER_INJECTION_DETECTED_TOTAL.inc(redacted_count)
+            except Exception:  # noqa: BLE001 - metrics must never break pipeline
+                pass
+        return sanitized, diagnostics
 
     def _truncate_sources(self, sources: list[ResearchSource]) -> list[ResearchSource]:
         total_chars = sum(len(s.snippet or "") for s in sources)

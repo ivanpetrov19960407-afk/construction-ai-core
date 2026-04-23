@@ -49,8 +49,13 @@ class InjectionGuard:
         normalized = cls.normalize(text)
         return any(pattern.search(normalized) for pattern in cls._category_patterns)
 
-    def _contains_prompt_injection(self, text: str) -> bool:
+    def contains_prompt_injection(self, text: str) -> bool:
+        """Public API: whether snippet looks like a prompt-injection attempt."""
         return self.is_suspicious(text)
+
+    def _contains_prompt_injection(self, text: str) -> bool:  # pragma: no cover - legacy alias
+        """Deprecated alias kept for backward compatibility."""
+        return self.contains_prompt_injection(text)
 
     def mask_pii(self, text: str, limit: int = 200) -> str:
         return sanitize_pii(text, limit=limit)
