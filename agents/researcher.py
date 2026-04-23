@@ -156,6 +156,8 @@ class ResearcherAgent(BaseAgent):
 
         try:
             data = json.loads(self._strip_markdown_fence(raw))
+            if not isinstance(data, dict):
+                raise TypeError("LLM JSON payload must be an object")
             facts = [ResearchFact(**f) for f in data.get("facts", [])]
             gaps = [str(g) for g in data.get("gaps", [])]
         except (json.JSONDecodeError, TypeError, ValueError) as exc:
