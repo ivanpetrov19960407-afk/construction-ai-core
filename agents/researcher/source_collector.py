@@ -56,6 +56,7 @@ class SourceCollector:
         self._config = config
         self._injection_guard = injection_guard or InjectionGuard(config)
         self._web_limiter = AsyncLimiter(max_rate=config.web_rate_limit_per_second, time_period=1)
+        self._web_limiter_loop_id: int | None = None
 
     async def collect(
         self,
@@ -265,6 +266,15 @@ class SourceCollector:
 
     async def _collect_web(self, query: str, topic_scope: str | None) -> list[ResearchSource]:
         web_query = "\n".join(part for part in [query, topic_scope] if part)
+        loop_id = id(asyncio.get_running_loop())
+        if self._web_limiter_loop_id is None:
+            self._web_limiter_loop_id = loop_id
+        elif self._web_limiter_loop_id != loop_id:
+            self._web_limiter = AsyncLimiter(
+                max_rate=self._config.web_rate_limit_per_second,
+                time_period=1,
+            )
+            self._web_limiter_loop_id = loop_id
         async with self._web_limiter:
             items = await asyncio.wait_for(
                 self._web_search_tool.run(web_query, max_results=self._config.top_k_sources),

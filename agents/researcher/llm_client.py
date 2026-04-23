@@ -56,6 +56,8 @@ class StructuredLLMClient:
         parsed = self._parse_json(response.text)
         if parsed is not None:
             return parsed
+        if not self._looks_like_json_candidate(response.text):
+            raise ValueError("invalid_json_no_reask")
         reask_prompt = self._build_reask_prompt(prompt=prompt, invalid_output=response.text)
         reask = await self._query_router(prompt=reask_prompt, system_prompt=system_prompt)
         reparsed = self._parse_json(reask.text)
@@ -69,6 +71,8 @@ class StructuredLLMClient:
                 self._router.query(prompt=prompt, system_prompt=system_prompt),
                 timeout=self._config.llm_timeout_seconds,
             )
+        except StopAsyncIteration as exc:
+            raise ValueError("llm_empty_response") from exc
         except Exception as exc:  # noqa: BLE001
             is_timeout = isinstance(exc, TimeoutError) or isinstance(
                 exc, asyncio.exceptions.TimeoutError
@@ -76,8 +80,6 @@ class StructuredLLMClient:
             if is_timeout:
                 raise TimeoutError("llm_timeout") from exc
             raise
-        except StopAsyncIteration as exc:
-            raise ValueError("llm_empty_response") from exc
 
     @staticmethod
     def _build_reask_prompt(*, prompt: str, invalid_output: str) -> str:
@@ -131,3 +133,8 @@ class StructuredLLMClient:
         if not isinstance(parsed, dict):
             return None
         return parsed
+
+    @staticmethod
+    def _looks_like_json_candidate(payload: str) -> bool:
+        stripped = payload.strip()
+        return "{" in stripped or stripped.startswith("```")

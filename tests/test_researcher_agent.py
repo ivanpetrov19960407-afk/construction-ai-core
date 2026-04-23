@@ -247,8 +247,7 @@ def test_rag_timeout_falls_back_to_web_and_keeps_running(
         web_search_tool=web_tool,
         cache=_FakeCache(),
     )
-    _ = monkeypatch
-    agent._config.rag_timeout_seconds = 0.001
+    monkeypatch.setattr(settings, "research_rag_timeout_seconds", 0.001)
 
     sources, diagnostics, cache_hit = asyncio.run(
         agent._collect_sources(

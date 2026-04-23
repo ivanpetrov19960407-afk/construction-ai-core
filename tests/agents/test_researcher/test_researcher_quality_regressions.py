@@ -5,6 +5,7 @@ from agents.researcher.config import ResearcherConfig
 from agents.researcher.fact_validator import FactValidator
 from agents.researcher.prompt_builder import PromptBuilder
 from agents.researcher.source_collector import SourceCollector
+from config.settings import settings
 from schemas.research import ResearchFact, ResearchSource
 
 
@@ -79,7 +80,8 @@ def test_invalid_json_returns_safe_empty_result() -> None:
     assert result["research_facts"] == "[]"
 
 
-def test_llm_timeout_returns_safe_empty_result() -> None:
+def test_llm_timeout_returns_safe_empty_result(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "research_llm_timeout_seconds", 0.001)
     cfg = ResearcherConfig(llm_timeout_seconds=0.001, retry_attempts=1)
     agent = ResearcherAgent(
         _Router('{"facts":[],"gaps":[]}', delay=0.05),

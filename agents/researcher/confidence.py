@@ -51,17 +51,20 @@ class ConfidenceScorer:
 
         source_by_id = {s.id: s for s in sources}
         cited_scores: list[float] = []
-        cited_count = 0
+        facts_with_citations = 0
         for fact in facts:
+            fact_has_citation = False
             for sid in fact.source_ids:
                 src = source_by_id.get(sid)
                 if src is None:
                     continue
-                cited_count += 1
+                fact_has_citation = True
                 cited_scores.append(src.score)
+            if fact_has_citation:
+                facts_with_citations += 1
 
         retrieval_support = sum(cited_scores) / len(cited_scores) if cited_scores else 0.0
-        citation_coverage = cited_count / max(len(facts), 1)
+        citation_coverage = facts_with_citations / max(len(facts), 1)
         citation_coverage = min(1.0, citation_coverage)
         source_quality = sum(s.score for s in sources) / len(sources) if sources else 0.0
         llm_self_reported_confidence = sum(f.confidence for f in facts) / len(facts)

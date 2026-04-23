@@ -260,6 +260,15 @@ class ResearcherAgent(BaseAgent):
     ) -> tuple[list[ResearchSource], list[str], bool]:
         await self._ensure_initialized()
         assert self._collector is not None, "Collector not initialized"
+        self._config.rag_timeout_seconds = float(
+            getattr(settings, "research_rag_timeout_seconds", self._config.rag_timeout_seconds)
+        )
+        self._config.web_timeout_seconds = float(
+            getattr(settings, "research_web_timeout_seconds", self._config.web_timeout_seconds)
+        )
+        self._config.llm_timeout_seconds = float(
+            getattr(settings, "research_llm_timeout_seconds", self._config.llm_timeout_seconds)
+        )
         sources, diagnostics, cache_hit = await self._collector.collect(
             message,
             topic_scope=topic_scope,

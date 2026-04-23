@@ -31,8 +31,8 @@ class _Router:
     ("payload", "expected"),
     [
         ('{"facts": [], "gaps": []}', True),
-        ("```json\n{\"facts\": [], \"gaps\": []}\n```", True),
-        ("prefix text\n{\"facts\": [], \"gaps\": []}\nsuffix", True),
+        ('```json\n{"facts": [], "gaps": []}\n```', True),
+        ('prefix text\n{"facts": [], "gaps": []}\nsuffix', True),
         ("[]", False),
         ("nope", False),
     ],
@@ -43,7 +43,7 @@ def test_parse_json_variants(payload: str, expected: bool) -> None:
 
 
 def test_structured_llm_client_reask_preserves_success() -> None:
-    router = _Router(["not-json", '{"facts": [], "gaps": []}'])
+    router = _Router(['{"facts": [}', '{"facts": [], "gaps": []}'])
     client = StructuredLLMClient(router, ResearcherConfig())  # type: ignore[arg-type]
     result = asyncio.run(client.generate("prompt", system_prompt="sys"))
     assert result == {"facts": [], "gaps": []}
