@@ -84,3 +84,22 @@ def test_researcher_returns_valid_json_payload():
     assert isinstance(payload["facts"], list)
     assert isinstance(payload["sources"], list)
     assert 0 <= payload["confidence_overall"] <= 1
+
+
+def test_researcher_falls_back_when_llm_returns_non_object_json():
+    agent = ResearcherAgent(cast(Any, _mock_llm_router("[]")))
+
+    class _Rag:
+        async def search(self, query: str, n_results: int = 5, filter_scope: str | None = None):
+            _ = (query, n_results, filter_scope)
+            return [{"source": "СП 48", "page": 1, "text": "Факт", "score": 0.6}]
+
+    agent.rag_engine = cast(Any, _Rag())
+    agent.web_search_tool = cast(Any, SimpleNamespace(run=AsyncMock(return_value=[])))
+
+    state = asyncio.run(agent.run({"message": "что по СП 48", "history": []}))
+    payload = state["research_payload"]
+
+    assert payload["facts"]
+    assert payload["facts"][0]["text"] == "[]"
+    assert "LLM вернул ответ не в JSON-формате" in payload["gaps"]
