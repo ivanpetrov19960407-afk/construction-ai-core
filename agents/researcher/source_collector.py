@@ -113,9 +113,30 @@ class SourceCollector:
             rag_result = await rag_task
         except Exception as exc:  # noqa: BLE001
             rag_result = exc
-        if not isinstance(rag_result, Exception) and not self._need_web_fallback(
-            self._deduplicate_rag_sources(rag_result)
-        ):
+
+        # IMPORTANT: sanitize RAG snippets BEFORE the fallback decision.
+        # Otherwise a prompt-injection chunk with inflated word count could
+        # artificially raise info_density in _need_web_fallback and suppress
+        # a legitimate web fallback, leaving us with low-information redacted
+        # snippets at the end.
+        rag_sanitization_diag: list[Diagnostic] = []
+        if isinstance(rag_result, Exception):
+            diagnostics.append(
+                Diagnostic(
+                    code="rag_failed",
+                    message=type(rag_result).__name__,
+                    severity="error",
+                    stage="collect",
+                )
+            )
+            rag_sources: list[ResearchSource] = []
+        else:
+            sanitized_rag, rag_sanitization_diag = self._sanitize_sources(rag_result)
+            rag_sources = self._deduplicate_rag_sources(sanitized_rag)
+
+        # Fallback decision uses post-sanitization snippets.
+        need_web = self._need_web_fallback(rag_sources)
+        if not need_web:
             web_task.cancel()
             web_result: list[ResearchSource] | Exception = []
         else:
@@ -124,34 +145,42 @@ class SourceCollector:
             except Exception as exc:  # noqa: BLE001
                 web_result = exc
 
-        rag_sources: list[ResearchSource] = []
         web_sources: list[ResearchSource] = []
-
-        if isinstance(rag_result, Exception):
-            diagnostics.append(Diagnostic(code="rag_failed", message=type(rag_result).__name__, severity="error", stage="collect"))
-        else:
-            rag_sources = self._deduplicate_rag_sources(rag_result)
-
-        use_web = self._need_web_fallback(rag_sources)
+        web_sanitization_diag: list[Diagnostic] = []
         if isinstance(web_result, Exception):
-            diagnostics.append(Diagnostic(code="web_failed", message=type(web_result).__name__, severity="warn", stage="collect"))
-        elif use_web:
-            web_sources = web_result
-            diagnostics.append(Diagnostic(code="web_fallback", message="web fallback used", severity="info", stage="collect"))
+            diagnostics.append(
+                Diagnostic(
+                    code="web_failed",
+                    message=type(web_result).__name__,
+                    severity="warn",
+                    stage="collect",
+                )
+            )
+        elif need_web:
+            sanitized_web, web_sanitization_diag = self._sanitize_sources(web_result)
+            web_sources = sanitized_web
+            diagnostics.append(
+                Diagnostic(
+                    code="web_fallback",
+                    message="web fallback used",
+                    severity="info",
+                    stage="collect",
+                )
+            )
 
-        top_sources = sorted([*rag_sources, *web_sources], key=lambda s: s.score, reverse=True)[: self._config.top_k_sources]
+        diagnostics.extend(rag_sanitization_diag)
+        diagnostics.extend(web_sanitization_diag)
+
+        top_sources = sorted(
+            [*rag_sources, *web_sources], key=lambda s: s.score, reverse=True
+        )[: self._config.top_k_sources]
         compact_sources = self._truncate_sources(top_sources)
 
-        # Final sanitization pass ensures no untrusted content reaches the prompt
-        # or the cache layer. Must happen AFTER dedup/truncate and BEFORE caching.
-        sanitized_sources, sec_diag = self._sanitize_sources(compact_sources)
-        diagnostics.extend(sec_diag)
-
-        if sanitized_sources and self._cache is not None:
+        if compact_sources and self._cache is not None:
             try:
                 await self._cache.set(
                     cache_key,
-                    json.dumps([source.model_dump() for source in sanitized_sources], ensure_ascii=False),
+                    json.dumps([source.model_dump() for source in compact_sources], ensure_ascii=False),
                     ttl=self._config.cache_ttl_seconds,
                 )
             except Exception:  # noqa: BLE001
@@ -164,7 +193,7 @@ class SourceCollector:
                     )
                 )
 
-        return sanitized_sources, diagnostics, False
+        return compact_sources, diagnostics, False
 
     async def _collect_web_deferred(
         self, query: str, topic_scope: str | None, delay_seconds: float
