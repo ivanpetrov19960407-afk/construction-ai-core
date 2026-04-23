@@ -1,5 +1,3 @@
-"""Схемы API и внутренних payload-структур."""
+from schemas.research import Diagnostic, ResearchFact, ResearchResponse, ResearchSource
 
-from schemas.research import ResearchFact, ResearchResponse, ResearchSource
-
-__all__ = ["ResearchFact", "ResearchResponse", "ResearchSource"]
+__all__ = ["Diagnostic", "ResearchFact", "ResearchResponse", "ResearchSource"]
