@@ -31,6 +31,7 @@ BOT_MESSAGES_TOTAL = Counter(
 RESEARCHER_REQUESTS_TOTAL = Counter(
     "researcher_requests_total",
     "Researcher request count",
+    ["status"],
 )
 RESEARCHER_LLM_DURATION_SECONDS = Histogram(
     "researcher_llm_duration_seconds",
@@ -43,6 +44,10 @@ RESEARCHER_CACHE_HITS_TOTAL = Counter(
 RESEARCHER_WEB_FALLBACK_TOTAL = Counter(
     "researcher_web_fallback_total",
     "Researcher web fallback count",
+)
+RESEARCHER_SOURCES_COUNT = Histogram(
+    "researcher_sources_count",
+    "Researcher source count per request",
 )
 RESEARCHER_INJECTION_DETECTED_TOTAL = Counter(
     "researcher_injection_detected_total",
@@ -60,5 +65,6 @@ __all__ = [
     "RESEARCHER_LLM_DURATION_SECONDS",
     "RESEARCHER_CACHE_HITS_TOTAL",
     "RESEARCHER_WEB_FALLBACK_TOTAL",
+    "RESEARCHER_SOURCES_COUNT",
     "RESEARCHER_INJECTION_DETECTED_TOTAL",
 ]

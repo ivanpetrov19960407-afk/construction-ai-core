@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from typing import Any
 
 _ZERO_WIDTH_RE = re.compile(r"[\u200B-\u200F\uFEFF]")
 _WHITESPACE_RE = re.compile(r"\s+")
@@ -25,6 +26,9 @@ class InjectionGuard:
         re.compile(r"<\|im_start\|>", re.IGNORECASE),
     )
 
+    def __init__(self, config: Any | None = None) -> None:
+        self._config = config
+
     @classmethod
     def normalize(cls, text: str) -> str:
         normalized = unicodedata.normalize("NFKC", text)
@@ -44,6 +48,12 @@ class InjectionGuard:
     def is_suspicious(cls, text: str) -> bool:
         normalized = cls.normalize(text)
         return any(pattern.search(normalized) for pattern in cls._category_patterns)
+
+    def _contains_prompt_injection(self, text: str) -> bool:
+        return self.is_suspicious(text)
+
+    def mask_pii(self, text: str, limit: int = 200) -> str:
+        return sanitize_pii(text, limit=limit)
 
 
 def sanitize_pii(text: str, limit: int = 200) -> str:

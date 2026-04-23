@@ -3,13 +3,17 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from pydantic import BaseModel, Field
+
 try:
     from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential_jitter
 except Exception:  # pragma: no cover
     def retry(**kwargs):
         _ = kwargs
+
         def decorator(fn):
             return fn
+
         return decorator
 
     def retry_if_exception_type(exc):
@@ -24,6 +28,12 @@ except Exception:  # pragma: no cover
 
 from agents.researcher.config import ResearcherConfig
 from core.llm_router import LLMRouter
+from schemas.research import ResearchFact
+
+
+class LLMResearchResponse(BaseModel):
+    facts: list[ResearchFact] = Field(default_factory=list)
+    gaps: list[str] = Field(default_factory=list)
 
 
 class StructuredLLMClient:
@@ -32,6 +42,16 @@ class StructuredLLMClient:
     def __init__(self, llm_router: LLMRouter, config: ResearcherConfig) -> None:
         self._router = llm_router
         self._config = config
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential_jitter(initial=0.5, max=4),
+        retry=retry_if_exception_type((TimeoutError,)),
+        reraise=True,
+    )
+    async def query(self, prompt: str, system_prompt: str) -> LLMResearchResponse:
+        parsed = await self.generate(prompt, system_prompt=system_prompt)
+        return LLMResearchResponse.model_validate(parsed)
 
     @retry(
         stop=stop_after_attempt(3),

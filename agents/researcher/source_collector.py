@@ -56,8 +56,10 @@ class SourceCollector:
         topic_scope: str | None,
         access_scope: str | None,
         context: str,
+        user_id: str | None = None,
     ) -> tuple[list[ResearchSource], list[Diagnostic]]:
         diagnostics: list[Diagnostic] = []
+        _ = user_id
         cache_key = self._cache_key(query, topic_scope, access_scope, context)
         if self._cache is not None:
             try:
