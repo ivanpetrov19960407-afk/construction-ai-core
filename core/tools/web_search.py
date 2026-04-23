@@ -13,9 +13,29 @@ from core.tools.base import BaseTool
 class WebSearchTool(BaseTool):
     """Выполняет веб-поиск через Perplexity Sonar, если настроен API ключ."""
 
-    def __init__(self, *, timeout_seconds: float = 30.0) -> None:
+    _shared_client: httpx.AsyncClient | None = None
+
+    def __init__(
+        self,
+        *,
+        timeout_seconds: float = 30.0,
+        client: httpx.AsyncClient | None = None,
+    ) -> None:
         self.timeout_seconds = timeout_seconds
-        self._client = httpx.AsyncClient(timeout=timeout_seconds)
+        if client is not None:
+            self._client = client
+        else:
+            if WebSearchTool._shared_client is None:
+                WebSearchTool._shared_client = httpx.AsyncClient(timeout=timeout_seconds)
+            self._client = WebSearchTool._shared_client
+
+    @classmethod
+    async def aclose_shared_client(cls) -> None:
+        """Явно закрыть разделяемый клиент (например, в shutdown)."""
+        if cls._shared_client is None:
+            return
+        await cls._shared_client.aclose()
+        cls._shared_client = None
 
     async def run(
         self,
@@ -58,10 +78,10 @@ class WebSearchTool(BaseTool):
                 },
             )
             response.raise_for_status()
+            payload = response.json()
         except Exception:
             return []
 
-        payload = response.json()
         items: list[dict[str, Any]] = []
         for idx, citation in enumerate(payload.get("citations", []), start=1):
             if isinstance(citation, str):
