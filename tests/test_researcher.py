@@ -19,8 +19,8 @@ def test_researcher_uses_rag_first():
         async def search(self, query: str, n_results: int = 5, filter_scope: str | None = None):
             _ = (query, n_results, filter_scope)
             return [
-                {"source": "СП 70.13330", "page": 18, "text": "Про бетон", "score": 0.9},
-                {"source": "ГОСТ 7473", "page": 5, "text": "Смесь", "score": 0.8},
+                {"source": "СП 70.13330", "page": 18, "text": "Про бетон " * 40, "score": 0.9},
+                {"source": "ГОСТ 7473", "page": 5, "text": "Смесь " * 40, "score": 0.8},
             ]
 
     agent.rag_engine = cast(Any, _Rag())
