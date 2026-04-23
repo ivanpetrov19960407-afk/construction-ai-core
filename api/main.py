@@ -36,6 +36,7 @@ from api.routes import (
     linking,
     projects,
     rag,
+    research,
     sign,
     web,
     web_push,
@@ -122,6 +123,7 @@ app.include_router(auth.legacy_router, tags=["auth"])
 app.include_router(billing.router, prefix="/api", tags=["billing"])
 app.include_router(branding.router, prefix="/api", tags=["branding"])
 app.include_router(chat.router, prefix="/api", tags=["chat"])
+app.include_router(research.router, prefix="/api", tags=["research"])
 # generate.router содержит /api/generate/* включая /api/generate/exec-album
 app.include_router(generate.router, prefix="/api", tags=["generate"])
 app.include_router(sign.router, prefix="/api", tags=["sign"])

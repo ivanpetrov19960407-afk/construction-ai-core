@@ -6,6 +6,7 @@
 
 import asyncio
 import hashlib
+import json
 from dataclasses import dataclass
 from enum import Enum
 
@@ -235,6 +236,21 @@ class LLMRouter:
             model=used_model,
             usage=usage,
         )
+
+
+
+    def parse_json_response(self, response_text: str) -> dict | None:
+        """Безопасно распарсить JSON из текстового ответа LLM."""
+        text = response_text.strip()
+        if not text:
+            return None
+        try:
+            parsed = json.loads(text)
+            if isinstance(parsed, dict):
+                return parsed
+            return None
+        except json.JSONDecodeError:
+            return None
 
     def _intent_cache_key(self, system_prompt: str | None, prompt: str) -> str | None:
         if system_prompt and "Определи intent запроса" in system_prompt:
