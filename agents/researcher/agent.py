@@ -151,8 +151,6 @@ class ResearcherAgent(BaseAgent):
         context = str(state.get("context", "")).strip()
         user_id = state.get("user_id")
 
-        retrieval_query = self._build_retrieval_query(message, topic_scope, context)
-        _ = retrieval_query
         sources, collection_diag = await self._collect_sources(
             message,
             topic_scope=topic_scope,
@@ -167,7 +165,7 @@ class ResearcherAgent(BaseAgent):
         if not collection_diag:
             RESEARCHER_CACHE_HITS_TOTAL.inc()
 
-        prompt = PromptBuilder.build(message, context, sources)
+        prompt = PromptBuilder.build(message, context, sources, self._config)
 
         llm_diag: list[str] = []
         llm_response = LLMResearchResponse(facts=[], gaps=[])
@@ -275,7 +273,7 @@ class ResearcherAgent(BaseAgent):
     def _validate_access_scope(scope: str | None) -> str | None:
         if scope and scope in _ALLOWED_ACCESS_SCOPES:
             return scope
-        return None
+        return "public"
 
     @staticmethod
     def _build_retrieval_query(message: str, topic_scope: str | None, context: str) -> str:
