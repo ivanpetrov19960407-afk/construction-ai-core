@@ -1,34 +1,17 @@
 from __future__ import annotations
 
+import asyncio
 import json
+from json import JSONDecodeError
 from typing import Any
 
 from pydantic import BaseModel, Field
 
-try:
-    from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential_jitter
-except Exception:  # pragma: no cover
-    def retry(**kwargs):
-        _ = kwargs
-
-        def decorator(fn):
-            return fn
-
-        return decorator
-
-    def retry_if_exception_type(exc):
-        return exc
-
-    def stop_after_attempt(attempts):
-        return attempts
-
-    def wait_exponential_jitter(initial: float, max: float):
-        _ = (initial, max)
-        return None
-
 from agents.researcher.config import ResearcherConfig
 from core.llm_router import LLMRouter
 from schemas.research import ResearchFact
+
+_MAX_REASK_OUTPUT_CHARS = 2000
 
 
 class LLMResearchResponse(BaseModel):
@@ -43,48 +26,106 @@ class StructuredLLMClient:
         self._router = llm_router
         self._config = config
 
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential_jitter(initial=0.5, max=4),
-        retry=retry_if_exception_type((TimeoutError,)),
-        reraise=True,
-    )
     async def query(self, prompt: str, system_prompt: str) -> LLMResearchResponse:
         parsed = await self.generate(prompt, system_prompt=system_prompt)
         return LLMResearchResponse.model_validate(parsed)
 
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential_jitter(initial=0.5, max=4),
-        retry=retry_if_exception_type((TimeoutError,)),
-        reraise=True,
-    )
     async def generate(self, prompt: str, *, system_prompt: str) -> dict[str, Any]:
-        try:
-            response = await self._router.query(prompt=prompt, system_prompt=system_prompt)
-        except StopAsyncIteration as exc:
-            raise ValueError("llm_empty_response") from exc
+        attempts = max(1, int(self._config.retry_attempts))
+        base_delay = max(0.0, float(self._config.retry_initial_delay))
+        last_error: Exception | None = None
+        for attempt in range(1, attempts + 1):
+            try:
+                return await self._generate_once(prompt, system_prompt=system_prompt)
+            except Exception as exc:  # noqa: BLE001
+                is_timeout = isinstance(exc, TimeoutError) or isinstance(
+                    exc, asyncio.exceptions.TimeoutError
+                )
+                if not is_timeout:
+                    raise
+                last_error = TimeoutError("llm_timeout")
+                if attempt >= attempts:
+                    break
+                await asyncio.sleep(base_delay * (2 ** (attempt - 1)))
+        if last_error is not None:
+            raise last_error
+        raise ValueError("llm_generate_failed")
+
+    async def _generate_once(self, prompt: str, *, system_prompt: str) -> dict[str, Any]:
+        response = await self._query_router(prompt=prompt, system_prompt=system_prompt)
         parsed = self._parse_json(response.text)
         if parsed is not None:
             return parsed
-        if "{" not in response.text:
+        if not self._looks_like_json_candidate(response.text):
             raise ValueError("invalid_json_no_reask")
-
-        reask_prompt = (
-            "Return ONLY valid JSON object with keys facts and gaps. "
-            f"Previous output was invalid:\n{response.text}"
-        )
-        try:
-            reask = await self._router.query(prompt=reask_prompt, system_prompt=system_prompt)
-        except StopAsyncIteration as exc:
-            raise ValueError("llm_empty_response") from exc
+        reask_prompt = self._build_reask_prompt(prompt=prompt, invalid_output=response.text)
+        reask = await self._query_router(prompt=reask_prompt, system_prompt=system_prompt)
         reparsed = self._parse_json(reask.text)
         if reparsed is None:
             raise ValueError("invalid_json_after_reask")
         return reparsed
 
+    async def _query_router(self, *, prompt: str, system_prompt: str) -> Any:
+        try:
+            return await asyncio.wait_for(
+                self._router.query(prompt=prompt, system_prompt=system_prompt),
+                timeout=self._config.llm_timeout_seconds,
+            )
+        except StopAsyncIteration as exc:
+            raise ValueError("llm_empty_response") from exc
+        except Exception as exc:  # noqa: BLE001
+            is_timeout = isinstance(exc, TimeoutError) or isinstance(
+                exc, asyncio.exceptions.TimeoutError
+            )
+            if is_timeout:
+                raise TimeoutError("llm_timeout") from exc
+            raise
+
+    @staticmethod
+    def _build_reask_prompt(*, prompt: str, invalid_output: str) -> str:
+        clipped = invalid_output[:_MAX_REASK_OUTPUT_CHARS]
+        return (
+            "Требуется JSON-объект по схеме: "
+            '{"facts":[{"text":"...","applicability":"","confidence":0.0,"source_ids":["..."],'
+            '"evidence":[{"source_id":"...","quote":"...","locator":null}]}],"gaps":["..."]}.\n'
+            "Используй исходный контекст ниже и исправь ответ.\n\n"
+            f"Original prompt:\n{prompt[:4000]}\n\n"
+            f"Invalid output:\n{clipped}\n\n"
+            "Верни ТОЛЬКО JSON object, без markdown и пояснений."
+        )
+
     @staticmethod
     def _parse_json(payload: str) -> dict[str, Any] | None:
+        parsed = StructuredLLMClient._try_parse_object(payload)
+        if parsed is not None:
+            return parsed
+
+        stripped = payload.strip()
+        if stripped.startswith("```"):
+            lines = stripped.splitlines()
+            if len(lines) >= 3 and lines[0].startswith("```") and lines[-1].strip() == "```":
+                fenced_payload = "\n".join(lines[1:-1])
+                if lines[0].strip().lower() in {"```json", "```json5", "```"}:
+                    parsed = StructuredLLMClient._try_parse_object(fenced_payload.strip())
+                    if parsed is not None:
+                        return parsed
+
+        decoder = json.JSONDecoder()
+        for idx, char in enumerate(payload):
+            if char != "{":
+                continue
+            try:
+                obj, end = decoder.raw_decode(payload[idx:])
+            except JSONDecodeError:
+                continue
+            if isinstance(obj, dict) and payload[idx + end :].strip() in {"", "```"}:
+                return obj
+            if isinstance(obj, dict):
+                return obj
+        return None
+
+    @staticmethod
+    def _try_parse_object(payload: str) -> dict[str, Any] | None:
         try:
             parsed = json.loads(payload)
         except json.JSONDecodeError:
@@ -92,3 +133,8 @@ class StructuredLLMClient:
         if not isinstance(parsed, dict):
             return None
         return parsed
+
+    @staticmethod
+    def _looks_like_json_candidate(payload: str) -> bool:
+        stripped = payload.strip()
+        return "{" in stripped or stripped.startswith("```")

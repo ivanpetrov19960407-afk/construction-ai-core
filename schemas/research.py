@@ -14,13 +14,20 @@ class Diagnostic(BaseModel):
     stage: str
 
 
+class ResearchEvidence(BaseModel):
+    source_id: str
+    quote: str
+    locator: str | None = None
+
+
 class ResearchFact(BaseModel):
     """Найденный факт и оценка его применимости."""
 
     text: str
     applicability: str = ""
-    confidence: float = Field(ge=0.0, le=1.0)
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     source_ids: list[str] = Field(default_factory=list)
+    evidence: list[ResearchEvidence] = Field(default_factory=list)
 
 
 class ResearchSource(BaseModel):

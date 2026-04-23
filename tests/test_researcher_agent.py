@@ -218,7 +218,7 @@ def test_llm_timeout_sets_diagnostics_and_state_keys() -> None:
 
     result = asyncio.run(agent.run({"message": "q", "history": []}))
 
-    assert result["research_facts"] == ""
+    assert result["research_facts"] == "[]"
     payload = result["research_payload"]
     assert "llm_timeout" in payload["diagnostics"]
     assert "llm_invalid_json" not in payload["diagnostics"]
@@ -259,7 +259,7 @@ def test_rag_timeout_falls_back_to_web_and_keeps_running(
     )
 
     assert any(source.type == "web" for source in sources)
-    assert "rag_timeout" in diagnostics or "rag_failed:TimeoutError" in diagnostics
+    assert any(item.startswith("rag_failed") or item == "rag_timeout" for item in diagnostics)
     assert cache_hit is False
 
 

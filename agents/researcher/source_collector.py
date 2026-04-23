@@ -6,12 +6,12 @@ import json
 import math
 import re
 from ipaddress import ip_address
-from typing import Any
 from urllib.parse import urlparse
 
 try:
     from aiolimiter import AsyncLimiter
 except Exception:  # pragma: no cover
+
     class AsyncLimiter:
         def __init__(self, max_rate: float, time_period: float) -> None:
             _ = (max_rate, time_period)
@@ -22,6 +22,7 @@ except Exception:  # pragma: no cover
         async def __aexit__(self, exc_type, exc, tb) -> None:
             _ = (exc_type, exc, tb)
             return None
+
 
 from agents.researcher.config import ResearcherConfig
 from agents.researcher.security import InjectionGuard
@@ -55,6 +56,7 @@ class SourceCollector:
         self._config = config
         self._injection_guard = injection_guard or InjectionGuard(config)
         self._web_limiter = AsyncLimiter(max_rate=config.web_rate_limit_per_second, time_period=1)
+        self._web_limiter_loop_id: int | None = None
 
     async def collect(
         self,
@@ -64,6 +66,9 @@ class SourceCollector:
         access_scope: str | None,
         context: str,
         user_id: str | None = None,
+        org_id: str | None = None,
+        tenant_id: str | None = None,
+        project_id: str | None = None,
     ) -> tuple[list[ResearchSource], list[Diagnostic], bool]:
         """Collect, sanitize and rank sources.
 
@@ -72,8 +77,29 @@ class SourceCollector:
         so no raw untrusted content leaves this method.
         """
         diagnostics: list[Diagnostic] = []
-        _ = user_id
-        cache_key = self._cache_key(query, topic_scope, access_scope, context)
+        cache_key = self._cache_key(
+            query,
+            topic_scope,
+            access_scope,
+            context,
+            user_id=user_id,
+            org_id=org_id,
+            tenant_id=tenant_id,
+            project_id=project_id,
+        )
+        if (
+            access_scope
+            and access_scope != "public"
+            and not any([user_id, org_id, tenant_id, project_id])
+        ):
+            diagnostics.append(
+                Diagnostic(
+                    code="missing_access_context",
+                    message="private access_scope without user/org/tenant/project context",
+                    severity="warn",
+                    stage="collect",
+                )
+            )
         if self._cache is not None:
             try:
                 cached = await self._cache.get(cache_key)
@@ -107,7 +133,9 @@ class SourceCollector:
                     )
 
         rag_task = asyncio.create_task(self._collect_rag(query, topic_scope, access_scope, context))
-        web_task = asyncio.create_task(self._collect_web_deferred(query, topic_scope, delay_seconds=0.05))
+        web_task = asyncio.create_task(
+            self._collect_web_deferred(query, topic_scope, delay_seconds=0.05)
+        )
         rag_result: list[ResearchSource] | Exception
         try:
             rag_result = await rag_task
@@ -171,16 +199,18 @@ class SourceCollector:
         diagnostics.extend(rag_sanitization_diag)
         diagnostics.extend(web_sanitization_diag)
 
-        top_sources = sorted(
-            [*rag_sources, *web_sources], key=lambda s: s.score, reverse=True
-        )[: self._config.top_k_sources]
+        top_sources = sorted([*rag_sources, *web_sources], key=lambda s: s.score, reverse=True)[
+            : self._config.top_k_sources
+        ]
         compact_sources = self._truncate_sources(top_sources)
 
         if compact_sources and self._cache is not None:
             try:
                 await self._cache.set(
                     cache_key,
-                    json.dumps([source.model_dump() for source in compact_sources], ensure_ascii=False),
+                    json.dumps(
+                        [source.model_dump() for source in compact_sources], ensure_ascii=False
+                    ),
                     ttl=self._config.cache_ttl_seconds,
                 )
             except Exception:  # noqa: BLE001
@@ -236,6 +266,15 @@ class SourceCollector:
 
     async def _collect_web(self, query: str, topic_scope: str | None) -> list[ResearchSource]:
         web_query = "\n".join(part for part in [query, topic_scope] if part)
+        loop_id = id(asyncio.get_running_loop())
+        if self._web_limiter_loop_id is None:
+            self._web_limiter_loop_id = loop_id
+        elif self._web_limiter_loop_id != loop_id:
+            self._web_limiter = AsyncLimiter(
+                max_rate=self._config.web_rate_limit_per_second,
+                time_period=1,
+            )
+            self._web_limiter_loop_id = loop_id
         async with self._web_limiter:
             items = await asyncio.wait_for(
                 self._web_search_tool.run(web_query, max_results=self._config.top_k_sources),
@@ -265,7 +304,9 @@ class SourceCollector:
         if len(rag_sources) < self._config.web_min_rag_sources:
             return True
         avg_score = sum(s.score for s in rag_sources) / max(len(rag_sources), 1)
-        info_density = sum(len((s.snippet or "").split()) for s in rag_sources) / max(len(rag_sources), 1)
+        info_density = sum(len((s.snippet or "").split()) for s in rag_sources) / max(
+            len(rag_sources), 1
+        )
         composite = avg_score * math.log(len(rag_sources) + 1) * (info_density / 100.0)
         return composite < self._config.web_min_avg_score
 
@@ -283,13 +324,38 @@ class SourceCollector:
                 dedup[key] = source
         return list(dedup.values())
 
-    def _cache_key(self, query: str, topic_scope: str | None, access_scope: str | None, context: str) -> str:
+    def _cache_key(
+        self,
+        query: str,
+        topic_scope: str | None,
+        access_scope: str | None,
+        context: str,
+        *,
+        user_id: str | None = None,
+        org_id: str | None = None,
+        tenant_id: str | None = None,
+        project_id: str | None = None,
+    ) -> str:
         norm_query = _WHITESPACE_RE.sub(" ", query).strip().lower()
         query_hash = hashlib.sha256(f"{norm_query}|{context}".encode()).hexdigest()[:16]
-        scope_hash = hashlib.sha256(f"{topic_scope or ''}|{access_scope or ''}".encode()).hexdigest()[:12]
+        scope_hash = hashlib.sha256(
+            f"{topic_scope or ''}|{access_scope or ''}".encode()
+        ).hexdigest()[:12]
+        if access_scope == "public":
+            identity = "shared"
+        else:
+            identity = "|".join(
+                [
+                    f"user:{user_id or ''}",
+                    f"org:{org_id or ''}",
+                    f"tenant:{tenant_id or ''}",
+                    f"project:{project_id or ''}",
+                ]
+            )
+        identity_hash = hashlib.sha256(identity.encode()).hexdigest()[:12]
         return (
             f"research:{self._config.cache_schema_version}:{self._config.cache_embedding_version}:"
-            f"{query_hash}:{scope_hash}"
+            f"{query_hash}:{scope_hash}:{identity_hash}"
         )
 
     @staticmethod
