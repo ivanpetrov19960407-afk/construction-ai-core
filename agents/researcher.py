@@ -71,7 +71,7 @@ class ResearcherAgent(BaseAgent):
         context = str(state.get("context", "")).strip()
 
         all_sources = await self._collect_sources(message, scope)
-        prompt = self._build_prompt(message, context, all_sources)
+        prompt = self._build_research_prompt(message, context, all_sources)
 
         response = await self.llm_router.query(prompt=prompt, system_prompt=self.system_prompt)
         payload = self._parse_llm_json(message, response.text, all_sources)
@@ -131,7 +131,7 @@ class ResearcherAgent(BaseAgent):
             return True
         return self._avg_score(rag_sources) < 0.35
 
-    def _build_prompt(self, message: str, context: str, sources: list[ResearchSource]) -> str:
+    def _build_research_prompt(self, message: str, context: str, sources: list[ResearchSource]) -> str:
         chunks_text = "\n".join(self._source_brief(s) for s in sources) or "(релевантные источники не найдены)"
         prompt = f"Источники:\n{chunks_text}\n\nЗапрос пользователя: {message}"
         if context:
