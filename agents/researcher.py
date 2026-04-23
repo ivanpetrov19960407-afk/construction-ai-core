@@ -139,11 +139,12 @@ class ResearcherAgent(BaseAgent):
             for idx, item in enumerate(web_items, start=len(rag_sources))
         ]
         sources = [*rag_sources, *web_sources]
-        await self.cache.set(
-            cache_key,
-            json.dumps([source.model_dump() for source in sources], ensure_ascii=False),
-            ttl=3600,
-        )
+        if sources:
+            await self.cache.set(
+                cache_key,
+                json.dumps([source.model_dump() for source in sources], ensure_ascii=False),
+                ttl=3600,
+            )
         return sources
 
     def _need_web_fallback(self, rag_sources: list[ResearchSource]) -> bool:
