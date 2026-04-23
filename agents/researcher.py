@@ -145,7 +145,8 @@ class ResearcherAgent(BaseAgent):
 
         if self._need_web_fallback(rag_sources):
             try:
-                web_items = await self.web_search_tool.run(retrieval_query, max_results=5)
+                web_query = self._build_web_query(message, topic_scope)
+                web_items = await self.web_search_tool.run(web_query, max_results=5)
             except Exception as exc:
                 logger.warning("researcher.web_failed: %s", exc)
                 web_items = []
@@ -294,6 +295,13 @@ class ResearcherAgent(BaseAgent):
             parts.append(f"Тема: {topic_scope}")
         if context:
             parts.append(f"Контекст: {context}")
+        return "\n".join(parts).strip()
+
+    @staticmethod
+    def _build_web_query(message: str, topic_scope: str | None) -> str:
+        parts = [message]
+        if topic_scope:
+            parts.append(f"Тема: {topic_scope}")
         return "\n".join(parts).strip()
 
     @staticmethod

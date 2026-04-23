@@ -174,3 +174,33 @@ def test_researcher_cache_key_is_context_aware():
     first_key = agent.cache.set.await_args_list[0].args[0]
     second_key = agent.cache.set.await_args_list[1].args[0]
     assert first_key != second_key
+
+
+def test_researcher_web_query_does_not_include_context():
+    agent = ResearcherAgent(cast(Any, _mock_llm_router("Ответ")))
+
+    class _Rag:
+        async def search(self, query: str, n_results: int = 5, filter_scope: str | None = None):
+            _ = (query, n_results, filter_scope)
+            return []
+
+    web_tool = SimpleNamespace(
+        run=AsyncMock(
+            return_value=[
+                {"title": "Источник", "url": "https://example.org", "snippet": "Факт", "score": 0.5}
+            ]
+        )
+    )
+    agent.rag_engine = cast(Any, _Rag())
+    agent.web_search_tool = cast(Any, web_tool)
+
+    asyncio.run(
+        agent.run(
+            {"message": "бетон", "topic_scope": "монолит", "context": "секретный контекст", "history": []}
+        )
+    )
+
+    web_query = web_tool.run.await_args.args[0]
+    assert "секретный контекст" not in web_query
+    assert "бетон" in web_query
+    assert "монолит" in web_query
