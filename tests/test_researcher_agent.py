@@ -249,7 +249,7 @@ def test_rag_timeout_falls_back_to_web_and_keeps_running(
     )
     monkeypatch.setattr(settings, "research_rag_timeout_seconds", 0.001)
 
-    sources, diagnostics = asyncio.run(
+    sources, diagnostics, cache_hit = asyncio.run(
         agent._collect_sources(
             "q",
             topic_scope=None,
@@ -260,6 +260,7 @@ def test_rag_timeout_falls_back_to_web_and_keeps_running(
 
     assert any(source.type == "web" for source in sources)
     assert "rag_timeout" in diagnostics or "rag_failed:TimeoutError" in diagnostics
+    assert cache_hit is False
 
 
 def test_cache_failure_does_not_break_agent() -> None:
@@ -300,7 +301,7 @@ def test_compute_confidence_overall_edge_cases() -> None:
 def test_collection_diagnostics_are_merged_and_deduplicated() -> None:
     agent = _mk_agent(llm_reply='{"facts":[],"gaps":["g1","g1"]}')
     agent._collect_sources = AsyncMock(
-        return_value=([], ["cache_unavailable", "cache_unavailable"])
+        return_value=([], ["cache_unavailable", "cache_unavailable"], False)
     )  # type: ignore[method-assign]
 
     result = asyncio.run(agent.run({"message": "q", "history": []}))
