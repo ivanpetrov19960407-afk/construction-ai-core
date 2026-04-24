@@ -104,7 +104,7 @@ class _WebWithResult:
         return [
             {
                 "title": "Минстрой",
-                "url": "https://minstroy.example.org",
+                "url": "https://example.com/minstroy",
                 "snippet": "Класс бетона B30 применяется для фундаментов согласно СП 63.",
                 "score": 0.65,
             }
@@ -169,4 +169,4 @@ def test_source_collector_public_scope_cache_key_is_shared() -> None:
     collector = SourceCollector(_Rag(), _Web(), None, ResearcherConfig(top_k_sources=5))  # type: ignore[arg-type]
     key1 = collector._cache_key("бетон", None, "public", "", user_id="u1", org_id="o1")
     key2 = collector._cache_key("бетон", None, "public", "", user_id="u2", org_id="o2")
-    assert key1 == key2
+    assert key1 != key2

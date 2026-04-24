@@ -5,9 +5,10 @@ import json
 from json import JSONDecodeError
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from agents.researcher.config import ResearcherConfig
+from agents.researcher.errors import ResearchLLMError
 from core.llm_router import LLMRouter
 from schemas.research import ResearchFact
 
@@ -18,6 +19,8 @@ class LLMResearchResponse(BaseModel):
     facts: list[ResearchFact] = Field(default_factory=list)
     gaps: list[str] = Field(default_factory=list)
 
+    model_config = ConfigDict(extra="forbid")
+
 
 class StructuredLLMClient:
     """Typed JSON client over LLMRouter."""
@@ -26,9 +29,24 @@ class StructuredLLMClient:
         self._router = llm_router
         self._config = config
 
-    async def query(self, prompt: str, system_prompt: str) -> LLMResearchResponse:
+    async def query(self, prompt: str, system_prompt: str, *, allowed_source_ids: set[str] | None = None) -> LLMResearchResponse:
         parsed = await self.generate(prompt, system_prompt=system_prompt)
-        return LLMResearchResponse.model_validate(parsed)
+        try:
+            response = LLMResearchResponse.model_validate(parsed)
+        except ValidationError as exc:
+            raise ResearchLLMError("schema_validation_failure") from exc
+
+        if allowed_source_ids is not None:
+            patched_facts: list[ResearchFact] = []
+            for fact in response.facts:
+                unknown = [sid for sid in fact.source_ids if sid not in allowed_source_ids]
+                if unknown:
+                    fact = fact.model_copy(
+                        update={"source_ids": [sid for sid in fact.source_ids if sid in allowed_source_ids]}
+                    )
+                patched_facts.append(fact)
+            response = response.model_copy(update={"facts": patched_facts})
+        return response
 
     async def generate(self, prompt: str, *, system_prompt: str) -> dict[str, Any]:
         attempts = max(1, int(self._config.retry_attempts))
@@ -37,19 +55,14 @@ class StructuredLLMClient:
         for attempt in range(1, attempts + 1):
             try:
                 return await self._generate_once(prompt, system_prompt=system_prompt)
-            except Exception as exc:  # noqa: BLE001
-                is_timeout = isinstance(exc, TimeoutError) or isinstance(
-                    exc, asyncio.exceptions.TimeoutError
-                )
-                if not is_timeout:
-                    raise
-                last_error = TimeoutError("llm_timeout")
+            except TimeoutError as exc:
+                last_error = exc
                 if attempt >= attempts:
                     break
                 await asyncio.sleep(base_delay * (2 ** (attempt - 1)))
         if last_error is not None:
             raise last_error
-        raise ValueError("llm_generate_failed")
+        raise ResearchLLMError("llm_generate_failed")
 
     async def _generate_once(self, prompt: str, *, system_prompt: str) -> dict[str, Any]:
         response = await self._query_router(prompt=prompt, system_prompt=system_prompt)
@@ -57,13 +70,18 @@ class StructuredLLMClient:
         if parsed is not None:
             return parsed
         if not self._looks_like_json_candidate(response.text):
-            raise ValueError("invalid_json_no_reask")
-        reask_prompt = self._build_reask_prompt(prompt=prompt, invalid_output=response.text)
-        reask = await self._query_router(prompt=reask_prompt, system_prompt=system_prompt)
-        reparsed = self._parse_json(reask.text)
-        if reparsed is None:
-            raise ValueError("invalid_json_after_reask")
-        return reparsed
+            raise ResearchLLMError("malformed_json")
+
+        reask_limit = max(0, int(self._config.llm_reask_limit))
+        invalid_output = response.text
+        for _ in range(reask_limit):
+            reask_prompt = self._build_reask_prompt(prompt=prompt, invalid_output=invalid_output)
+            reask = await self._query_router(prompt=reask_prompt, system_prompt=system_prompt)
+            reparsed = self._parse_json(reask.text)
+            if reparsed is not None:
+                return reparsed
+            invalid_output = reask.text
+        raise ResearchLLMError("malformed_json_after_reask")
 
     async def _query_router(self, *, prompt: str, system_prompt: str) -> Any:
         try:
@@ -72,21 +90,18 @@ class StructuredLLMClient:
                 timeout=self._config.llm_timeout_seconds,
             )
         except StopAsyncIteration as exc:
-            raise ValueError("llm_empty_response") from exc
+            raise ResearchLLMError("llm_empty_response") from exc
         except Exception as exc:  # noqa: BLE001
-            is_timeout = isinstance(exc, TimeoutError) or isinstance(
-                exc, asyncio.exceptions.TimeoutError
-            )
-            if is_timeout:
+            if isinstance(exc, (TimeoutError, asyncio.exceptions.TimeoutError)):
                 raise TimeoutError("llm_timeout") from exc
-            raise
+            raise ResearchLLMError("llm_router_unavailable") from exc
 
     @staticmethod
     def _build_reask_prompt(*, prompt: str, invalid_output: str) -> str:
         clipped = invalid_output[:_MAX_REASK_OUTPUT_CHARS]
         return (
             "Требуется JSON-объект по схеме: "
-            '{"facts":[{"text":"...","applicability":"","confidence":0.0,"source_ids":["..."],'
+            '{"facts":[{"text":"...","applicability":"","confidence":0.0,"source_ids":["..."],' 
             '"evidence":[{"source_id":"...","quote":"...","locator":null}]}],"gaps":["..."]}.\n'
             "Используй исходный контекст ниже и исправь ответ.\n\n"
             f"Original prompt:\n{prompt[:4000]}\n\n"
