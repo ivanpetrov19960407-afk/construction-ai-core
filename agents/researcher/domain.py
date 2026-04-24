@@ -1,19 +1,10 @@
 from __future__ import annotations
 
-import re
-from dataclasses import dataclass
-
 from schemas.research import Diagnostic, ResearchSource
 
 _NORM_HINTS = ("сп", "гост", "снип", "санпин", "фз", "приказ")
 _LAW_HINTS = ("федеральный закон", "кодекс", "постановление")
 _PROJECT_HINTS = ("проект", "рабочая документация", "рд", "пд")
-
-
-@dataclass(frozen=True)
-class VersionConflict:
-    source_a: str
-    source_b: str
 
 
 def classify_source_type(source: ResearchSource) -> str:
@@ -45,16 +36,6 @@ def is_active_source(source: ResearchSource) -> bool:
     if source.is_active is None:
         return True
     return bool(source.is_active)
-
-
-def compare_versions(source_a: ResearchSource, source_b: ResearchSource) -> int:
-    va = _version_tuple(source_a.document_version)
-    vb = _version_tuple(source_b.document_version)
-    if va > vb:
-        return 1
-    if va < vb:
-        return -1
-    return 0
 
 
 def detect_version_conflict(sources: list[ResearchSource]) -> list[Diagnostic]:
@@ -128,10 +109,3 @@ def diagnostics_for_sources(sources: list[ResearchSource]) -> list[Diagnostic]:
                 )
             )
     return diagnostics
-
-
-def _version_tuple(value: str | None) -> tuple[int, ...]:
-    if not value:
-        return ()
-    nums = [int(x) for x in re.findall(r"\d+", value)]
-    return tuple(nums)
