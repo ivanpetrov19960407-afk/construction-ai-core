@@ -31,7 +31,9 @@ class _Router:
 
 
 def test_invalid_json_returns_malformed_error() -> None:
-    client = StructuredLLMClient(_Router(["not-json", "still not"]), ResearcherConfig(llm_reask_limit=1))  # type: ignore[arg-type]
+    client = StructuredLLMClient(
+        _Router(["not-json", "still not"]), ResearcherConfig(llm_reask_limit=1)
+    )  # type: ignore[arg-type]
     with pytest.raises(ResearchLLMError) as exc:
         asyncio.run(client.generate("p", system_prompt="s"))
     assert exc.value.code == "llm_malformed_json"
@@ -59,7 +61,9 @@ def test_hallucinated_source_id_generates_diagnostic() -> None:
 
 
 def test_reask_limit_respected() -> None:
-    client = StructuredLLMClient(_Router(["bad", "bad2", "bad3"]), ResearcherConfig(llm_reask_limit=1))  # type: ignore[arg-type]
+    client = StructuredLLMClient(
+        _Router(["bad", "bad2", "bad3"]), ResearcherConfig(llm_reask_limit=1)
+    )  # type: ignore[arg-type]
     with pytest.raises(ResearchLLMError):
         asyncio.run(client.generate("p", system_prompt="s"))
 
@@ -74,7 +78,7 @@ def test_timeout_distinct_from_malformed_json() -> None:
 
 
 def test_markdown_fenced_json_allowed_only_by_config() -> None:
-    payload = "```json\n{\"facts\": [], \"gaps\": []}\n```"
+    payload = '```json\n{"facts": [], "gaps": []}\n```'
     blocked = StructuredLLMClient(_Router([payload]), ResearcherConfig())  # type: ignore[arg-type]
     with pytest.raises(ResearchLLMError):
         asyncio.run(blocked.generate("p", system_prompt="s"))

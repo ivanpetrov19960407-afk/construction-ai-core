@@ -12,7 +12,31 @@ class _Collection:
         self.last_where = where
         return {
             "documents": [["chunk text"]],
-            "metadatas": [[{"source": "doc", "page": 2, "document_id": "d1", "chunk_id": "c1", "jurisdiction": "RU", "authority": "Минстрой", "document_version": "2025", "effective_from": "2025-01-01", "effective_to": None, "is_active": True, "ingested_at": "2026-01-01", "checksum": "x", "text_hash": "y", "source_type": "norm", "quality_score": 0.9, "tenant_id": "t1", "org_id": "o1", "project_id": "p1", "user_id": "u1"}]],
+            "metadatas": [
+                [
+                    {
+                        "source": "doc",
+                        "page": 2,
+                        "document_id": "d1",
+                        "chunk_id": "c1",
+                        "jurisdiction": "RU",
+                        "authority": "Минстрой",
+                        "document_version": "2025",
+                        "effective_from": "2025-01-01",
+                        "effective_to": None,
+                        "is_active": True,
+                        "ingested_at": "2026-01-01",
+                        "checksum": "x",
+                        "text_hash": "y",
+                        "source_type": "norm",
+                        "quality_score": 0.9,
+                        "tenant_id": "t1",
+                        "org_id": "o1",
+                        "project_id": "p1",
+                        "user_id": "u1",
+                    }
+                ]
+            ],
             "distances": [[0.1]],
         }
 

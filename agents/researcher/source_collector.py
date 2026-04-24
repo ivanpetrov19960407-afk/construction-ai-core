@@ -174,8 +174,8 @@ class SourceCollector:
         web_used = False
         effective_scope = (access_scope or "public").strip()
         non_public_scope = effective_scope != "public"
-        web_allowed = (
-            not non_public_scope or bool(self._config.allow_external_web_for_private_scopes)
+        web_allowed = not non_public_scope or bool(
+            self._config.allow_external_web_for_private_scopes
         )
         if need_web and web_allowed:
             try:
@@ -383,9 +383,7 @@ class SourceCollector:
             self._web_limiter_loop_id = loop_id
         async with self._web_limiter:
             items = await asyncio.wait_for(
-                self._web_search_tool.run(
-                    web_query, max_results=self._config.candidate_pool_size
-                ),
+                self._web_search_tool.run(web_query, max_results=self._config.candidate_pool_size),
                 timeout=self._config.web_timeout_seconds,
             )
         sources: list[ResearchSource] = []

@@ -31,22 +31,36 @@ def test_conflicting_fact_lowers_score() -> None:
 def test_inactive_source_lowers_score() -> None:
     cfg = ResearcherConfig()
     fact = _supported_fact("s1")
-    active = ConfidenceScorer.score([fact], [ResearchSource(id="s1", type="rag", title="СП", score=0.8, is_active=True)], cfg)
-    inactive = ConfidenceScorer.score([fact], [ResearchSource(id="s1", type="rag", title="СП", score=0.8, is_active=False)], cfg)
+    active = ConfidenceScorer.score(
+        [fact], [ResearchSource(id="s1", type="rag", title="СП", score=0.8, is_active=True)], cfg
+    )
+    inactive = ConfidenceScorer.score(
+        [fact], [ResearchSource(id="s1", type="rag", title="СП", score=0.8, is_active=False)], cfg
+    )
     assert inactive.support_score < active.support_score
 
 
 def test_missing_jurisdiction_penalty_only_for_normative() -> None:
     cfg = ResearcherConfig()
     fact = _supported_fact("s1")
-    norm = ConfidenceScorer.score([fact], [ResearchSource(id="s1", type="rag", title="ГОСТ 1", score=0.8, jurisdiction=None)], cfg)
-    web = ConfidenceScorer.score([fact], [ResearchSource(id="s1", type="web", title="blog", score=0.8, jurisdiction=None)], cfg)
+    norm = ConfidenceScorer.score(
+        [fact],
+        [ResearchSource(id="s1", type="rag", title="ГОСТ 1", score=0.8, jurisdiction=None)],
+        cfg,
+    )
+    web = ConfidenceScorer.score(
+        [fact],
+        [ResearchSource(id="s1", type="web", title="blog", score=0.8, jurisdiction=None)],
+        cfg,
+    )
     assert norm.recency_score < web.recency_score
 
 
 def test_multiple_independent_sources_increase_score() -> None:
     cfg = ResearcherConfig()
-    one = ConfidenceScorer.score([_supported_fact("s1")], [ResearchSource(id="s1", type="rag", title="doc", score=0.8)], cfg)
+    one = ConfidenceScorer.score(
+        [_supported_fact("s1")], [ResearchSource(id="s1", type="rag", title="doc", score=0.8)], cfg
+    )
     multi = ConfidenceScorer.score(
         [_supported_fact("s1"), _supported_fact("s2")],
         [

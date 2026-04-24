@@ -4,8 +4,12 @@ from schemas.research import ResearchSource
 
 def test_active_norm_beats_inactive_norm() -> None:
     sources = [
-        ResearchSource(id="a", type="rag", title="СП 63", is_active=True, document_version="2025", score=0.6),
-        ResearchSource(id="b", type="rag", title="СП 63", is_active=False, document_version="2012", score=0.9),
+        ResearchSource(
+            id="a", type="rag", title="СП 63", is_active=True, document_version="2025", score=0.6
+        ),
+        ResearchSource(
+            id="b", type="rag", title="СП 63", is_active=False, document_version="2012", score=0.9
+        ),
     ]
     ranked = choose_primary_sources("актуальная норма", sources)
     assert ranked[0].id == "a"
@@ -13,8 +17,12 @@ def test_active_norm_beats_inactive_norm() -> None:
 
 def test_conflicting_versions_detected() -> None:
     sources = [
-        ResearchSource(id="a", type="rag", title="СП 63", document="СП 63", document_version="2012", score=0.9),
-        ResearchSource(id="b", type="rag", title="СП 63", document="СП 63", document_version="2025", score=0.8),
+        ResearchSource(
+            id="a", type="rag", title="СП 63", document="СП 63", document_version="2012", score=0.9
+        ),
+        ResearchSource(
+            id="b", type="rag", title="СП 63", document="СП 63", document_version="2025", score=0.8
+        ),
     ]
     diags = detect_version_conflict(sources)
     assert any(d.code == "source_version_conflict" for d in diags)
