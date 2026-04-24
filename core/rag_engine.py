@@ -36,12 +36,29 @@ class RAGEngine:
         query: str,
         n_results: int = 5,
         filter_scope: str | None = None,
+        tenant_id: str | None = None,
+        org_id: str | None = None,
+        project_id: str | None = None,
+        user_id: str | None = None,
     ) -> list[dict]:
         """Найти релевантные чанки в ChromaDB."""
         query_embedding = self._embed_texts([query])[0]
         where: dict[str, Any] | None = None
+        where_clauses: list[dict[str, Any]] = []
         if filter_scope:
-            where = {"scope": {"$contains": filter_scope}}
+            where_clauses.append({"scope": {"$contains": filter_scope}})
+        if tenant_id:
+            where_clauses.append({"tenant_id": tenant_id})
+        if org_id:
+            where_clauses.append({"org_id": org_id})
+        if project_id:
+            where_clauses.append({"project_id": project_id})
+        if user_id:
+            where_clauses.append({"user_id": user_id})
+        if len(where_clauses) == 1:
+            where = where_clauses[0]
+        elif where_clauses:
+            where = {"$and": where_clauses}
 
         result = cast(Any, self.collection).query(
             query_embeddings=[query_embedding],

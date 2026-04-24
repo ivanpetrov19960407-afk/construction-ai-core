@@ -1,6 +1,9 @@
 import asyncio
 
+import pytest
+
 from agents.researcher.config import ResearcherConfig
+from agents.researcher.errors import ResearchSourceError
 from agents.researcher.source_collector import SourceCollector
 
 
@@ -17,6 +20,12 @@ class _Web:
     async def run(self, query: str, max_results: int):
         _ = (query, max_results)
         return [{"title": "x", "url": "https://example.com", "snippet": "s", "score": 0.5}]
+
+
+class _LegacyRagNoIdentityKwargs:
+    async def search(self, query: str, n_results: int, filter_scope: str | None = None):
+        _ = (query, n_results, filter_scope)
+        return [{"source": "СП", "page": 1, "text": "Бетон B30", "score": 0.9}]
 
 
 def test_source_collector_dedup() -> None:
@@ -168,3 +177,22 @@ def test_source_collector_public_scope_cache_key_is_shared() -> None:
     key1 = collector._cache_key("бетон", None, "public", "", user_id="u1", org_id="o1")
     key2 = collector._cache_key("бетон", None, "public", "", user_id="u2", org_id="o2")
     assert key1 != key2
+
+
+def test_non_public_scope_fails_if_rag_engine_cannot_accept_identity_filters() -> None:
+    collector = SourceCollector(
+        _LegacyRagNoIdentityKwargs(),  # type: ignore[arg-type]
+        _Web(),  # type: ignore[arg-type]
+        None,
+        ResearcherConfig(top_k_sources=5),
+    )
+    with pytest.raises(ResearchSourceError):
+        asyncio.run(
+            collector.collect(
+                "бетон",
+                topic_scope=None,
+                access_scope="tenant",
+                context="",
+                tenant_id="t1",
+            )
+        )

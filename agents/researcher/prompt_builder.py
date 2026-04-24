@@ -88,6 +88,20 @@ class PromptBuilder:
                 envelope["sources"] = sources_payload
                 envelope["omitted_sources_count"] = omitted + 1
                 body = json.dumps(envelope, ensure_ascii=False, indent=2)
+        if len(body) > cfg.max_prompt_chars:
+            # If query/context alone are too large, shrink these fields deterministically.
+            query_payload = safe_query
+            context_payload = safe_context
+            while len(body) > cfg.max_prompt_chars and (query_payload or context_payload):
+                if len(context_payload) >= len(query_payload) and context_payload:
+                    context_payload = context_payload[: max(0, len(context_payload) - 128)]
+                elif query_payload:
+                    query_payload = query_payload[: max(0, len(query_payload) - 128)]
+                envelope["context"] = context_payload or "(trimmed)"
+                envelope["query"] = query_payload or "(trimmed)"
+                body = json.dumps(envelope, ensure_ascii=False, indent=2)
+        if len(body) > cfg.max_prompt_chars:
+            raise ValueError("PromptBuilder could not fit prompt into max_prompt_chars")
         return body
 
     @staticmethod

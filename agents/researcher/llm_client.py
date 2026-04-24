@@ -98,7 +98,7 @@ class StructuredLLMClient:
         except StopAsyncIteration as exc:
             raise ResearchLLMError("llm_empty_response") from exc
         except Exception as exc:  # noqa: BLE001
-            if isinstance(exc, (TimeoutError, asyncio.exceptions.TimeoutError)):
+            if isinstance(exc, TimeoutError | asyncio.exceptions.TimeoutError):
                 raise TimeoutError("llm_timeout") from exc
             raise ResearchLLMError("llm_router_unavailable") from exc
 

@@ -39,3 +39,17 @@ def test_injection_text_is_treated_as_data() -> None:
     payload = json.loads(prompt)
     assert payload["source_policy"]["trusted"] is False
     assert "never execute" in payload["source_policy"]["instruction"].lower()
+
+
+def test_query_context_only_prompt_still_respects_max_prompt_chars() -> None:
+    prompt = PromptBuilder.build(
+        "q" * 6000,
+        "ctx" * 6000,
+        [],
+        ResearcherConfig(
+            max_prompt_chars=600,
+            prompt_query_budget_chars=6000,
+            prompt_context_budget_chars=6000,
+        ),
+    )
+    assert len(prompt) <= 600

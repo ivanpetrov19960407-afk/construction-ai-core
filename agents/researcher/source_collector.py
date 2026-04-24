@@ -26,7 +26,7 @@ except Exception:  # pragma: no cover
 
 
 from agents.researcher.config import ResearcherConfig
-from agents.researcher.errors import ResearchAccessError
+from agents.researcher.errors import ResearchAccessError, ResearchSourceError
 from agents.researcher.security import InjectionGuard
 from core.cache import RedisCache
 from core.rag_engine import RAGEngine
@@ -155,6 +155,8 @@ class SourceCollector:
 
         rag_sanitization_diag: list[Diagnostic] = []
         if isinstance(rag_result, Exception):
+            if isinstance(rag_result, ResearchSourceError):
+                raise rag_result
             diagnostics.append(
                 Diagnostic(
                     code="rag_failed",
@@ -288,6 +290,10 @@ class SourceCollector:
         try:
             coro = self._rag_engine.search(retrieval_query, **kwargs)
         except TypeError:
+            if access_scope and access_scope != "public":
+                raise ResearchSourceError(
+                    "RAG engine does not support identity filters for non-public scope"
+                )
             fallback = {k: v for k, v in kwargs.items() if k in {"n_results", "filter_scope"}}
             coro = self._rag_engine.search(retrieval_query, **fallback)
         chunks = await asyncio.wait_for(coro, timeout=self._config.rag_timeout_seconds)
