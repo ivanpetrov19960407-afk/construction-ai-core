@@ -92,18 +92,23 @@ class ConfidenceScorer:
                 facts_with_supported_evidence += 1
 
             for sid in fact.source_ids:
-                src = source_by_id.get(sid)
-                if src is None:
+                source_item = source_by_id.get(sid)
+                if source_item is None:
                     continue
                 unique_sources.add(sid)
                 cited_scores.append(
-                    src.quality_score if src.quality_score is not None else src.score
+                    source_item.quality_score
+                    if source_item.quality_score is not None
+                    else source_item.score
                 )
-                doc_key = (src.document_id or src.document or src.title, src.authority or "")
+                doc_key = (
+                    source_item.document_id or source_item.document or source_item.title,
+                    source_item.authority or "",
+                )
                 independent_documents.add(doc_key)
-                if src.is_active is False:
+                if source_item.is_active is False:
                     inactive_hits += 1
-                if is_normative_source(src) and not src.jurisdiction:
+                if is_normative_source(source_item) and not source_item.jurisdiction:
                     missing_jurisdiction_normative_hits += 1
 
         evidence_coverage = facts_with_supported_evidence / max(len(facts), 1)

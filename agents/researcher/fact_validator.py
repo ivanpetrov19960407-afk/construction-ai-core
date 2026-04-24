@@ -129,7 +129,10 @@ class FactValidator:
                         diagnostics.append(
                             Diagnostic(
                                 code="fact_conflicting_evidence",
-                                message=f"fact#{idx}: conflicting evidence for source_id={source_id}",
+                                message=(
+                                    f"fact#{idx}: conflicting evidence "
+                                    f"for source_id={source_id}"
+                                ),
                                 severity="warn",
                                 component="fact_validator",
                                 stage="validate",
@@ -140,7 +143,10 @@ class FactValidator:
                         diagnostics.append(
                             Diagnostic(
                                 code="fact_quote_not_entailing",
-                                message=f"fact#{idx}: quote not entailing for source_id={source_id}",
+                                message=(
+                                    f"fact#{idx}: quote not entailing "
+                                    f"for source_id={source_id}"
+                                ),
                                 severity="warn",
                                 component="fact_validator",
                                 stage="validate",
@@ -152,7 +158,10 @@ class FactValidator:
                         diagnostics.append(
                             Diagnostic(
                                 code="snippet_only_evidence",
-                                message=f"fact#{idx}: evidence based on snippet only for {source_id}",
+                                message=(
+                                    f"fact#{idx}: evidence based on snippet "
+                                    f"only for {source_id}"
+                                ),
                                 severity="info",
                                 component="fact_validator",
                                 stage="validate",

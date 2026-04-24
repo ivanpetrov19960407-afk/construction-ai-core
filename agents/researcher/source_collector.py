@@ -520,7 +520,15 @@ class SourceCollector:
         for source in sources:
             updates: dict[str, str | None] = {}
             flagged = False
-            for field in ("title", "document", "section", "locator", "snippet", "chunk_text", "full_text"):
+            for field in (
+                "title",
+                "document",
+                "section",
+                "locator",
+                "snippet",
+                "chunk_text",
+                "full_text",
+            ):
                 raw = getattr(source, field) or ""
                 clean, redacted = InjectionGuard.sanitize_snippet(raw)
                 updates[field] = clean

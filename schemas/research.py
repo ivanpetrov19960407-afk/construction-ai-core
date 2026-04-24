@@ -106,7 +106,7 @@ class ResearchSource(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    def to_public_source(self) -> "ResearchSource":
+    def to_public_source(self) -> ResearchSource:
         return self.model_copy(
             update={"tenant_id": None, "project_id": None, "org_id": None, "user_id": None}
         )
