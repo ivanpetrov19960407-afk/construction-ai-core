@@ -257,7 +257,9 @@ class ResearcherAgent(BaseAgent):
         finally:
             RESEARCHER_LLM_DURATION_SECONDS.observe(perf_counter() - llm_start)
 
-        validated_facts, validation_diag = self._validator.validate_facts(llm_response.facts, sources)
+        validated_facts, validation_diag = self._validator.validate_facts(
+            llm_response.facts, sources
+        )
 
         confidence = self._scorer.compute(validated_facts, sources)
         gaps = list(dict.fromkeys(llm_response.gaps))
@@ -278,13 +280,19 @@ class ResearcherAgent(BaseAgent):
             confidence_breakdown=confidence.model_dump(),
         )
 
-        safe_facts_artifact = json.dumps([fact.model_dump() for fact in validated_facts], ensure_ascii=False)
+        safe_facts_artifact = json.dumps(
+            [fact.model_dump() for fact in validated_facts], ensure_ascii=False
+        )
         state["research_facts"] = safe_facts_artifact
         state["research_payload"] = payload.model_dump()
-        logger.info("research_orchestrated", diagnostics=len(diag_struct), facts=len(validated_facts))
+        logger.info(
+            "research_orchestrated", diagnostics=len(diag_struct), facts=len(validated_facts)
+        )
         return self._update_state(state, safe_facts_artifact)
 
-    async def _collect_sources(self, message: str, **kwargs: Any) -> tuple[list, list[Diagnostic], bool]:
+    async def _collect_sources(
+        self, message: str, **kwargs: Any
+    ) -> tuple[list, list[Diagnostic], bool]:
         await self._ensure_initialized()
         if self._collector is None:
             raise ResearchSourceError("collector_not_initialized")
@@ -316,7 +324,10 @@ class ResearcherAgent(BaseAgent):
         for legacy_key in ("scope", "role"):
             if legacy_key in state:
                 warnings.warn(
-                    f"Key '{legacy_key}' is deprecated for ResearcherAgent; use 'access_scope' instead.",
+                    (
+                        f"Key '{legacy_key}' is deprecated for ResearcherAgent; "
+                        "use 'access_scope' instead."
+                    ),
                     DeprecationWarning,
                     stacklevel=3,
                 )

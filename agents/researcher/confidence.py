@@ -67,7 +67,10 @@ class ConfidenceScorer:
                 conflict_hits += 1
             evidence_supported = 0
             for ev in fact.evidence:
-                if ev.source_id in source_by_id and ev.support_status in {"supported", "conflicting"}:
+                if ev.source_id in source_by_id and ev.support_status in {
+                    "supported",
+                    "conflicting",
+                }:
                     evidence_supported += 1
             if evidence_supported > 0:
                 facts_with_supported_evidence += 1
@@ -77,7 +80,9 @@ class ConfidenceScorer:
                 if src is None:
                     continue
                 unique_sources.add(sid)
-                cited_scores.append(src.quality_score if src.quality_score is not None else src.score)
+                cited_scores.append(
+                    src.quality_score if src.quality_score is not None else src.score
+                )
                 if src.is_active is False:
                     inactive_hits += 1
                 if is_normative_source(src) and not src.jurisdiction:
@@ -105,7 +110,9 @@ class ConfidenceScorer:
                 support_score=0.0,
                 llm_self_reported_confidence=0.0,
                 weights=ConfidenceScorer._weights(config),
-                explanation="support_score indicates evidence support quality, not probability of truth.",
+                explanation=(
+                    "support_score indicates evidence support quality, not probability of truth."
+                ),
             )
 
         weights = ConfidenceScorer._weights(config)
@@ -127,7 +134,9 @@ class ConfidenceScorer:
             support_score=round(support_score, 2),
             llm_self_reported_confidence=0.0,
             weights=weights,
-            explanation="support_score indicates evidence support quality, not probability of truth.",
+            explanation=(
+                "support_score indicates evidence support quality, not probability of truth."
+            ),
         )
 
     @staticmethod
