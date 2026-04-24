@@ -91,13 +91,25 @@ class ResearcherAgent(BaseAgent):
         async with self._init_lock:
             if self._collector is None:
                 self._config.rag_timeout_seconds = float(
-                    getattr(settings, "research_rag_timeout_seconds", self._config.rag_timeout_seconds)
+                    getattr(
+                        settings,
+                        "research_rag_timeout_seconds",
+                        self._config.rag_timeout_seconds,
+                    )
                 )
                 self._config.web_timeout_seconds = float(
-                    getattr(settings, "research_web_timeout_seconds", self._config.web_timeout_seconds)
+                    getattr(
+                        settings,
+                        "research_web_timeout_seconds",
+                        self._config.web_timeout_seconds,
+                    )
                 )
                 self._config.llm_timeout_seconds = float(
-                    getattr(settings, "research_llm_timeout_seconds", self._config.llm_timeout_seconds)
+                    getattr(
+                        settings,
+                        "research_llm_timeout_seconds",
+                        self._config.llm_timeout_seconds,
+                    )
                 )
                 rag_engine = self._rag_engine or RAGEngine()
                 web_tool = self._web_search_tool or WebSearchTool()
