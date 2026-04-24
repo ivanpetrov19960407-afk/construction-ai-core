@@ -144,7 +144,9 @@ class SourceCollector:
                 project_id=project_id,
             )
         )
-        web_task = asyncio.create_task(self._collect_web_deferred(query, topic_scope, delay_seconds=0.05))
+        web_task = asyncio.create_task(
+            self._collect_web_deferred(query, topic_scope, delay_seconds=0.05)
+        )
 
         try:
             rag_result: list[ResearchSource] | Exception = await rag_task
@@ -205,14 +207,18 @@ class SourceCollector:
         diagnostics.extend(rag_sanitization_diag)
         diagnostics.extend(web_sanitization_diag)
 
-        top_sources = sorted([*rag_sources, *web_sources], key=lambda s: s.score, reverse=True)[: self._config.top_k_sources]
+        top_sources = sorted([*rag_sources, *web_sources], key=lambda s: s.score, reverse=True)[
+            : self._config.top_k_sources
+        ]
         compact_sources = self._truncate_sources(top_sources)
 
         if compact_sources and self._cache is not None:
             try:
                 await self._cache.set(
                     cache_key,
-                    json.dumps([source.model_dump() for source in compact_sources], ensure_ascii=False),
+                    json.dumps(
+                        [source.model_dump() for source in compact_sources], ensure_ascii=False
+                    ),
                     ttl=self._config.cache_ttl_seconds,
                 )
             except Exception:  # noqa: BLE001
@@ -252,7 +258,9 @@ class SourceCollector:
                 f"access_scope={access_scope} requires context fields: {', '.join(missing)}"
             )
 
-    async def _collect_web_deferred(self, query: str, topic_scope: str | None, delay_seconds: float) -> list[ResearchSource]:
+    async def _collect_web_deferred(
+        self, query: str, topic_scope: str | None, delay_seconds: float
+    ) -> list[ResearchSource]:
         await asyncio.sleep(delay_seconds)
         return await self._collect_web(query, topic_scope)
 
@@ -326,7 +334,9 @@ class SourceCollector:
         if self._web_limiter_loop_id is None:
             self._web_limiter_loop_id = loop_id
         elif self._web_limiter_loop_id != loop_id:
-            self._web_limiter = AsyncLimiter(max_rate=self._config.web_rate_limit_per_second, time_period=1)
+            self._web_limiter = AsyncLimiter(
+                max_rate=self._config.web_rate_limit_per_second, time_period=1
+            )
             self._web_limiter_loop_id = loop_id
         async with self._web_limiter:
             items = await asyncio.wait_for(
@@ -358,7 +368,9 @@ class SourceCollector:
         if len(rag_sources) < self._config.web_min_rag_sources:
             return True
         avg_score = sum(s.score for s in rag_sources) / max(len(rag_sources), 1)
-        info_density = sum(len((s.snippet or "").split()) for s in rag_sources) / max(len(rag_sources), 1)
+        info_density = sum(len((s.snippet or "").split()) for s in rag_sources) / max(
+            len(rag_sources), 1
+        )
         composite = avg_score * math.log(len(rag_sources) + 1) * (info_density / 100.0)
         return composite < self._config.web_min_avg_score
 
@@ -390,7 +402,9 @@ class SourceCollector:
     ) -> str:
         norm_query = _WHITESPACE_RE.sub(" ", query).strip().lower()
         query_hash = hashlib.sha256(f"{norm_query}|{context}".encode()).hexdigest()[:16]
-        scope_hash = hashlib.sha256(f"{topic_scope or ''}|{access_scope or ''}".encode()).hexdigest()[:12]
+        scope_hash = hashlib.sha256(
+            f"{topic_scope or ''}|{access_scope or ''}".encode()
+        ).hexdigest()[:12]
         identity = "|".join(
             [
                 f"user:{user_id or ''}",
@@ -428,7 +442,13 @@ class SourceCollector:
 
         try:
             ip = ip_address(host)
-            return not (ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast)
+            return not (
+                ip.is_private
+                or ip.is_loopback
+                or ip.is_link_local
+                or ip.is_reserved
+                or ip.is_multicast
+            )
         except ValueError:
             pass
 
@@ -438,11 +458,19 @@ class SourceCollector:
             return True
         for info in infos:
             resolved_ip = ip_address(info[4][0])
-            if resolved_ip.is_private or resolved_ip.is_loopback or resolved_ip.is_link_local or resolved_ip.is_reserved or resolved_ip.is_multicast:
+            if (
+                resolved_ip.is_private
+                or resolved_ip.is_loopback
+                or resolved_ip.is_link_local
+                or resolved_ip.is_reserved
+                or resolved_ip.is_multicast
+            ):
                 return False
         return True
 
-    def _sanitize_sources(self, sources: list[ResearchSource]) -> tuple[list[ResearchSource], list[Diagnostic]]:
+    def _sanitize_sources(
+        self, sources: list[ResearchSource]
+    ) -> tuple[list[ResearchSource], list[Diagnostic]]:
         sanitized: list[ResearchSource] = []
         diagnostics: list[Diagnostic] = []
         redacted_count = 0

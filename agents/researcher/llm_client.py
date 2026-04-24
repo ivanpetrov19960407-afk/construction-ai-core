@@ -29,7 +29,9 @@ class StructuredLLMClient:
         self._router = llm_router
         self._config = config
 
-    async def query(self, prompt: str, system_prompt: str, *, allowed_source_ids: set[str] | None = None) -> LLMResearchResponse:
+    async def query(
+        self, prompt: str, system_prompt: str, *, allowed_source_ids: set[str] | None = None
+    ) -> LLMResearchResponse:
         parsed = await self.generate(prompt, system_prompt=system_prompt)
         try:
             response = LLMResearchResponse.model_validate(parsed)
@@ -42,7 +44,11 @@ class StructuredLLMClient:
                 unknown = [sid for sid in fact.source_ids if sid not in allowed_source_ids]
                 if unknown:
                     fact = fact.model_copy(
-                        update={"source_ids": [sid for sid in fact.source_ids if sid in allowed_source_ids]}
+                        update={
+                            "source_ids": [
+                                sid for sid in fact.source_ids if sid in allowed_source_ids
+                            ]
+                        }
                     )
                 patched_facts.append(fact)
             response = response.model_copy(update={"facts": patched_facts})
@@ -101,7 +107,7 @@ class StructuredLLMClient:
         clipped = invalid_output[:_MAX_REASK_OUTPUT_CHARS]
         return (
             "Требуется JSON-объект по схеме: "
-            '{"facts":[{"text":"...","applicability":"","confidence":0.0,"source_ids":["..."],' 
+            '{"facts":[{"text":"...","applicability":"","confidence":0.0,"source_ids":["..."],'
             '"evidence":[{"source_id":"...","quote":"...","locator":null}]}],"gaps":["..."]}.\n'
             "Используй исходный контекст ниже и исправь ответ.\n\n"
             f"Original prompt:\n{prompt[:4000]}\n\n"

@@ -28,11 +28,15 @@ class ConfidenceScorer:
     def __init__(self, config: ResearcherConfig) -> None:
         self._config = config
 
-    def compute(self, facts: list[ResearchFact], sources: list[ResearchSource]) -> ConfidenceBreakdown:
+    def compute(
+        self, facts: list[ResearchFact], sources: list[ResearchSource]
+    ) -> ConfidenceBreakdown:
         return self.score(facts, sources, self._config)
 
     @staticmethod
-    def score(facts: list[ResearchFact], sources: list[ResearchSource], config: ResearcherConfig) -> ConfidenceBreakdown:
+    def score(
+        facts: list[ResearchFact], sources: list[ResearchSource], config: ResearcherConfig
+    ) -> ConfidenceBreakdown:
         if not facts:
             return ConfidenceBreakdown(
                 overall=0.0,
@@ -70,7 +74,9 @@ class ConfidenceScorer:
                 if src is None:
                     continue
                 unique_sources.add(sid)
-                cited_scores.append(src.quality_score if src.quality_score is not None else src.score)
+                cited_scores.append(
+                    src.quality_score if src.quality_score is not None else src.score
+                )
                 if src.is_active is False:
                     inactive_hits += 1
                 if not src.jurisdiction:

@@ -19,8 +19,15 @@ def test_max_prompt_chars_respected() -> None:
 
 
 def test_omitted_source_count_present() -> None:
-    sources = [ResearchSource(id=f"s{i}", type="rag", title="doc", snippet="x" * 800) for i in range(6)]
-    prompt = PromptBuilder.build("q", "ctx", sources, ResearcherConfig(prompt_sources_budget_chars=600, max_prompt_chars=1800))
+    sources = [
+        ResearchSource(id=f"s{i}", type="rag", title="doc", snippet="x" * 800) for i in range(6)
+    ]
+    prompt = PromptBuilder.build(
+        "q",
+        "ctx",
+        sources,
+        ResearcherConfig(prompt_sources_budget_chars=600, max_prompt_chars=1800),
+    )
     payload = json.loads(prompt)
     assert "omitted_sources_count" in payload
     assert payload["omitted_sources_count"] > 0

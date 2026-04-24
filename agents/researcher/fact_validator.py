@@ -92,7 +92,9 @@ class FactValidator:
                 source_text = FactValidator._extract_source_text(source)
                 quote = FactValidator._normalize_text(evidence.quote)
                 if not quote:
-                    updated_evidence.append(evidence.model_copy(update={"support_status": "unsupported"}))
+                    updated_evidence.append(
+                        evidence.model_copy(update={"support_status": "unsupported"})
+                    )
                     partial_sources.append(source_id)
                     diagnostics.append(
                         Diagnostic(
@@ -111,7 +113,9 @@ class FactValidator:
                     if FactValidator._is_conflicting(fact.text, evidence.quote):
                         support_status = "conflicting"
                         has_conflict = True
-                    updated_evidence.append(evidence.model_copy(update={"support_status": support_status}))
+                    updated_evidence.append(
+                        evidence.model_copy(update={"support_status": support_status})
+                    )
                     if support_status == "supported":
                         supported_sources.append(source_id)
                     else:
@@ -119,7 +123,9 @@ class FactValidator:
                         diagnostics.append(
                             Diagnostic(
                                 code="fact_conflicting_evidence",
-                                message=f"fact#{idx}: conflicting evidence for source_id={source_id}",
+                                message=(
+                                    f"fact#{idx}: conflicting evidence for source_id={source_id}"
+                                ),
                                 severity="warn",
                                 component="fact_validator",
                                 stage="validate",
@@ -127,7 +133,9 @@ class FactValidator:
                             )
                         )
                 else:
-                    updated_evidence.append(evidence.model_copy(update={"support_status": "unsupported"}))
+                    updated_evidence.append(
+                        evidence.model_copy(update={"support_status": "unsupported"})
+                    )
                     partial_sources.append(source_id)
                     diagnostics.append(
                         Diagnostic(

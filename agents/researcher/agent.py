@@ -12,7 +12,12 @@ import structlog
 from agents.base import BaseAgent
 from agents.researcher.confidence import ConfidenceScorer
 from agents.researcher.config import ResearcherConfig
-from agents.researcher.errors import ResearchAccessError, ResearchLLMError, ResearchScopeError, ResearchSourceError
+from agents.researcher.errors import (
+    ResearchAccessError,
+    ResearchLLMError,
+    ResearchScopeError,
+    ResearchSourceError,
+)
 from agents.researcher.fact_validator import FactValidator
 from agents.researcher.llm_client import LLMResearchResponse, StructuredLLMClient
 from agents.researcher.prompt_builder import PromptBuilder
@@ -97,13 +102,27 @@ class ResearcherAgent(BaseAgent):
     async def _ensure_initialized(self) -> None:
         async with self._init_lock:
             if self._collector is None:
-                self._config.rag_timeout_seconds = float(getattr(settings, "research_rag_timeout_seconds", self._config.rag_timeout_seconds))
-                self._config.web_timeout_seconds = float(getattr(settings, "research_web_timeout_seconds", self._config.web_timeout_seconds))
-                self._config.llm_timeout_seconds = float(getattr(settings, "research_llm_timeout_seconds", self._config.llm_timeout_seconds))
+                self._config.rag_timeout_seconds = float(
+                    getattr(
+                        settings, "research_rag_timeout_seconds", self._config.rag_timeout_seconds
+                    )
+                )
+                self._config.web_timeout_seconds = float(
+                    getattr(
+                        settings, "research_web_timeout_seconds", self._config.web_timeout_seconds
+                    )
+                )
+                self._config.llm_timeout_seconds = float(
+                    getattr(
+                        settings, "research_llm_timeout_seconds", self._config.llm_timeout_seconds
+                    )
+                )
                 rag_engine = self._rag_engine or RAGEngine()
                 web_tool = self._web_search_tool or WebSearchTool()
                 cache = await self._get_or_create_cache()
-                self._collector = SourceCollector(rag_engine, web_tool, cache, self._config, injection_guard=self._security)
+                self._collector = SourceCollector(
+                    rag_engine, web_tool, cache, self._config, injection_guard=self._security
+                )
                 self._llm_client = StructuredLLMClient(self.llm_router, self._config)
 
     async def _get_or_create_cache(self) -> RedisCache | None:
@@ -124,15 +143,29 @@ class ResearcherAgent(BaseAgent):
         logger = struct_logger.bind(agent="researcher", trace_id=trace_id, agent_id=self.agent_id)
 
         RESEARCHER_REQUESTS_TOTAL.labels(status="started").inc()
-        logger.info("research_started", message=self._security.mask_pii(str(state.get("message", ""))))
+        logger.info(
+            "research_started", message=self._security.mask_pii(str(state.get("message", "")))
+        )
 
         try:
             await self._ensure_initialized()
             result = await self._orchestrate(state, logger)
             RESEARCHER_REQUESTS_TOTAL.labels(status="success").inc()
-            logger.info("research_completed", duration_ms=round((perf_counter() - started) * 1000, 2), sources_count=len(result.get("research_payload", {}).get("sources", [])))
+            logger.info(
+                "research_completed",
+                duration_ms=round((perf_counter() - started) * 1000, 2),
+                sources_count=len(result.get("research_payload", {}).get("sources", [])),
+            )
             return result
-        except (ResearchScopeError, ResearchAccessError, ResearchSourceError, ResearchLLMError, ValueError, TypeError, KeyError) as exc:
+        except (
+            ResearchScopeError,
+            ResearchAccessError,
+            ResearchSourceError,
+            ResearchLLMError,
+            ValueError,
+            TypeError,
+            KeyError,
+        ) as exc:
             RESEARCHER_REQUESTS_TOTAL.labels(status="error").inc()
             logger.error("research_failed", error=str(exc), error_type=type(exc).__name__)
             state["research_facts"] = "[]"
@@ -158,7 +191,9 @@ class ResearcherAgent(BaseAgent):
             struct_logger.exception("research_unexpected_error", error=str(exc))
             raise
 
-    async def _orchestrate(self, state: dict[str, Any], logger: structlog.stdlib.BoundLogger) -> dict[str, Any]:
+    async def _orchestrate(
+        self, state: dict[str, Any], logger: structlog.stdlib.BoundLogger
+    ) -> dict[str, Any]:
         message = str(state.get("message", "")).strip()
         if not message:
             raise ValueError("Пустой запрос")
@@ -169,7 +204,8 @@ class ResearcherAgent(BaseAgent):
         legacy_scope = str(state.get("scope") or state.get("role") or "").strip() or None
         if explicit_access is None and legacy_scope is not None:
             warnings.warn(
-                "Keys 'scope' and 'role' are deprecated for ResearcherAgent; use 'access_scope' instead.",
+                "Keys 'scope' and 'role' are deprecated for ResearcherAgent; "
+                "use 'access_scope' instead.",
                 DeprecationWarning,
                 stacklevel=3,
             )
@@ -196,18 +232,14 @@ class ResearcherAgent(BaseAgent):
 
         collection_diag: list[Diagnostic] = []
         for item in raw_collection_diag:
-            if isinstance(item, Diagnostic):
-                collection_diag.append(item)
-            else:
-                collection_diag.append(
-                    Diagnostic(
-                        code=str(item),
-                        message=str(item),
-                        severity="warn",
-                        component="source_collector",
-                    )
+            collection_diag.append(
+                Diagnostic(
+                    code=item,
+                    message=item,
+                    severity="warn",
+                    component="source_collector",
                 )
-
+            )
         RESEARCHER_SOURCES_COUNT.observe(len(sources))
         if any(d.code == "web_fallback" for d in collection_diag):
             RESEARCHER_WEB_FALLBACK_TOTAL.inc()
@@ -228,9 +260,15 @@ class ResearcherAgent(BaseAgent):
                 allowed_source_ids={s.id for s in sources},
             )
         except TimeoutError:
-            llm_diag.append(Diagnostic(code="llm_timeout", message="LLM timeout", severity="error", component="llm"))
+            llm_diag.append(
+                Diagnostic(
+                    code="llm_timeout", message="LLM timeout", severity="error", component="llm"
+                )
+            )
         except ResearchLLMError as exc:
-            llm_diag.append(Diagnostic(code="llm_error", message=str(exc), severity="error", component="llm"))
+            llm_diag.append(
+                Diagnostic(code="llm_error", message=str(exc), severity="error", component="llm")
+            )
             llm_diag.append(
                 Diagnostic(
                     code="llm_error_legacy",
@@ -242,7 +280,9 @@ class ResearcherAgent(BaseAgent):
         finally:
             RESEARCHER_LLM_DURATION_SECONDS.observe(perf_counter() - llm_start)
 
-        validated_facts, validation_diag = self._validator.validate_facts(llm_response.facts, sources)
+        validated_facts, validation_diag = self._validator.validate_facts(
+            llm_response.facts, sources
+        )
 
         confidence = self._scorer.compute(validated_facts, sources)
         gaps = list(dict.fromkeys(llm_response.gaps))
@@ -251,12 +291,17 @@ class ResearcherAgent(BaseAgent):
 
         seen_diag: set[tuple[str, str, str, str | None]] = set()
         diag_struct: list[Diagnostic] = []
-        for item in [*collection_diag, *llm_diag, *validation_diag]:
-            key = (item.code, item.message, item.component, item.source_id)
+        for diag_item in [*collection_diag, *llm_diag, *validation_diag]:
+            key = (
+                diag_item.code,
+                diag_item.message,
+                diag_item.component,
+                diag_item.source_id,
+            )
             if key in seen_diag:
                 continue
             seen_diag.add(key)
-            diag_struct.append(item)
+            diag_struct.append(diag_item)
         diagnostics_legacy: list[str] = []
         for d in diag_struct:
             diagnostics_legacy.append(d.code)
@@ -275,7 +320,9 @@ class ResearcherAgent(BaseAgent):
             confidence_breakdown=confidence.model_dump(),
         )
 
-        safe_facts_artifact = json.dumps([fact.model_dump() for fact in validated_facts], ensure_ascii=False)
+        safe_facts_artifact = json.dumps(
+            [fact.model_dump() for fact in validated_facts], ensure_ascii=False
+        )
         state["research_facts"] = safe_facts_artifact
         state["research_payload"] = payload.model_dump()
         return self._update_state(state, safe_facts_artifact)
@@ -315,7 +362,14 @@ class ResearcherAgent(BaseAgent):
                 legacy.append(item.code)
         return sources, list(dict.fromkeys(legacy)), cache_hit
 
-    async def run_standalone(self, message: str, *, scope: str | None = None, context: str = "", user_id: str | None = None) -> ResearchResponse:
+    async def run_standalone(
+        self,
+        message: str,
+        *,
+        scope: str | None = None,
+        context: str = "",
+        user_id: str | None = None,
+    ) -> ResearchResponse:
         await self._ensure_initialized()
         state: dict[str, Any] = {
             "message": message,
@@ -389,8 +443,12 @@ class ResearcherAgent(BaseAgent):
         return out, diagnostics
 
     def _need_web_fallback(self, rag_sources: list[ResearchSource]) -> bool:
-        min_sources = int(getattr(settings, "research_web_min_rag_sources", self._config.web_min_rag_sources))
-        min_avg = float(getattr(settings, "research_web_min_avg_score", self._config.web_min_avg_score))
+        min_sources = int(
+            getattr(settings, "research_web_min_rag_sources", self._config.web_min_rag_sources)
+        )
+        min_avg = float(
+            getattr(settings, "research_web_min_avg_score", self._config.web_min_avg_score)
+        )
         min_chars = int(getattr(settings, "research_web_min_snippet_chars", 5))
         if len(rag_sources) < min_sources:
             return True
@@ -419,7 +477,9 @@ class ResearcherAgent(BaseAgent):
         return list(dedup.values())
 
     @staticmethod
-    def _compute_confidence_overall(facts: list[ResearchFact], sources: list[ResearchSource]) -> float:
+    def _compute_confidence_overall(
+        facts: list[ResearchFact], sources: list[ResearchSource]
+    ) -> float:
         fact_avg = sum(f.confidence for f in facts) / len(facts) if facts else 0.0
         src_avg = sum(s.score for s in sources) / len(sources) if sources else 0.0
         return round((fact_avg * 0.6) + (src_avg * 0.4), 2)

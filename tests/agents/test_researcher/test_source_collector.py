@@ -60,13 +60,11 @@ def test_source_collector_sanitizes_injection_before_return() -> None:
         collector.collect("бетон", topic_scope=None, access_scope=None, context="")
     )
     # Redacted snippet must be present
-    assert any(
-        (s.snippet or "").startswith("[REDACTED") for s in sources
-    ), "Injection must be redacted inside SourceCollector"
-    # No raw 'ignore previous instructions' string leaves the collector
-    assert not any(
-        "ignore previous instructions" in (s.snippet or "").lower() for s in sources
+    assert any((s.snippet or "").startswith("[REDACTED") for s in sources), (
+        "Injection must be redacted inside SourceCollector"
     )
+    # No raw 'ignore previous instructions' string leaves the collector
+    assert not any("ignore previous instructions" in (s.snippet or "").lower() for s in sources)
     # Diagnostic recorded
     assert any(d.code == "prompt_injection_detected" for d in diagnostics)
 
@@ -128,19 +126,19 @@ def test_injection_chunk_does_not_suppress_web_fallback() -> None:
         collector.collect("бетон B30", topic_scope=None, access_scope=None, context="")
     )
     # Web fallback must have fired despite noisy injected RAG chunks.
-    assert any(
-        d.code == "web_fallback" for d in diagnostics
-    ), "Web fallback must trigger even when RAG has inflated injection chunks"
+    assert any(d.code == "web_fallback" for d in diagnostics), (
+        "Web fallback must trigger even when RAG has inflated injection chunks"
+    )
     # Real web content must be present in the final sources.
-    assert any(
-        s.type == "web" and "B30" in (s.snippet or "") for s in sources
-    ), "Legitimate web source must survive into the final result set"
+    assert any(s.type == "web" and "B30" in (s.snippet or "") for s in sources), (
+        "Legitimate web source must survive into the final result set"
+    )
     # All RAG snippets must be redacted.
     redacted_rag = [s for s in sources if s.type == "rag"]
     assert redacted_rag, "RAG sources (sanitized) should still be present"
-    assert all(
-        (s.snippet or "").startswith("[REDACTED") for s in redacted_rag
-    ), "All injected RAG chunks must be redacted"
+    assert all((s.snippet or "").startswith("[REDACTED") for s in redacted_rag), (
+        "All injected RAG chunks must be redacted"
+    )
 
 
 def test_source_collector_cache_hit_flag() -> None:

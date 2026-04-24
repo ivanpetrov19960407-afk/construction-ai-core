@@ -38,9 +38,7 @@ def test_unknown_scope_fails() -> None:
 def test_private_scope_without_context_fails() -> None:
     collector = SourceCollector(_Rag(), _Web(), None, ResearcherConfig())  # type: ignore[arg-type]
     with pytest.raises(ResearchAccessError):
-        asyncio.run(
-            collector.collect("q", topic_scope=None, access_scope="private", context="")
-        )
+        asyncio.run(collector.collect("q", topic_scope=None, access_scope="private", context=""))
 
 
 def test_project_scope_without_project_id_fails() -> None:

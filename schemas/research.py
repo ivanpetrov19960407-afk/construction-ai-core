@@ -26,7 +26,9 @@ class ResearchEvidence(BaseModel):
     page: int | None = None
     span_start: int | None = None
     span_end: int | None = None
-    support_status: Literal["supported", "partially_supported", "unsupported", "conflicting"] | None = None
+    support_status: (
+        Literal["supported", "partially_supported", "unsupported", "conflicting"] | None
+    ) = None
     extraction_method: str | None = None
 
 
@@ -38,7 +40,9 @@ class ResearchFact(BaseModel):
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     source_ids: list[str] = Field(default_factory=list)
     evidence: list[ResearchEvidence] = Field(default_factory=list)
-    support_status: Literal["supported", "partially_supported", "unsupported", "conflicting"] | None = None
+    support_status: (
+        Literal["supported", "partially_supported", "unsupported", "conflicting"] | None
+    ) = None
 
 
 class ResearchSource(BaseModel):

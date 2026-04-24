@@ -8,7 +8,9 @@ def _fact(ids: list[str]) -> ResearchFact:
         text="Минимальный класс бетона B30",
         source_ids=ids,
         support_status="supported",
-        evidence=[ResearchEvidence(source_id=ids[0], quote="класс бетона B30", support_status="supported")],
+        evidence=[
+            ResearchEvidence(source_id=ids[0], quote="класс бетона B30", support_status="supported")
+        ],
     )
 
 
@@ -39,7 +41,10 @@ def test_active_norm_beats_inactive_norm() -> None:
             document_version="2012",
         )
     ]
-    assert ConfidenceScorer.score(facts, active, cfg).overall > ConfidenceScorer.score(facts, inactive, cfg).overall
+    assert (
+        ConfidenceScorer.score(facts, active, cfg).overall
+        > ConfidenceScorer.score(facts, inactive, cfg).overall
+    )
 
 
 def test_outdated_source_flagged_by_recency() -> None:
@@ -61,4 +66,7 @@ def test_missing_jurisdiction_reduces_score() -> None:
     facts = [_fact(["s1"])]
     with_j = [ResearchSource(id="s1", type="rag", title="doc", score=0.8, jurisdiction="RU")]
     no_j = [ResearchSource(id="s1", type="rag", title="doc", score=0.8, jurisdiction=None)]
-    assert ConfidenceScorer.score(facts, with_j, cfg).overall > ConfidenceScorer.score(facts, no_j, cfg).overall
+    assert (
+        ConfidenceScorer.score(facts, with_j, cfg).overall
+        > ConfidenceScorer.score(facts, no_j, cfg).overall
+    )

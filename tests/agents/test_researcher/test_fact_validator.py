@@ -18,14 +18,22 @@ def test_exact_quote_passes() -> None:
 
 
 def test_missing_quote_fails() -> None:
-    facts = [ResearchFact(text="x", source_ids=["s1"], evidence=[ResearchEvidence(source_id="s1", quote="")])]
+    facts = [
+        ResearchFact(
+            text="x", source_ids=["s1"], evidence=[ResearchEvidence(source_id="s1", quote="")]
+        )
+    ]
     sources = [ResearchSource(id="s1", type="rag", title="doc", snippet="text")]
     validated, _ = FactValidator.validate(facts, sources, ResearcherConfig())
     assert validated == []
 
 
 def test_fake_source_id_fails() -> None:
-    facts = [ResearchFact(text="x", source_ids=["fake"], evidence=[ResearchEvidence(source_id="fake", quote="x")])]
+    facts = [
+        ResearchFact(
+            text="x", source_ids=["fake"], evidence=[ResearchEvidence(source_id="fake", quote="x")]
+        )
+    ]
     sources = [ResearchSource(id="s1", type="rag", title="doc", snippet="x")]
     validated, _ = FactValidator.validate(facts, sources, ResearcherConfig())
     assert validated == []

@@ -38,7 +38,9 @@ class InjectionGuard:
         ),
         (
             "prompt_leak_attempt",
-            re.compile(r"(?i)(reveal|print|show|leak).{0,50}(system prompt|hidden prompt|developer prompt)"),
+            re.compile(
+                r"(?i)(reveal|print|show|leak).{0,50}(system prompt|hidden prompt|developer prompt)"
+            ),
         ),
         (
             "follow_instead",

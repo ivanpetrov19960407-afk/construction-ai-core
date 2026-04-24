@@ -56,8 +56,8 @@ def test_schema_validation_diagnostic() -> None:
 
 
 def test_access_error_diagnostic() -> None:
-    from agents.researcher.source_collector import SourceCollector
     from agents.researcher.errors import ResearchAccessError
+    from agents.researcher.source_collector import SourceCollector
 
     class _Rag:
         async def search(self, query: str, **kwargs):
