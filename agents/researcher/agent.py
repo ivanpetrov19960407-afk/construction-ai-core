@@ -90,6 +90,27 @@ class ResearcherAgent(BaseAgent):
     async def _ensure_initialized(self) -> None:
         async with self._init_lock:
             if self._collector is None:
+                self._config.rag_timeout_seconds = float(
+                    getattr(
+                        settings,
+                        "research_rag_timeout_seconds",
+                        self._config.rag_timeout_seconds,
+                    )
+                )
+                self._config.web_timeout_seconds = float(
+                    getattr(
+                        settings,
+                        "research_web_timeout_seconds",
+                        self._config.web_timeout_seconds,
+                    )
+                )
+                self._config.llm_timeout_seconds = float(
+                    getattr(
+                        settings,
+                        "research_llm_timeout_seconds",
+                        self._config.llm_timeout_seconds,
+                    )
+                )
                 rag_engine = self._rag_engine or RAGEngine()
                 web_tool = self._web_search_tool or WebSearchTool()
                 cache = await self._get_or_create_cache()
@@ -134,7 +155,7 @@ class ResearcherAgent(BaseAgent):
                 sources_count=len(result.get("research_payload", {}).get("sources", [])),
             )
             return result
-        except Exception as exc:  # noqa: BLE001
+        except (ValueError, TypeError, KeyError) as exc:
             RESEARCHER_REQUESTS_TOTAL.labels(status="error").inc()
             logger.error("research_failed", error=str(exc))
             state["research_facts"] = ""
@@ -147,6 +168,10 @@ class ResearcherAgent(BaseAgent):
                 "confidence_overall": 0.0,
             }
             return self._update_state(state, "")
+        except Exception as exc:  # noqa: BLE001
+            RESEARCHER_REQUESTS_TOTAL.labels(status="error").inc()
+            struct_logger.exception("research_unexpected_error", error=str(exc))
+            raise
 
     async def _orchestrate(
         self, state: dict[str, Any], logger: structlog.stdlib.BoundLogger
@@ -198,7 +223,8 @@ class ResearcherAgent(BaseAgent):
         llm_response = LLMResearchResponse(facts=[], gaps=[])
         llm_start = perf_counter()
         try:
-            assert self._llm_client is not None, "LLM client not initialized"
+            if self._llm_client is None:
+                raise RuntimeError("LLM client not initialized")
             llm_response = await self._llm_client.query(prompt, PromptBuilder.SYSTEM_PROMPT)
         except TimeoutError:
             llm_diag.append("llm_timeout")
@@ -259,16 +285,8 @@ class ResearcherAgent(BaseAgent):
         project_id: str | None = None,
     ) -> tuple[list[ResearchSource], list[str], bool]:
         await self._ensure_initialized()
-        assert self._collector is not None, "Collector not initialized"
-        self._config.rag_timeout_seconds = float(
-            getattr(settings, "research_rag_timeout_seconds", self._config.rag_timeout_seconds)
-        )
-        self._config.web_timeout_seconds = float(
-            getattr(settings, "research_web_timeout_seconds", self._config.web_timeout_seconds)
-        )
-        self._config.llm_timeout_seconds = float(
-            getattr(settings, "research_llm_timeout_seconds", self._config.llm_timeout_seconds)
-        )
+        if self._collector is None:
+            raise RuntimeError("Collector not initialized")
         sources, diagnostics, cache_hit = await self._collector.collect(
             message,
             topic_scope=topic_scope,
@@ -302,7 +320,7 @@ class ResearcherAgent(BaseAgent):
             "message": message,
             "scope": scope,
             "access_scope": scope,
-            "topic_scope": scope,
+            "topic_scope": None,
             "context": context,
             "user_id": user_id,
             "history": [],
@@ -315,15 +333,6 @@ class ResearcherAgent(BaseAgent):
         if scope and scope in _ALLOWED_ACCESS_SCOPES:
             return scope
         return "public"
-
-    @staticmethod
-    def _build_retrieval_query(message: str, topic_scope: str | None, context: str) -> str:
-        parts = [message]
-        if topic_scope:
-            parts.append(f"Тема: {topic_scope}")
-        if context:
-            parts.append(f"Контекст: {context}")
-        return "\n".join(parts).strip()
 
     @staticmethod
     def _sanitize_source_snippet(snippet: str) -> str:
