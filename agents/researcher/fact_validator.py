@@ -17,7 +17,7 @@ class FactValidator:
         facts: list[ResearchFact],
         sources: list[ResearchSource],
     ) -> tuple[list[ResearchFact], list[Diagnostic]]:
-        return self._validate_impl(facts, sources, self._min_similarity)
+        return self._validate_impl(facts, sources)
 
     @staticmethod
     def validate(
@@ -25,15 +25,14 @@ class FactValidator:
         sources: list[ResearchSource],
         config: ResearcherConfig,
     ) -> tuple[list[ResearchFact], list[Diagnostic]]:
-        return FactValidator._validate_impl(facts, sources, config.fact_citation_min_similarity)
+        _ = config.fact_citation_min_similarity
+        return FactValidator._validate_impl(facts, sources)
 
     @staticmethod
     def _validate_impl(
         facts: list[ResearchFact],
         sources: list[ResearchSource],
-        threshold: float,
     ) -> tuple[list[ResearchFact], list[Diagnostic]]:
-        _ = threshold
         by_id = {source.id: source for source in sources}
         validated: list[ResearchFact] = []
         diagnostics: list[Diagnostic] = []
