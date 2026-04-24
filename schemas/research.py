@@ -16,6 +16,8 @@ class Diagnostic(BaseModel):
     source_id: str | None = None
     fact_id: str | None = None
 
+    model_config = ConfigDict(extra="forbid")
+
 
 class ResearchEvidence(BaseModel):
     source_id: str
@@ -27,9 +29,18 @@ class ResearchEvidence(BaseModel):
     span_start: int | None = None
     span_end: int | None = None
     support_status: (
-        Literal["supported", "partially_supported", "unsupported", "conflicting"] | None
+        Literal[
+            "supported",
+            "partially_supported",
+            "unsupported",
+            "conflicting",
+            "quote_found_but_not_entailing",
+        ]
+        | None
     ) = None
     extraction_method: str | None = None
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class ResearchFact(BaseModel):
@@ -41,8 +52,17 @@ class ResearchFact(BaseModel):
     source_ids: list[str] = Field(default_factory=list)
     evidence: list[ResearchEvidence] = Field(default_factory=list)
     support_status: (
-        Literal["supported", "partially_supported", "unsupported", "conflicting"] | None
+        Literal[
+            "supported",
+            "partially_supported",
+            "unsupported",
+            "conflicting",
+            "quote_found_but_not_entailing",
+        ]
+        | None
     ) = None
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class ResearchSource(BaseModel):
@@ -83,6 +103,13 @@ class ResearchSource(BaseModel):
     user_id: str | None = None
     quality_score: float | None = Field(default=None, ge=0.0, le=1.0)
     retrieval_score: float | None = Field(default=None, ge=0.0, le=1.0)
+
+    model_config = ConfigDict(extra="forbid")
+
+    def to_public_source(self) -> "ResearchSource":
+        return self.model_copy(
+            update={"tenant_id": None, "project_id": None, "org_id": None, "user_id": None}
+        )
 
 
 class ResearchResponse(BaseModel):

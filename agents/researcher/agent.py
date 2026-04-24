@@ -12,7 +12,7 @@ import structlog
 from agents.base import BaseAgent
 from agents.researcher.confidence import ConfidenceScorer
 from agents.researcher.config import ResearcherConfig
-from agents.researcher.domain import choose_primary_sources, diagnostics_for_sources
+from agents.researcher.domain import diagnostics_for_sources
 from agents.researcher.errors import (
     ResearchAccessError,
     ResearchLLMError,
@@ -212,7 +212,6 @@ class ResearcherAgent(BaseAgent):
             tenant_id=tenant_id,
             project_id=project_id,
         )
-        sources = choose_primary_sources(message, sources)
         collection_diag.extend(diagnostics_for_sources(sources))
 
         RESEARCHER_SOURCES_COUNT.observe(len(sources))
@@ -272,7 +271,7 @@ class ResearcherAgent(BaseAgent):
         payload = ResearchResponse(
             query=message,
             facts=validated_facts,
-            sources=sources,
+            sources=[s.to_public_source() for s in sources],
             gaps=gaps,
             diagnostics=diagnostics_legacy,
             diagnostics_struct=diag_struct,

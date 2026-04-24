@@ -71,3 +71,25 @@ def test_timeout_distinct_from_malformed_json() -> None:
     )  # type: ignore[arg-type]
     with pytest.raises(TimeoutError):
         asyncio.run(client.generate("p", system_prompt="s"))
+
+
+def test_markdown_fenced_json_allowed_only_by_config() -> None:
+    payload = "```json\n{\"facts\": [], \"gaps\": []}\n```"
+    blocked = StructuredLLMClient(_Router([payload]), ResearcherConfig())  # type: ignore[arg-type]
+    with pytest.raises(ResearchLLMError):
+        asyncio.run(blocked.generate("p", system_prompt="s"))
+    allowed = StructuredLLMClient(
+        _Router([payload]), ResearcherConfig(allow_fenced_json_output=True)
+    )  # type: ignore[arg-type]
+    parsed = asyncio.run(allowed.generate("p", system_prompt="s"))
+    assert parsed["facts"] == []
+
+
+def test_non_json_envelope_rejected() -> None:
+    client = StructuredLLMClient(
+        _Router(['intro text {"facts": [], "gaps": []}']),
+        ResearcherConfig(llm_reask_limit=0),
+    )  # type: ignore[arg-type]
+    with pytest.raises(ResearchLLMError) as exc:
+        asyncio.run(client.generate("p", system_prompt="s"))
+    assert exc.value.code == "llm_non_json_envelope"

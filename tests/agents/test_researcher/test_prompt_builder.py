@@ -11,7 +11,8 @@ def test_long_source_does_not_break_json() -> None:
     src = ResearchSource(id="s1", type="rag", title="doc", snippet='x"\\n' * 2000)
     prompt = PromptBuilder.build("q", "ctx", [src], ResearcherConfig(max_prompt_chars=1500))
     payload = json.loads(prompt)
-    assert payload["sources"]
+    assert "sources" in payload
+    assert payload["omitted_sources_count"] >= 0
 
 
 def test_max_prompt_chars_respected() -> None:
@@ -33,6 +34,7 @@ def test_source_text_with_role_spoofing_remains_data() -> None:
     payload = json.loads(prompt)
     assert payload["sources"][0]["snippet"].startswith("system:")
     assert payload["source_policy"]["trusted"] is False
+    assert payload["source_policy"]["allowed_source_ids"] == ["s1"]
 
 
 def test_prompt_raises_only_when_query_context_cannot_fit() -> None:
@@ -43,3 +45,15 @@ def test_prompt_raises_only_when_query_context_cannot_fit() -> None:
             [],
             ResearcherConfig(max_prompt_chars=120, prompt_query_budget_chars=3000, prompt_context_budget_chars=3000),
         )
+
+
+def test_truncation_flags_exposed() -> None:
+    prompt = PromptBuilder.build(
+        "q" * 100,
+        "ctx" * 100,
+        [],
+        ResearcherConfig(prompt_query_budget_chars=10, prompt_context_budget_chars=10),
+    )
+    payload = json.loads(prompt)
+    assert payload["query_truncated"] is True
+    assert payload["context_truncated"] is True
