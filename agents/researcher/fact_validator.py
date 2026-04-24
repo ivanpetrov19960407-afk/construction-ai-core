@@ -5,11 +5,9 @@ import re
 from agents.researcher.config import ResearcherConfig
 from schemas.research import Diagnostic, ResearchEvidence, ResearchFact, ResearchSource
 
-_SUPPORT_STATUSES = ("supported", "partially_supported", "unsupported", "conflicting")
-
 
 class FactValidator:
-    """Strict evidence validator: only exact quote match yields support."""
+    """Strict evidence validator: exact quote match in source text only."""
 
     def __init__(self, min_similarity: float) -> None:
         self._min_similarity = min_similarity
@@ -53,30 +51,21 @@ class FactValidator:
                         stage="validate",
                     )
                 )
-
             if not candidate_source_ids:
-                diagnostics.append(
-                    Diagnostic(
-                        code="fact_rejected_no_valid_sources",
-                        message=f"Факт #{idx} отброшен: нет валидных source_ids",
-                        severity="warn",
-                        component="fact_validator",
-                        stage="validate",
-                    )
-                )
                 continue
 
             evidence_map = {item.source_id: item for item in fact.evidence if item.source_id}
-            supported_sources: list[str] = []
-            partial_sources: list[str] = []
+            has_supported = False
+            has_unsupported = False
             has_conflict = False
             updated_evidence: list[ResearchEvidence] = []
+            validated_source_ids: list[str] = []
 
             for source_id in candidate_source_ids:
                 source = by_id[source_id]
                 evidence = evidence_map.get(source_id)
                 if evidence is None:
-                    partial_sources.append(source_id)
+                    has_unsupported = True
                     diagnostics.append(
                         Diagnostic(
                             code="fact_missing_evidence",
@@ -89,13 +78,12 @@ class FactValidator:
                     )
                     continue
 
-                source_text = FactValidator._extract_source_text(source)
                 quote = FactValidator._normalize_text(evidence.quote)
                 if not quote:
+                    has_unsupported = True
                     updated_evidence.append(
                         evidence.model_copy(update={"support_status": "unsupported"})
                     )
-                    partial_sources.append(source_id)
                     diagnostics.append(
                         Diagnostic(
                             code="fact_missing_quote",
@@ -108,35 +96,12 @@ class FactValidator:
                     )
                     continue
 
-                if quote in source_text:
-                    support_status = "supported"
-                    if FactValidator._is_conflicting(fact.text, evidence.quote):
-                        support_status = "conflicting"
-                        has_conflict = True
-                    updated_evidence.append(
-                        evidence.model_copy(update={"support_status": support_status})
-                    )
-                    if support_status == "supported":
-                        supported_sources.append(source_id)
-                    else:
-                        partial_sources.append(source_id)
-                        diagnostics.append(
-                            Diagnostic(
-                                code="fact_conflicting_evidence",
-                                message=(
-                                    f"fact#{idx}: conflicting evidence for source_id={source_id}"
-                                ),
-                                severity="warn",
-                                component="fact_validator",
-                                stage="validate",
-                                source_id=source_id,
-                            )
-                        )
-                else:
+                match = FactValidator._find_quote(source, quote)
+                if match is None:
+                    has_unsupported = True
                     updated_evidence.append(
                         evidence.model_copy(update={"support_status": "unsupported"})
                     )
-                    partial_sources.append(source_id)
                     diagnostics.append(
                         Diagnostic(
                             code="fact_quote_not_found",
@@ -147,8 +112,48 @@ class FactValidator:
                             source_id=source_id,
                         )
                     )
+                    continue
 
-            if not supported_sources:
+                support_status = "supported"
+                if FactValidator._is_conflicting(fact.text, evidence.quote):
+                    support_status = "conflicting"
+                    has_conflict = True
+                    diagnostics.append(
+                        Diagnostic(
+                            code="fact_conflicting_evidence",
+                            message=f"fact#{idx}: conflicting evidence for source_id={source_id}",
+                            severity="warn",
+                            component="fact_validator",
+                            stage="validate",
+                            source_id=source_id,
+                        )
+                    )
+
+                if match[0] == "snippet" and not (source.chunk_text or source.full_text):
+                    diagnostics.append(
+                        Diagnostic(
+                            code="snippet_only_evidence",
+                            message=f"fact#{idx}: evidence based on snippet only for {source_id}",
+                            severity="info",
+                            component="fact_validator",
+                            stage="validate",
+                            source_id=source_id,
+                        )
+                    )
+
+                updated_evidence.append(
+                    evidence.model_copy(
+                        update={
+                            "support_status": support_status,
+                            "span_start": match[1],
+                            "span_end": match[2],
+                        }
+                    )
+                )
+                has_supported = True
+                validated_source_ids.append(source_id)
+
+            if not has_supported:
                 diagnostics.append(
                     Diagnostic(
                         code="fact_unsupported",
@@ -163,13 +168,22 @@ class FactValidator:
             status = "supported"
             if has_conflict:
                 status = "conflicting"
-            elif partial_sources:
+            elif has_supported and has_unsupported:
                 status = "partially_supported"
+                diagnostics.append(
+                    Diagnostic(
+                        code="fact_partially_supported",
+                        message=f"fact#{idx}: partially supported",
+                        severity="info",
+                        component="fact_validator",
+                        stage="validate",
+                    )
+                )
 
             validated.append(
                 fact.model_copy(
                     update={
-                        "source_ids": supported_sources,
+                        "source_ids": validated_source_ids,
                         "support_status": status,
                         "evidence": updated_evidence,
                     }
@@ -179,17 +193,24 @@ class FactValidator:
         return validated, diagnostics
 
     @staticmethod
-    def _extract_source_text(source: ResearchSource) -> str:
-        blobs = [
-            source.snippet or "",
-            source.document or "",
-            source.title or "",
-        ]
-        return FactValidator._normalize_text("\n".join(blobs))
-
-    @staticmethod
     def _normalize_text(value: str) -> str:
         return re.sub(r"\s+", " ", value).strip().lower()
+
+    @staticmethod
+    def _find_quote(source: ResearchSource, quote: str) -> tuple[str, int, int] | None:
+        fields = {
+            "snippet": source.snippet or "",
+            "chunk_text": source.chunk_text or "",
+            "full_text": source.full_text or "",
+        }
+        for name, text in fields.items():
+            normalized = FactValidator._normalize_text(text)
+            if not normalized:
+                continue
+            start = normalized.find(quote)
+            if start >= 0:
+                return (name, start, start + len(quote))
+        return None
 
     @staticmethod
     def _is_conflicting(fact_text: str, quote: str) -> bool:

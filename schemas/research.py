@@ -74,6 +74,9 @@ class ResearchSource(BaseModel):
     is_active: bool | None = None
     ingested_at: str | None = None
     checksum: str | None = None
+    text_hash: str | None = None
+    chunk_text: str | None = None
+    full_text: str | None = None
     tenant_id: str | None = None
     project_id: str | None = None
     org_id: str | None = None

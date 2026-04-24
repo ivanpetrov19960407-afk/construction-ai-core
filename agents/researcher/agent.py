@@ -12,11 +12,13 @@ import structlog
 from agents.base import BaseAgent
 from agents.researcher.confidence import ConfidenceScorer
 from agents.researcher.config import ResearcherConfig
+from agents.researcher.domain import choose_primary_sources, diagnostics_for_sources
 from agents.researcher.errors import (
     ResearchAccessError,
     ResearchLLMError,
     ResearchScopeError,
     ResearchSourceError,
+    ResearchValidationError,
 )
 from agents.researcher.fact_validator import FactValidator
 from agents.researcher.llm_client import LLMResearchResponse, StructuredLLMClient
@@ -35,21 +37,15 @@ from core.cache import RedisCache
 from core.llm_router import LLMRouter
 from core.rag_engine import RAGEngine
 from core.tools.web_search import WebSearchTool
-from schemas.research import Diagnostic, ResearchFact, ResearchResponse, ResearchSource
+from schemas.research import Diagnostic, ResearchResponse
 
 struct_logger = structlog.get_logger("agents.researcher")
 
 _ALLOWED_ACCESS_SCOPES = {"public", "private", "tenant", "org", "project", "user"}
-_LEGACY_ROLE_SCOPE_MAP = {
-    "admin": "public",
-    "pto_engineer": "public",
-    "foreman": "public",
-    "tender_specialist": "public",
-}
 
 
 class ResearcherAgent(BaseAgent):
-    """🔍 Researcher — production orchestrator with strict fail-closed access."""
+    """🔍 Researcher — thin orchestrator with strict fail-closed access."""
 
     def __init__(
         self,
@@ -162,34 +158,33 @@ class ResearcherAgent(BaseAgent):
             ResearchAccessError,
             ResearchSourceError,
             ResearchLLMError,
+            ResearchValidationError,
             ValueError,
             TypeError,
             KeyError,
         ) as exc:
             RESEARCHER_REQUESTS_TOTAL.labels(status="error").inc()
             logger.error("research_failed", error=str(exc), error_type=type(exc).__name__)
+            code = getattr(exc, "code", type(exc).__name__)
             state["research_facts"] = "[]"
             state["research_payload"] = {
                 "query": str(state.get("message", "")),
                 "facts": [],
                 "sources": [],
                 "gaps": ["Внутренняя ошибка агента"],
-                "diagnostics": [type(exc).__name__],
+                "diagnostics": [code],
                 "diagnostics_struct": [
                     {
-                        "code": type(exc).__name__,
+                        "code": code,
                         "message": str(exc),
                         "severity": "error",
                         "component": "researcher",
+                        "stage": "orchestrate",
                     }
                 ],
                 "confidence_overall": 0.0,
             }
             return self._update_state(state, "")
-        except Exception as exc:  # noqa: BLE001
-            RESEARCHER_REQUESTS_TOTAL.labels(status="error").inc()
-            struct_logger.exception("research_unexpected_error", error=str(exc))
-            raise
 
     async def _orchestrate(
         self, state: dict[str, Any], logger: structlog.stdlib.BoundLogger
@@ -199,27 +194,15 @@ class ResearcherAgent(BaseAgent):
             raise ValueError("Пустой запрос")
 
         topic_scope = str(state.get("topic_scope") or "").strip() or None
+        access_scope = self._resolve_access_scope(state)
 
-        explicit_access = str(state.get("access_scope") or "").strip() or None
-        legacy_scope = str(state.get("scope") or state.get("role") or "").strip() or None
-        if explicit_access is None and legacy_scope is not None:
-            warnings.warn(
-                "Keys 'scope' and 'role' are deprecated for ResearcherAgent; "
-                "use 'access_scope' instead.",
-                DeprecationWarning,
-                stacklevel=3,
-            )
-        raw_scope = explicit_access or legacy_scope
-        if explicit_access is None and legacy_scope in _LEGACY_ROLE_SCOPE_MAP:
-            raw_scope = _LEGACY_ROLE_SCOPE_MAP[legacy_scope]
-        access_scope = self._validate_access_scope(raw_scope)
         context = str(state.get("context", "")).strip()
         user_id = state.get("user_id")
         org_id = state.get("org_id")
         tenant_id = state.get("tenant_id")
         project_id = state.get("project_id")
 
-        sources, raw_collection_diag, cache_hit = await self._collect_sources(
+        sources, collection_diag, cache_hit = await self._collect_sources(
             message,
             topic_scope=topic_scope,
             access_scope=access_scope,
@@ -229,17 +212,9 @@ class ResearcherAgent(BaseAgent):
             tenant_id=tenant_id,
             project_id=project_id,
         )
+        sources = choose_primary_sources(message, sources)
+        collection_diag.extend(diagnostics_for_sources(sources))
 
-        collection_diag: list[Diagnostic] = []
-        for item in raw_collection_diag:
-            collection_diag.append(
-                Diagnostic(
-                    code=item,
-                    message=item,
-                    severity="warn",
-                    component="source_collector",
-                )
-            )
         RESEARCHER_SOURCES_COUNT.observe(len(sources))
         if any(d.code == "web_fallback" for d in collection_diag):
             RESEARCHER_WEB_FALLBACK_TOTAL.inc()
@@ -254,27 +229,29 @@ class ResearcherAgent(BaseAgent):
         try:
             if self._llm_client is None:
                 raise ResearchLLMError("llm_client_uninitialized")
-            llm_response = await self._llm_client.query(
+            llm_response, llm_diag = await self._llm_client.query(
                 prompt,
-                PromptBuilder.SYSTEM_PROMPT,
+                PromptBuilder.system_prompt(self._config),
                 allowed_source_ids={s.id for s in sources},
             )
         except TimeoutError:
             llm_diag.append(
                 Diagnostic(
-                    code="llm_timeout", message="LLM timeout", severity="error", component="llm"
-                )
-            )
-        except ResearchLLMError as exc:
-            llm_diag.append(
-                Diagnostic(code="llm_error", message=str(exc), severity="error", component="llm")
-            )
-            llm_diag.append(
-                Diagnostic(
-                    code="llm_error_legacy",
-                    message="LLM вернул ответ не в JSON-формате",
+                    code="llm_timeout",
+                    message="LLM timeout",
                     severity="error",
                     component="llm",
+                    stage="llm",
+                )
+            )
+        except (ResearchLLMError, ResearchValidationError) as exc:
+            llm_diag.append(
+                Diagnostic(
+                    code=getattr(exc, "code", "llm_error"),
+                    message=str(exc),
+                    severity="error",
+                    component="llm",
+                    stage="llm",
                 )
             )
         finally:
@@ -289,25 +266,8 @@ class ResearcherAgent(BaseAgent):
         if not validated_facts and sources and llm_response.facts:
             gaps.append("Факты не прошли валидацию источников")
 
-        seen_diag: set[tuple[str, str, str, str | None]] = set()
-        diag_struct: list[Diagnostic] = []
-        for diag_item in [*collection_diag, *llm_diag, *validation_diag]:
-            key = (
-                diag_item.code,
-                diag_item.message,
-                diag_item.component,
-                diag_item.source_id,
-            )
-            if key in seen_diag:
-                continue
-            seen_diag.add(key)
-            diag_struct.append(diag_item)
-        diagnostics_legacy: list[str] = []
-        for d in diag_struct:
-            diagnostics_legacy.append(d.code)
-            diagnostics_legacy.append(d.message)
-            diagnostics_legacy.append(f"{d.code}:{d.message}")
-        diagnostics_legacy = list(dict.fromkeys(diagnostics_legacy))
+        diag_struct = self._deduplicate_diagnostics([*collection_diag, *llm_diag, *validation_diag])
+        diagnostics_legacy: list[str] = list(dict.fromkeys([d.code for d in diag_struct]))
 
         payload = ResearchResponse(
             query=message,
@@ -325,63 +285,54 @@ class ResearcherAgent(BaseAgent):
         )
         state["research_facts"] = safe_facts_artifact
         state["research_payload"] = payload.model_dump()
+        logger.info(
+            "research_orchestrated", diagnostics=len(diag_struct), facts=len(validated_facts)
+        )
         return self._update_state(state, safe_facts_artifact)
 
     async def _collect_sources(
-        self,
-        message: str,
-        *,
-        topic_scope: str | None,
-        access_scope: str,
-        context: str,
-        user_id: str | None = None,
-        org_id: str | None = None,
-        tenant_id: str | None = None,
-        project_id: str | None = None,
-    ) -> tuple[list, list[str], bool]:
+        self, message: str, **kwargs: Any
+    ) -> tuple[list, list[Diagnostic], bool]:
         await self._ensure_initialized()
         if self._collector is None:
             raise ResearchSourceError("collector_not_initialized")
-        sources, diagnostics, cache_hit = await self._collector.collect(
-            message,
-            topic_scope=topic_scope,
-            access_scope=access_scope,
-            context=context,
-            user_id=user_id,
-            org_id=org_id,
-            tenant_id=tenant_id,
-            project_id=project_id,
-        )
-        legacy: list[str] = []
-        for item in diagnostics:
-            if item.code == "rag_failed" and item.message == "TimeoutError":
-                legacy.append("rag_timeout")
-            elif item.code == "rag_failed":
-                legacy.append(f"rag_failed:{item.message}")
-            else:
-                legacy.append(item.code)
-        return sources, list(dict.fromkeys(legacy)), cache_hit
+        return await self._collector.collect(message, **kwargs)
 
-    async def run_standalone(
-        self,
-        message: str,
-        *,
-        scope: str | None = None,
-        context: str = "",
-        user_id: str | None = None,
-    ) -> ResearchResponse:
-        await self._ensure_initialized()
-        state: dict[str, Any] = {
-            "message": message,
-            "scope": scope,
-            "access_scope": scope,
-            "topic_scope": None,
-            "context": context,
-            "user_id": user_id,
-            "history": [],
-        }
-        result = await self._run(state)
-        return ResearchResponse.model_validate(result["research_payload"])
+    @staticmethod
+    def _deduplicate_diagnostics(diags: list[Diagnostic]) -> list[Diagnostic]:
+        seen: set[tuple[str, str, str, str | None, str | None]] = set()
+        out: list[Diagnostic] = []
+        for item in diags:
+            key = (item.code, item.message, item.component, item.source_id, item.fact_id)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(item)
+        return out
+
+    @staticmethod
+    def _resolve_access_scope(state: dict[str, Any]) -> str:
+        explicit_provided = "access_scope" in state
+        explicit_value = state.get("access_scope")
+        if explicit_provided and explicit_value is None:
+            return "public"
+        if explicit_provided and isinstance(explicit_value, str) and not explicit_value.strip():
+            raise ResearchScopeError("empty access_scope is forbidden")
+        if explicit_provided:
+            return ResearcherAgent._validate_access_scope(str(explicit_value))
+
+        for legacy_key in ("scope", "role"):
+            if legacy_key in state:
+                warnings.warn(
+                    (
+                        f"Key '{legacy_key}' is deprecated for ResearcherAgent; "
+                        "use 'access_scope' instead."
+                    ),
+                    DeprecationWarning,
+                    stacklevel=3,
+                )
+                return ResearcherAgent._validate_access_scope(str(state.get(legacy_key)))
+        return "public"
 
     @staticmethod
     def _validate_access_scope(scope: str | None) -> str:
@@ -393,93 +344,3 @@ class ResearcherAgent(BaseAgent):
         if normalized not in _ALLOWED_ACCESS_SCOPES:
             raise ResearchScopeError(f"unknown access_scope={scope}")
         return normalized
-
-    @staticmethod
-    def _sanitize_source_snippet(snippet: str) -> str:
-        sanitized, _ = InjectionGuard.sanitize_snippet(snippet)
-        if sanitized == "[REDACTED: suspected prompt injection]":
-            return "[sanitized potential prompt-injection snippet]"
-        return sanitized
-
-    @staticmethod
-    def _parse_llm_json(query: str, raw: str, sources: list[ResearchSource]) -> ResearchResponse:
-        from agents.researcher.llm_client import StructuredLLMClient
-
-        payload = StructuredLLMClient._parse_json(raw)
-        diagnostics: list[str] = []
-        if payload is None:
-            payload = {}
-            diagnostics = ["llm_invalid_json"]
-        facts: list[ResearchFact] = []
-        for fact in payload.get("facts", []):
-            try:
-                facts.append(ResearchFact.model_validate(fact))
-            except Exception:
-                continue
-        return ResearchResponse(
-            query=query,
-            facts=facts,
-            sources=sources,
-            gaps=[str(x) for x in payload.get("gaps", [])],
-            diagnostics=diagnostics,
-            confidence_overall=ResearcherAgent._compute_confidence_overall(facts, sources),
-        )
-
-    @staticmethod
-    def _validate_fact_source_ids(
-        facts: list[ResearchFact], sources: list[ResearchSource]
-    ) -> tuple[list[ResearchFact], list[str]]:
-        known = {s.id for s in sources}
-        out: list[ResearchFact] = []
-        diagnostics: list[str] = []
-        for idx, fact in enumerate(facts, start=1):
-            valid = [sid for sid in fact.source_ids if sid in known]
-            if not valid:
-                diagnostics.append(f"Факт #{idx} отброшен: нет валидных source_ids")
-                continue
-            if len(valid) != len(fact.source_ids):
-                diagnostics.append(f"Факт #{idx}: удалены невалидные source_ids")
-            out.append(fact.model_copy(update={"source_ids": valid}))
-        return out, diagnostics
-
-    def _need_web_fallback(self, rag_sources: list[ResearchSource]) -> bool:
-        min_sources = int(
-            getattr(settings, "research_web_min_rag_sources", self._config.web_min_rag_sources)
-        )
-        min_avg = float(
-            getattr(settings, "research_web_min_avg_score", self._config.web_min_avg_score)
-        )
-        min_chars = int(getattr(settings, "research_web_min_snippet_chars", 5))
-        if len(rag_sources) < min_sources:
-            return True
-        avg = sum(s.score for s in rag_sources) / max(len(rag_sources), 1)
-        total_chars = sum(len(s.snippet or "") for s in rag_sources)
-        return avg < min_avg or total_chars < min_chars
-
-    @staticmethod
-    def _normalize_rag_score(chunk: dict[str, Any]) -> float:
-        score = float(chunk.get("score", 0.0) or 0.0)
-        score_type = str(chunk.get("score_type", "") or "")
-        if score_type == "distance":
-            return max(0.0, min(1.0, 1.0 - (score if score <= 1 else score / 5)))
-        if score > 1:
-            score = score / 100.0
-        return max(0.0, min(1.0, score))
-
-    @staticmethod
-    def _deduplicate_rag_sources(sources: list[ResearchSource]) -> list[ResearchSource]:
-        dedup: dict[tuple[str, int], ResearchSource] = {}
-        for source in sources:
-            key = ((source.document or source.title).lower(), source.page or -1)
-            existing = dedup.get(key)
-            if existing is None or source.score > existing.score:
-                dedup[key] = source
-        return list(dedup.values())
-
-    @staticmethod
-    def _compute_confidence_overall(
-        facts: list[ResearchFact], sources: list[ResearchSource]
-    ) -> float:
-        fact_avg = sum(f.confidence for f in facts) / len(facts) if facts else 0.0
-        src_avg = sum(s.score for s in sources) / len(sources) if sources else 0.0
-        return round((fact_avg * 0.6) + (src_avg * 0.4), 2)

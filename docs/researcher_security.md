@@ -1,11 +1,38 @@
 # Researcher security & evidence guarantees
 
-- `access_scope` is fail-closed: supported scopes are `public|private|tenant|org|project|user`. Unknown/empty scope is rejected.
-- Non-public scopes require explicit access context (`tenant_id/org_id/project_id/user_id` by scope).
-- RAG retrieval receives access filters (`filter_scope`, `tenant_id`, `org_id`, `project_id`, `user_id`) and cache keys include scope + all identifiers + `security_policy_version`.
-- Source text is always untrusted external content. Injection guard sanitizes snippets, tags suspicious payloads, and diagnostics keep machine-readable `code/message/severity/component`.
-- Fact support policy:
-  - supported only with real `source_id` + exact `evidence.quote` match in source text;
-  - fuzzy/paraphrase-only does not pass as supported;
-  - statuses: `supported|partially_supported|unsupported|conflicting`.
-- `confidence_overall` is a support/evidence quality score, **not truth probability**.
+- `access_scope` is fail-closed. Supported values: `public|private|tenant|org|project|user`.
+- `access_scope=None` is interpreted as `public`.
+- Empty scope (`""`) and unknown scope are rejected with `ResearchScopeError`.
+- Non-public scopes require context:
+  - `private|user` => `user_id`
+  - `org` => `org_id`
+  - `tenant` => `tenant_id`
+  - `project` => `tenant_id + project_id`
+- RAG retrieval always gets identity filters (`filter_scope`, `tenant_id`, `org_id`, `project_id`, `user_id`).
+- If RAG engine cannot accept identity filters for non-public requests, collector fails closed (`rag_identity_filters_unsupported`).
+
+## Fact validation policy
+
+- Only **exact quote** evidence is accepted.
+- Evidence checks source text in this order: `snippet`, `chunk_text`, `full_text`.
+- `title/document` are metadata only, not primary evidence.
+- Support statuses:
+  - `supported` — quote found in source text.
+  - `partially_supported` — at least one source supports, at least one source is missing/unsupported.
+  - `conflicting` — quote found, but conflicts semantically with fact claim.
+  - `unsupported` — not returned in verified facts; diagnostics remain machine-readable.
+- If evidence can only be checked against `snippet` (no chunk/full text), diagnostic `snippet_only_evidence` is emitted.
+
+## Prompt / injection model
+
+- Source content is passed to LLM as **untrusted external data** inside JSON payload.
+- Prompt builder never raw-slices final JSON output.
+- InjectionGuard is a **heuristic layer, not complete defense**.
+- Red-team detections include: role spoofing, override attempts (EN/RU), HTML/Markdown payloads, zero-width obfuscation, base64 payloads, prompt leak attempts.
+
+## support_score / confidence_overall
+
+- `confidence_overall` is backward-compatible alias of `support_score`.
+- It is **not probability of truth**.
+- LLM self-reported confidence is fixed at `0.0` and never inflates score.
+- Conflicts, inactive sources, and missing jurisdiction for normative sources reduce score.
