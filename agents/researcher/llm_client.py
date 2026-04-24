@@ -112,28 +112,35 @@ class StructuredLLMClient:
                     fact = fact.model_copy(update={"source_ids": []})
                 patched_facts.append(fact)
             response = response.model_copy(update={"facts": patched_facts})
-        mapped_facts = [
-            ResearchFact(
-                text=f.text,
-                applicability=f.applicability,
-                confidence=f.confidence,
-                source_ids=f.source_ids,
-                support_status=f.support_status,  # type: ignore[arg-type]
-                evidence=[
-                    ResearchEvidence(
-                        source_id=e.source_id,
-                        quote=e.quote,
-                        locator=e.locator,
-                        chunk_id=e.chunk_id,
-                        document_id=e.document_id,
-                        page=e.page,
-                        support_status=e.support_status,  # type: ignore[arg-type]
-                    )
-                    for e in f.evidence
-                ],
-            )
-            for f in response.facts
-        ]
+        try:
+            mapped_facts = [
+                ResearchFact(
+                    text=f.text,
+                    applicability=f.applicability,
+                    confidence=f.confidence,
+                    source_ids=f.source_ids,
+                    support_status=f.support_status,  # type: ignore[arg-type]
+                    evidence=[
+                        ResearchEvidence(
+                            source_id=e.source_id,
+                            quote=e.quote,
+                            locator=e.locator,
+                            chunk_id=e.chunk_id,
+                            document_id=e.document_id,
+                            page=e.page,
+                            support_status=e.support_status,  # type: ignore[arg-type]
+                        )
+                        for e in f.evidence
+                    ],
+                )
+                for f in response.facts
+            ]
+        except ValidationError as exc:
+            raise ResearchValidationError(
+                "llm_schema_validation_failure",
+                "schema_validation_failure",
+                details={"errors": exc.errors()},
+            ) from exc
         return response.model_copy(update={"facts": mapped_facts}), diagnostics  # type: ignore[arg-type]
 
     async def generate(self, prompt: str, *, system_prompt: str) -> dict[str, Any]:

@@ -171,6 +171,7 @@ class SourceCollector:
 
         need_web = self._need_web_fallback(rag_sources)
         web_result: list[ResearchSource] | Exception = []
+        web_used = False
         effective_scope = (access_scope or "public").strip()
         non_public_scope = effective_scope != "public"
         web_allowed = (
@@ -179,6 +180,7 @@ class SourceCollector:
         if need_web and web_allowed:
             try:
                 web_result = await self._collect_web(query, topic_scope)
+                web_used = True
             except Exception as exc:  # noqa: BLE001
                 web_result = exc
         elif need_web and non_public_scope:
@@ -204,7 +206,7 @@ class SourceCollector:
                     stage="collect",
                 )
             )
-        elif need_web:
+        elif web_used:
             sanitized_web, web_sanitization_diag = self._sanitize_sources(web_result)
             web_sources = sanitized_web
             diagnostics.append(
@@ -319,13 +321,13 @@ class SourceCollector:
         chunks = await asyncio.wait_for(coro, timeout=self._config.rag_timeout_seconds)
         if access_scope and access_scope != "public":
             for chunk in chunks or []:
-                if tenant_id and chunk.get("tenant_id") not in {None, tenant_id}:
+                if tenant_id and chunk.get("tenant_id") != tenant_id:
                     raise ResearchSourceError("rag_identity_filter_violation")
-                if org_id and chunk.get("org_id") not in {None, org_id}:
+                if org_id and chunk.get("org_id") != org_id:
                     raise ResearchSourceError("rag_identity_filter_violation")
-                if project_id and chunk.get("project_id") not in {None, project_id}:
+                if project_id and chunk.get("project_id") != project_id:
                     raise ResearchSourceError("rag_identity_filter_violation")
-                if user_id and chunk.get("user_id") not in {None, user_id}:
+                if user_id and chunk.get("user_id") != user_id:
                     raise ResearchSourceError("rag_identity_filter_violation")
 
         sources: list[ResearchSource] = []

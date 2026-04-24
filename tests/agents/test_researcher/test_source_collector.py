@@ -85,3 +85,45 @@ def test_injection_in_title_and_document_is_sanitized() -> None:
     )
     assert sources[0].title.startswith("[REDACTED")
     assert any(d.code == "prompt_injection_detected" for d in diagnostics)
+
+
+def test_blocked_private_web_fallback_does_not_emit_web_fallback_metric_signal() -> None:
+    class _RagWeakWithIdentity:
+        supports_identity_filters = True
+
+        def validate_identity_filter_support(self) -> None:
+            return None
+
+        async def search(
+            self, query: str, n_results: int, filter_scope: str | None = None, **kwargs
+        ):
+            _ = (query, n_results, filter_scope, kwargs)
+            return [{"source": "doc", "text": "low", "score": 0.01, "tenant_id": "t1"}]
+
+    collector = SourceCollector(_RagWeakWithIdentity(), _Web(), None, ResearcherConfig())  # type: ignore[arg-type]
+    _, diagnostics, _ = asyncio.run(
+        collector.collect("q", topic_scope=None, access_scope="tenant", context="", tenant_id="t1")
+    )
+    codes = {d.code for d in diagnostics}
+    assert "web_fallback_blocked_private_scope" in codes
+    assert "web_fallback" not in codes
+
+
+def test_non_public_requires_exact_identity_match_in_rag_rows() -> None:
+    class _RagMismatchedIdentity:
+        supports_identity_filters = True
+
+        def validate_identity_filter_support(self) -> None:
+            return None
+
+        async def search(
+            self, query: str, n_results: int, filter_scope: str | None = None, **kwargs
+        ):
+            _ = (query, n_results, filter_scope, kwargs)
+            return [{"source": "doc", "text": "x", "score": 0.9, "tenant_id": None}]
+
+    collector = SourceCollector(_RagMismatchedIdentity(), _Web(), None, ResearcherConfig())  # type: ignore[arg-type]
+    with pytest.raises(ResearchSourceError, match="rag_identity_filter_violation"):
+        asyncio.run(
+            collector.collect("q", topic_scope=None, access_scope="tenant", context="", tenant_id="t1")
+        )

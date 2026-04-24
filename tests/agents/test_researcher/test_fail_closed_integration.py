@@ -47,7 +47,17 @@ class _RagWeak:
 
     async def search(self, query: str, **kwargs):
         _ = (query, kwargs)
-        return [{"source": "doc", "text": "small", "score": 0.1}]
+        return [
+            {
+                "source": "doc",
+                "text": "small",
+                "score": 0.1,
+                "tenant_id": kwargs.get("tenant_id"),
+                "org_id": kwargs.get("org_id"),
+                "project_id": kwargs.get("project_id"),
+                "user_id": kwargs.get("user_id"),
+            }
+        ]
 
 
 class _RagStrong:

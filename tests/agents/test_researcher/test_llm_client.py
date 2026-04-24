@@ -93,3 +93,14 @@ def test_non_json_envelope_rejected() -> None:
     with pytest.raises(ResearchLLMError) as exc:
         asyncio.run(client.generate("p", system_prompt="s"))
     assert exc.value.code == "llm_non_json_envelope"
+
+
+def test_invalid_support_status_raises_research_validation_error() -> None:
+    payload = (
+        '{"facts":[{"text":"x","source_ids":[],"support_status":"totally_valid","evidence":[]}],'
+        '"gaps":[]}'
+    )
+    client = StructuredLLMClient(_Router([payload]), ResearcherConfig())  # type: ignore[arg-type]
+    with pytest.raises(ResearchValidationError) as exc:
+        asyncio.run(client.query("p", "s"))
+    assert exc.value.code == "llm_schema_validation_failure"
