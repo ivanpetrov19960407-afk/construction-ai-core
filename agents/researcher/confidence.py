@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import math
+
 from pydantic import BaseModel, Field
 
 from agents.researcher.config import ResearcherConfig
+from agents.researcher.domain import is_normative_source
 from schemas.research import ResearchFact, ResearchSource
 
 
@@ -56,7 +59,7 @@ class ConfidenceScorer:
         cited_scores: list[float] = []
         unique_sources: set[str] = set()
         inactive_hits = 0
-        missing_jurisdiction = 0
+        missing_jurisdiction_normative_hits = 0
         conflict_hits = 0
 
         for fact in facts:
@@ -64,7 +67,7 @@ class ConfidenceScorer:
                 conflict_hits += 1
             evidence_supported = 0
             for ev in fact.evidence:
-                if ev.source_id in source_by_id and ev.support_status == "supported":
+                if ev.source_id in source_by_id and ev.support_status in {"supported", "conflicting"}:
                     evidence_supported += 1
             if evidence_supported > 0:
                 facts_with_supported_evidence += 1
@@ -74,24 +77,36 @@ class ConfidenceScorer:
                 if src is None:
                     continue
                 unique_sources.add(sid)
-                cited_scores.append(
-                    src.quality_score if src.quality_score is not None else src.score
-                )
+                cited_scores.append(src.quality_score if src.quality_score is not None else src.score)
                 if src.is_active is False:
                     inactive_hits += 1
-                if not src.jurisdiction:
-                    missing_jurisdiction += 1
+                if is_normative_source(src) and not src.jurisdiction:
+                    missing_jurisdiction_normative_hits += 1
 
         evidence_coverage = facts_with_supported_evidence / max(len(facts), 1)
         source_quality = sum(cited_scores) / len(cited_scores) if cited_scores else 0.0
-        independent_sources = min(1.0, len(unique_sources) / max(len(facts), 1))
+        independent_sources = 1 - math.exp(-len(unique_sources))
 
-        recency_score = 1.0
+        recency_score = 0.0
         if cited_scores:
-            penalties = (inactive_hits * 0.2) + (missing_jurisdiction * 0.05)
+            penalties = (inactive_hits * 0.2) + (missing_jurisdiction_normative_hits * 0.1)
             recency_score = max(0.0, 1.0 - penalties / max(len(cited_scores), 1))
 
         conflict_penalty = min(1.0, conflict_hits / max(len(facts), 1))
+
+        if facts_with_supported_evidence == 0:
+            return ConfidenceBreakdown(
+                overall=0.0,
+                evidence_coverage=0.0,
+                source_quality=round(source_quality, 2),
+                independent_sources=round(independent_sources, 2),
+                recency_score=round(recency_score, 2),
+                conflict_penalty=round(min(1.0, conflict_hits / max(len(facts), 1)), 2),
+                support_score=0.0,
+                llm_self_reported_confidence=0.0,
+                weights=ConfidenceScorer._weights(config),
+                explanation="support_score indicates evidence support quality, not probability of truth.",
+            )
 
         weights = ConfidenceScorer._weights(config)
         support_score = (
@@ -112,7 +127,7 @@ class ConfidenceScorer:
             support_score=round(support_score, 2),
             llm_self_reported_confidence=0.0,
             weights=weights,
-            explanation="Score indicates evidence support quality, not probability of truth.",
+            explanation="support_score indicates evidence support quality, not probability of truth.",
         )
 
     @staticmethod

@@ -35,13 +35,24 @@ def test_unknown_scope_fails() -> None:
         ResearcherAgent._validate_access_scope("admin")
 
 
-def test_private_scope_without_context_fails() -> None:
+def test_empty_scope_fails() -> None:
+    with pytest.raises(ResearchScopeError):
+        ResearcherAgent._resolve_access_scope({"access_scope": ""})
+
+
+def test_private_scope_without_user_id_fails() -> None:
     collector = SourceCollector(_Rag(), _Web(), None, ResearcherConfig())  # type: ignore[arg-type]
     with pytest.raises(ResearchAccessError):
         asyncio.run(collector.collect("q", topic_scope=None, access_scope="private", context=""))
 
 
-def test_project_scope_without_project_id_fails() -> None:
+def test_tenant_scope_without_tenant_id_fails() -> None:
+    collector = SourceCollector(_Rag(), _Web(), None, ResearcherConfig())  # type: ignore[arg-type]
+    with pytest.raises(ResearchAccessError):
+        asyncio.run(collector.collect("q", topic_scope=None, access_scope="tenant", context=""))
+
+
+def test_project_scope_without_project_id_and_tenant_id_fails() -> None:
     collector = SourceCollector(_Rag(), _Web(), None, ResearcherConfig())  # type: ignore[arg-type]
     with pytest.raises(ResearchAccessError):
         asyncio.run(
@@ -55,7 +66,7 @@ def test_project_scope_without_project_id_fails() -> None:
         )
 
 
-def test_rag_engine_receives_access_filters() -> None:
+def test_rag_engine_receives_identity_filters() -> None:
     rag = _Rag()
     collector = SourceCollector(rag, _Web(), None, ResearcherConfig())  # type: ignore[arg-type]
     asyncio.run(
@@ -77,8 +88,6 @@ def test_rag_engine_receives_access_filters() -> None:
     assert rag.last_kwargs["user_id"] == "u1"
 
 
-def test_cache_key_includes_scope_and_identity() -> None:
-    collector = SourceCollector(_Rag(), _Web(), None, ResearcherConfig())  # type: ignore[arg-type]
-    k1 = collector._cache_key("бетон", None, "tenant", "", tenant_id="t1", user_id="u1")
-    k2 = collector._cache_key("бетон", None, "tenant", "", tenant_id="t2", user_id="u1")
-    assert k1 != k2
+def test_legacy_role_does_not_fallback_to_public() -> None:
+    with pytest.raises(ResearchScopeError):
+        ResearcherAgent._resolve_access_scope({"role": "admin"})

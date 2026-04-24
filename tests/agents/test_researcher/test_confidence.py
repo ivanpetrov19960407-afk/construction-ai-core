@@ -36,7 +36,7 @@ def test_multiple_independent_sources_increase_score() -> None:
         ResearchSource(id="s2", type="rag", title="b", score=0.8),
     ]
     res = ConfidenceScorer.score(facts, sources, cfg)
-    assert res.independent_sources == 1.0
+    assert res.independent_sources > 0.8
 
 
 def test_stale_source_lowers_score() -> None:

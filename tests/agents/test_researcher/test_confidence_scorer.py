@@ -1,47 +1,66 @@
 from agents.researcher.confidence import ConfidenceScorer
 from agents.researcher.config import ResearcherConfig
-from schemas.research import ResearchFact, ResearchSource
+from schemas.research import ResearchEvidence, ResearchFact, ResearchSource
 
 
-def test_confidence_scorer_zero_without_facts() -> None:
+def _supported_fact(source_id: str, *, status: str = "supported") -> ResearchFact:
+    return ResearchFact(
+        text="x",
+        source_ids=[source_id],
+        support_status=status,
+        evidence=[ResearchEvidence(source_id=source_id, quote="x", support_status=status)],
+    )
+
+
+def test_unsupported_facts_score_zero() -> None:
     cfg = ResearcherConfig()
-    sources = [ResearchSource(id="rag-0", type="rag", title="doc", score=1.0)]
-    result = ConfidenceScorer.score([], sources, cfg)
-    assert result.overall == 0.0
+    fact = ResearchFact(text="x", source_ids=["s1"], support_status="unsupported")
+    sources = [ResearchSource(id="s1", type="rag", title="doc", score=0.8)]
+    result = ConfidenceScorer.score([fact], sources, cfg)
+    assert result.support_score == 0.0
 
 
-def test_confidence_scorer_positive_with_validated_facts_and_sources() -> None:
+def test_conflicting_fact_lowers_score() -> None:
     cfg = ResearcherConfig()
-    facts = [ResearchFact(text="x", applicability="", confidence=0.9, source_ids=["rag-0"])]
-    sources = [ResearchSource(id="rag-0", type="rag", title="doc", score=0.9)]
-    result = ConfidenceScorer.score(facts, sources, cfg)
-    assert result.overall > 0
+    sources = [ResearchSource(id="s1", type="rag", title="doc", score=0.8)]
+    ok = ConfidenceScorer.score([_supported_fact("s1")], sources, cfg)
+    conflict = ConfidenceScorer.score([_supported_fact("s1", status="conflicting")], sources, cfg)
+    assert conflict.support_score < ok.support_score
 
 
-def test_llm_self_confidence_alone_not_high_without_source_support() -> None:
+def test_inactive_source_lowers_score() -> None:
     cfg = ResearcherConfig()
-    facts = [ResearchFact(text="x", applicability="", confidence=1.0, source_ids=[])]
-    result = ConfidenceScorer.score(facts, [], cfg)
-    assert result.overall < 0.2
+    fact = _supported_fact("s1")
+    active = ConfidenceScorer.score([fact], [ResearchSource(id="s1", type="rag", title="СП", score=0.8, is_active=True)], cfg)
+    inactive = ConfidenceScorer.score([fact], [ResearchSource(id="s1", type="rag", title="СП", score=0.8, is_active=False)], cfg)
+    assert inactive.support_score < active.support_score
 
 
-def test_citation_coverage_counts_cited_facts_not_source_id_volume() -> None:
+def test_missing_jurisdiction_penalty_only_for_normative() -> None:
     cfg = ResearcherConfig()
-    facts = [
-        ResearchFact(
-            text="f1",
-            applicability="",
-            confidence=0.9,
-            source_ids=["rag-0", "rag-1"],
-            evidence=[
-                {"source_id": "rag-0", "quote": "f1", "support_status": "supported"},
-            ],
-        ),
-        ResearchFact(text="f2", applicability="", confidence=0.9, source_ids=[]),
-    ]
-    sources = [
-        ResearchSource(id="rag-0", type="rag", title="d0", score=0.9),
-        ResearchSource(id="rag-1", type="rag", title="d1", score=0.9),
-    ]
-    result = ConfidenceScorer.score(facts, sources, cfg)
-    assert result.citation_coverage == 0.5
+    fact = _supported_fact("s1")
+    norm = ConfidenceScorer.score([fact], [ResearchSource(id="s1", type="rag", title="ГОСТ 1", score=0.8, jurisdiction=None)], cfg)
+    web = ConfidenceScorer.score([fact], [ResearchSource(id="s1", type="web", title="blog", score=0.8, jurisdiction=None)], cfg)
+    assert norm.recency_score < web.recency_score
+
+
+def test_multiple_independent_sources_increase_score() -> None:
+    cfg = ResearcherConfig()
+    one = ConfidenceScorer.score([_supported_fact("s1")], [ResearchSource(id="s1", type="rag", title="doc", score=0.8)], cfg)
+    multi = ConfidenceScorer.score(
+        [_supported_fact("s1"), _supported_fact("s2")],
+        [
+            ResearchSource(id="s1", type="rag", title="doc1", score=0.8),
+            ResearchSource(id="s2", type="rag", title="doc2", score=0.8),
+        ],
+        cfg,
+    )
+    assert multi.independent_sources > one.independent_sources
+
+
+def test_llm_self_confidence_cannot_inflate_score() -> None:
+    cfg = ResearcherConfig()
+    fact = ResearchFact(text="x", source_ids=[], confidence=1.0)
+    result = ConfidenceScorer.score([fact], [], cfg)
+    assert result.llm_self_reported_confidence == 0.0
+    assert result.support_score == 0.0

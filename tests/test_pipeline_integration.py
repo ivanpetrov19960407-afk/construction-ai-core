@@ -18,6 +18,7 @@ def test_generate_tk_pipeline_end_to_end() -> None:
             SimpleNamespace(text="APPROVED"),
             SimpleNamespace(text="verifier ok"),
             SimpleNamespace(text="formatter output"),
+            SimpleNamespace(text="{}"),
         ]
     )
     # Mock session_memory.get to avoid SQLite initialisation in CI
@@ -28,7 +29,7 @@ def test_generate_tk_pipeline_end_to_end() -> None:
             intent="generate_tk",
             message="Сделай ТК на монолитные работы",
             session_id="s-1",
-            role="pto_engineer",
+            role="public",
         )
     )
 

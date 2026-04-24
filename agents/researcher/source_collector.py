@@ -26,7 +26,7 @@ except Exception:  # pragma: no cover
 
 
 from agents.researcher.config import ResearcherConfig
-from agents.researcher.errors import ResearchAccessError, ResearchSourceError
+from agents.researcher.errors import ResearchAccessError, ResearchScopeError, ResearchSourceError
 from agents.researcher.security import InjectionGuard
 from core.cache import RedisCache
 from core.rag_engine import RAGEngine
@@ -245,9 +245,15 @@ class SourceCollector:
         tenant_id: str | None,
         project_id: str | None,
     ) -> None:
-        if not access_scope or access_scope == "public":
+        if access_scope is None:
+            access_scope = "public"
+        if not access_scope.strip():
+            raise ResearchScopeError("empty access_scope is forbidden")
+        if access_scope == "public":
             return
-        required = _REQUIRED_SCOPE_CONTEXT.get(access_scope, ("tenant_id",))
+        required = _REQUIRED_SCOPE_CONTEXT.get(access_scope)
+        if required is None:
+            raise ResearchScopeError(f"unknown access_scope={access_scope}")
         present = {
             "user_id": bool(user_id),
             "org_id": bool(org_id),
@@ -291,9 +297,7 @@ class SourceCollector:
             coro = self._rag_engine.search(retrieval_query, **kwargs)
         except TypeError:
             if access_scope and access_scope != "public":
-                raise ResearchSourceError(
-                    "RAG engine does not support identity filters for non-public scope"
-                )
+                raise ResearchSourceError("rag_identity_filters_unsupported")
             fallback = {k: v for k, v in kwargs.items() if k in {"n_results", "filter_scope"}}
             coro = self._rag_engine.search(retrieval_query, **fallback)
         chunks = await asyncio.wait_for(coro, timeout=self._config.rag_timeout_seconds)
@@ -460,8 +464,8 @@ class SourceCollector:
 
         try:
             infos = socket.getaddrinfo(host, parsed.port or 443, proto=socket.IPPROTO_TCP)
-        except socket.gaierror:
-            return True
+        except (socket.gaierror, OSError):
+            return False
         for info in infos:
             resolved_ip = ip_address(info[4][0])
             if (

@@ -57,15 +57,15 @@ def test_outdated_source_flagged_by_recency() -> None:
 def test_conflicting_versions_detected() -> None:
     cfg = ResearcherConfig()
     facts = [ResearchFact(text="x", source_ids=["s1"], support_status="conflicting")]
-    src = [ResearchSource(id="s1", type="rag", title="doc", score=0.8, jurisdiction="RU")]
+    src = [ResearchSource(id="s1", type="rag", title="ГОСТ doc", score=0.8, jurisdiction="RU")]
     assert ConfidenceScorer.score(facts, src, cfg).conflict_penalty > 0
 
 
 def test_missing_jurisdiction_reduces_score() -> None:
     cfg = ResearcherConfig()
     facts = [_fact(["s1"])]
-    with_j = [ResearchSource(id="s1", type="rag", title="doc", score=0.8, jurisdiction="RU")]
-    no_j = [ResearchSource(id="s1", type="rag", title="doc", score=0.8, jurisdiction=None)]
+    with_j = [ResearchSource(id="s1", type="rag", title="ГОСТ doc", score=0.8, jurisdiction="RU")]
+    no_j = [ResearchSource(id="s1", type="rag", title="ГОСТ doc", score=0.8, jurisdiction=None)]
     assert (
         ConfidenceScorer.score(facts, with_j, cfg).overall
         > ConfidenceScorer.score(facts, no_j, cfg).overall

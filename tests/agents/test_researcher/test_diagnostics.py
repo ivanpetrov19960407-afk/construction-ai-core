@@ -3,7 +3,7 @@ import asyncio
 import pytest
 
 from agents.researcher.config import ResearcherConfig
-from agents.researcher.errors import ResearchLLMError
+from agents.researcher.errors import ResearchLLMError, ResearchValidationError
 from agents.researcher.llm_client import StructuredLLMClient
 
 
@@ -51,7 +51,7 @@ def test_invalid_json_diagnostic() -> None:
 
 def test_schema_validation_diagnostic() -> None:
     client = StructuredLLMClient(_Router(['{"facts": "oops", "gaps": []}']), ResearcherConfig())  # type: ignore[arg-type]
-    with pytest.raises(ResearchLLMError):
+    with pytest.raises(ResearchValidationError):
         asyncio.run(client.query("p", "s"))
 
 

@@ -8,9 +8,9 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from agents.researcher.config import ResearcherConfig
-from agents.researcher.errors import ResearchLLMError
+from agents.researcher.errors import ResearchLLMError, ResearchValidationError
 from core.llm_router import LLMRouter
-from schemas.research import ResearchFact
+from schemas.research import Diagnostic, ResearchFact
 
 _MAX_REASK_OUTPUT_CHARS = 2000
 
@@ -31,18 +31,32 @@ class StructuredLLMClient:
 
     async def query(
         self, prompt: str, system_prompt: str, *, allowed_source_ids: set[str] | None = None
-    ) -> LLMResearchResponse:
+    ) -> tuple[LLMResearchResponse, list[Diagnostic]]:
         parsed = await self.generate(prompt, system_prompt=system_prompt)
+        diagnostics: list[Diagnostic] = []
         try:
             response = LLMResearchResponse.model_validate(parsed)
         except ValidationError as exc:
-            raise ResearchLLMError("schema_validation_failure") from exc
+            raise ResearchValidationError(
+                "llm_schema_validation_failure",
+                "schema_validation_failure",
+                details={"errors": exc.errors()},
+            ) from exc
 
         if allowed_source_ids is not None:
             patched_facts: list[ResearchFact] = []
-            for fact in response.facts:
+            for idx, fact in enumerate(response.facts, start=1):
                 unknown = [sid for sid in fact.source_ids if sid not in allowed_source_ids]
                 if unknown:
+                    diagnostics.append(
+                        Diagnostic(
+                            code="llm_hallucinated_source_id",
+                            message=f"fact#{idx}: unknown source_ids={unknown}",
+                            severity="warn",
+                            component="llm",
+                            stage="llm",
+                        )
+                    )
                     fact = fact.model_copy(
                         update={
                             "source_ids": [
@@ -52,7 +66,7 @@ class StructuredLLMClient:
                     )
                 patched_facts.append(fact)
             response = response.model_copy(update={"facts": patched_facts})
-        return response
+        return response, diagnostics
 
     async def generate(self, prompt: str, *, system_prompt: str) -> dict[str, Any]:
         attempts = max(1, int(self._config.retry_attempts))
@@ -76,7 +90,7 @@ class StructuredLLMClient:
         if parsed is not None:
             return parsed
         if not self._looks_like_json_candidate(response.text):
-            raise ResearchLLMError("malformed_json")
+            raise ResearchLLMError("llm_malformed_json")
 
         reask_limit = max(0, int(self._config.llm_reask_limit))
         invalid_output = response.text
@@ -87,7 +101,7 @@ class StructuredLLMClient:
             if reparsed is not None:
                 return reparsed
             invalid_output = reask.text
-        raise ResearchLLMError("malformed_json_after_reask")
+        raise ResearchLLMError("llm_malformed_json")
 
     async def _query_router(self, *, prompt: str, system_prompt: str) -> Any:
         try:
@@ -136,11 +150,9 @@ class StructuredLLMClient:
             if char != "{":
                 continue
             try:
-                obj, end = decoder.raw_decode(payload[idx:])
+                obj, _end = decoder.raw_decode(payload[idx:])
             except JSONDecodeError:
                 continue
-            if isinstance(obj, dict) and payload[idx + end :].strip() in {"", "```"}:
-                return obj
             if isinstance(obj, dict):
                 return obj
         return None
