@@ -26,6 +26,7 @@ except Exception:  # pragma: no cover
 
 
 from agents.researcher.config import ResearcherConfig
+from agents.researcher.domain import choose_primary_sources
 from agents.researcher.errors import ResearchAccessError, ResearchScopeError, ResearchSourceError
 from agents.researcher.security import InjectionGuard
 from core.cache import RedisCache
@@ -144,9 +145,6 @@ class SourceCollector:
                 project_id=project_id,
             )
         )
-        web_task = asyncio.create_task(
-            self._collect_web_deferred(query, topic_scope, delay_seconds=0.05)
-        )
 
         try:
             rag_result: list[ResearchSource] | Exception = await rag_task
@@ -172,14 +170,29 @@ class SourceCollector:
             rag_sources = self._deduplicate_rag_sources(sanitized_rag)
 
         need_web = self._need_web_fallback(rag_sources)
-        if not need_web:
-            web_task.cancel()
-            web_result: list[ResearchSource] | Exception = []
-        else:
+        web_result: list[ResearchSource] | Exception = []
+        web_used = False
+        effective_scope = (access_scope or "public").strip()
+        non_public_scope = effective_scope != "public"
+        web_allowed = not non_public_scope or bool(
+            self._config.allow_external_web_for_private_scopes
+        )
+        if need_web and web_allowed:
             try:
-                web_result = await web_task
+                web_result = await self._collect_web(query, topic_scope)
+                web_used = True
             except Exception as exc:  # noqa: BLE001
                 web_result = exc
+        elif need_web and non_public_scope:
+            diagnostics.append(
+                Diagnostic(
+                    code="web_fallback_blocked_private_scope",
+                    message="web fallback blocked for non-public scope",
+                    severity="warn",
+                    component="source_collector",
+                    stage="collect",
+                )
+            )
 
         web_sources: list[ResearchSource] = []
         web_sanitization_diag: list[Diagnostic] = []
@@ -193,7 +206,7 @@ class SourceCollector:
                     stage="collect",
                 )
             )
-        elif need_web:
+        elif web_used:
             sanitized_web, web_sanitization_diag = self._sanitize_sources(web_result)
             web_sources = sanitized_web
             diagnostics.append(
@@ -209,9 +222,11 @@ class SourceCollector:
         diagnostics.extend(rag_sanitization_diag)
         diagnostics.extend(web_sanitization_diag)
 
-        top_sources = sorted([*rag_sources, *web_sources], key=lambda s: s.score, reverse=True)[
-            : self._config.top_k_sources
+        candidate_pool = sorted([*rag_sources, *web_sources], key=lambda s: s.score, reverse=True)[
+            : self._config.candidate_pool_size
         ]
+        ranked = choose_primary_sources(query, candidate_pool)
+        top_sources = ranked[: self._config.final_top_k_sources]
         compact_sources = self._truncate_sources(top_sources)
 
         if compact_sources and self._cache is not None:
@@ -266,12 +281,6 @@ class SourceCollector:
                 f"access_scope={access_scope} requires context fields: {', '.join(missing)}"
             )
 
-    async def _collect_web_deferred(
-        self, query: str, topic_scope: str | None, delay_seconds: float
-    ) -> list[ResearchSource]:
-        await asyncio.sleep(delay_seconds)
-        return await self._collect_web(query, topic_scope)
-
     async def _collect_rag(
         self,
         query: str,
@@ -286,13 +295,22 @@ class SourceCollector:
     ) -> list[ResearchSource]:
         retrieval_query = "\n".join(part for part in [query, topic_scope, context] if part).strip()
         kwargs = {
-            "n_results": self._config.top_k_sources,
+            "n_results": self._config.candidate_pool_size,
             "filter_scope": access_scope,
             "tenant_id": tenant_id,
             "org_id": org_id,
             "project_id": project_id,
             "user_id": user_id,
         }
+        if access_scope and access_scope != "public":
+            if not bool(getattr(self._rag_engine, "supports_identity_filters", True)):
+                raise ResearchSourceError("rag_identity_filters_unsupported")
+            validator = getattr(self._rag_engine, "validate_identity_filter_support", None)
+            if callable(validator):
+                try:
+                    validator()
+                except Exception as exc:  # noqa: BLE001
+                    raise ResearchSourceError("rag_identity_filters_unsupported") from exc
         try:
             coro = self._rag_engine.search(retrieval_query, **kwargs)
         except TypeError:
@@ -301,6 +319,16 @@ class SourceCollector:
             fallback = {k: v for k, v in kwargs.items() if k in {"n_results", "filter_scope"}}
             coro = self._rag_engine.search(retrieval_query, **fallback)
         chunks = await asyncio.wait_for(coro, timeout=self._config.rag_timeout_seconds)
+        if access_scope and access_scope != "public":
+            for chunk in chunks or []:
+                if tenant_id and chunk.get("tenant_id") != tenant_id:
+                    raise ResearchSourceError("rag_identity_filter_violation")
+                if org_id and chunk.get("org_id") != org_id:
+                    raise ResearchSourceError("rag_identity_filter_violation")
+                if project_id and chunk.get("project_id") != project_id:
+                    raise ResearchSourceError("rag_identity_filter_violation")
+                if user_id and chunk.get("user_id") != user_id:
+                    raise ResearchSourceError("rag_identity_filter_violation")
 
         sources: list[ResearchSource] = []
         for idx, chunk in enumerate(chunks or []):
@@ -317,13 +345,15 @@ class SourceCollector:
                     page=page if page > 0 else None,
                     locator=f"стр. {page}" if page > 0 else None,
                     snippet=snippet,
+                    chunk_text=str(chunk.get("chunk_text", chunk.get("text", "")) or ""),
                     score=normalized_score,
                     retrieval_score=normalized_score,
                     access_scope=access_scope,
-                    tenant_id=tenant_id,
-                    org_id=org_id,
-                    project_id=project_id,
-                    user_id=user_id,
+                    tenant_id=chunk.get("tenant_id", tenant_id),
+                    org_id=chunk.get("org_id", org_id),
+                    project_id=chunk.get("project_id", project_id),
+                    user_id=chunk.get("user_id", user_id),
+                    source_type=chunk.get("source_type"),
                     document_id=chunk.get("document_id"),
                     chunk_id=chunk.get("chunk_id"),
                     section=chunk.get("section"),
@@ -333,6 +363,9 @@ class SourceCollector:
                     effective_from=chunk.get("effective_from"),
                     effective_to=chunk.get("effective_to"),
                     is_active=chunk.get("is_active"),
+                    ingested_at=chunk.get("ingested_at"),
+                    checksum=chunk.get("checksum"),
+                    text_hash=chunk.get("text_hash"),
                     quality_score=chunk.get("quality_score"),
                 )
             )
@@ -350,7 +383,7 @@ class SourceCollector:
             self._web_limiter_loop_id = loop_id
         async with self._web_limiter:
             items = await asyncio.wait_for(
-                self._web_search_tool.run(web_query, max_results=self._config.top_k_sources),
+                self._web_search_tool.run(web_query, max_results=self._config.candidate_pool_size),
                 timeout=self._config.web_timeout_seconds,
             )
         sources: list[ResearchSource] = []
@@ -485,20 +518,34 @@ class SourceCollector:
         diagnostics: list[Diagnostic] = []
         redacted_count = 0
         for source in sources:
-            clean_snippet, was_redacted = InjectionGuard.sanitize_snippet(source.snippet or "")
-            if was_redacted:
+            updates: dict[str, str | None] = {}
+            flagged = False
+            for field in (
+                "title",
+                "document",
+                "section",
+                "locator",
+                "snippet",
+                "chunk_text",
+                "full_text",
+            ):
+                raw = getattr(source, field) or ""
+                clean, redacted = InjectionGuard.sanitize_snippet(raw)
+                updates[field] = clean
+                flagged = flagged or redacted
+            if flagged:
                 redacted_count += 1
                 diagnostics.append(
                     Diagnostic(
                         code="prompt_injection_detected",
-                        message=f"Snippet from {source.id} redacted",
+                        message=f"Textual fields from {source.id} redacted",
                         severity="warn",
                         component="security",
                         stage="sanitize",
                         source_id=source.id,
                     )
                 )
-            sanitized.append(source.model_copy(update={"snippet": clean_snippet}))
+            sanitized.append(source.model_copy(update=updates))
         if redacted_count and RESEARCHER_INJECTION_DETECTED_TOTAL is not None:
             try:
                 RESEARCHER_INJECTION_DETECTED_TOTAL.inc(redacted_count)

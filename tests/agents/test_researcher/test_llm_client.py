@@ -31,7 +31,9 @@ class _Router:
 
 
 def test_invalid_json_returns_malformed_error() -> None:
-    client = StructuredLLMClient(_Router(["not-json", "still not"]), ResearcherConfig(llm_reask_limit=1))  # type: ignore[arg-type]
+    client = StructuredLLMClient(
+        _Router(["not-json", "still not"]), ResearcherConfig(llm_reask_limit=1)
+    )  # type: ignore[arg-type]
     with pytest.raises(ResearchLLMError) as exc:
         asyncio.run(client.generate("p", system_prompt="s"))
     assert exc.value.code == "llm_malformed_json"
@@ -59,7 +61,9 @@ def test_hallucinated_source_id_generates_diagnostic() -> None:
 
 
 def test_reask_limit_respected() -> None:
-    client = StructuredLLMClient(_Router(["bad", "bad2", "bad3"]), ResearcherConfig(llm_reask_limit=1))  # type: ignore[arg-type]
+    client = StructuredLLMClient(
+        _Router(["bad", "bad2", "bad3"]), ResearcherConfig(llm_reask_limit=1)
+    )  # type: ignore[arg-type]
     with pytest.raises(ResearchLLMError):
         asyncio.run(client.generate("p", system_prompt="s"))
 
@@ -71,3 +75,36 @@ def test_timeout_distinct_from_malformed_json() -> None:
     )  # type: ignore[arg-type]
     with pytest.raises(TimeoutError):
         asyncio.run(client.generate("p", system_prompt="s"))
+
+
+def test_markdown_fenced_json_allowed_only_by_config() -> None:
+    payload = '```json\n{"facts": [], "gaps": []}\n```'
+    blocked = StructuredLLMClient(_Router([payload]), ResearcherConfig())  # type: ignore[arg-type]
+    with pytest.raises(ResearchLLMError):
+        asyncio.run(blocked.generate("p", system_prompt="s"))
+    allowed = StructuredLLMClient(
+        _Router([payload]), ResearcherConfig(allow_fenced_json_output=True)
+    )  # type: ignore[arg-type]
+    parsed = asyncio.run(allowed.generate("p", system_prompt="s"))
+    assert parsed["facts"] == []
+
+
+def test_non_json_envelope_rejected() -> None:
+    client = StructuredLLMClient(
+        _Router(['intro text {"facts": [], "gaps": []}']),
+        ResearcherConfig(llm_reask_limit=0),
+    )  # type: ignore[arg-type]
+    with pytest.raises(ResearchLLMError) as exc:
+        asyncio.run(client.generate("p", system_prompt="s"))
+    assert exc.value.code == "llm_non_json_envelope"
+
+
+def test_invalid_support_status_raises_research_validation_error() -> None:
+    payload = (
+        '{"facts":[{"text":"x","source_ids":[],"support_status":"totally_valid","evidence":[]}],'
+        '"gaps":[]}'
+    )
+    client = StructuredLLMClient(_Router([payload]), ResearcherConfig())  # type: ignore[arg-type]
+    with pytest.raises(ResearchValidationError) as exc:
+        asyncio.run(client.query("p", "s"))
+    assert exc.value.code == "llm_schema_validation_failure"

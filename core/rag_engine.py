@@ -30,6 +30,11 @@ class RAGEngine:
         self.embedding_model: Any | None = None
         self.embedding_backend = os.getenv("RAG_EMBEDDINGS_BACKEND", "sentence_transformers")
         self.collection = self.client.get_or_create_collection(name=collection_name)
+        self.supports_identity_filters = True
+
+    def validate_identity_filter_support(self) -> None:
+        if not getattr(self, "supports_identity_filters", False):
+            raise ValueError("rag_identity_filters_unsupported")
 
     async def search(
         self,
@@ -77,11 +82,30 @@ class RAGEngine:
             rows.append(
                 {
                     "text": text,
+                    "chunk_text": text,
                     "source": str(metadata.get("source", "unknown")),
                     "page": int(metadata.get("page", 0)),
                     "tags": list(metadata.get("tags", [])),
                     "scope": list(metadata.get("scope", [])),
                     "score": max(0.0, 1.0 - float(distance)),
+                    "document_id": metadata.get("document_id"),
+                    "chunk_id": metadata.get("chunk_id"),
+                    "section": metadata.get("section"),
+                    "jurisdiction": metadata.get("jurisdiction"),
+                    "authority": metadata.get("authority"),
+                    "document_version": metadata.get("document_version"),
+                    "effective_from": metadata.get("effective_from"),
+                    "effective_to": metadata.get("effective_to"),
+                    "is_active": metadata.get("is_active"),
+                    "ingested_at": metadata.get("ingested_at"),
+                    "checksum": metadata.get("checksum"),
+                    "text_hash": metadata.get("text_hash"),
+                    "source_type": metadata.get("source_type"),
+                    "quality_score": metadata.get("quality_score"),
+                    "tenant_id": metadata.get("tenant_id"),
+                    "org_id": metadata.get("org_id"),
+                    "project_id": metadata.get("project_id"),
+                    "user_id": metadata.get("user_id"),
                 }
             )
         return rows

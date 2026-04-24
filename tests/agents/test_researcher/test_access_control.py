@@ -22,7 +22,18 @@ class _Rag:
 
     async def search(self, query: str, **kwargs):
         self.last_kwargs = kwargs
-        return [{"source": "doc", "page": 1, "text": "quote", "score": 0.9}]
+        return [
+            {
+                "source": "doc",
+                "page": 1,
+                "text": "quote",
+                "score": 0.9,
+                "tenant_id": kwargs.get("tenant_id"),
+                "org_id": kwargs.get("org_id"),
+                "project_id": kwargs.get("project_id"),
+                "user_id": kwargs.get("user_id"),
+            }
+        ]
 
 
 class _Web:

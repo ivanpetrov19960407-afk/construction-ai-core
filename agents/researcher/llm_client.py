@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-from json import JSONDecodeError
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -10,13 +9,36 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from agents.researcher.config import ResearcherConfig
 from agents.researcher.errors import ResearchLLMError, ResearchValidationError
 from core.llm_router import LLMRouter
-from schemas.research import Diagnostic, ResearchFact
+from schemas.research import Diagnostic, ResearchEvidence, ResearchFact
 
 _MAX_REASK_OUTPUT_CHARS = 2000
 
 
+class LLMResearchEvidence(BaseModel):
+    source_id: str
+    quote: str
+    locator: str | None = None
+    chunk_id: str | None = None
+    document_id: str | None = None
+    page: int | None = None
+    support_status: str | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class LLMResearchFact(BaseModel):
+    text: str
+    applicability: str = ""
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    source_ids: list[str] = Field(default_factory=list)
+    evidence: list[LLMResearchEvidence] = Field(default_factory=list)
+    support_status: str | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class LLMResearchResponse(BaseModel):
-    facts: list[ResearchFact] = Field(default_factory=list)
+    facts: list[LLMResearchFact] = Field(default_factory=list)
     gaps: list[str] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")
@@ -44,9 +66,10 @@ class StructuredLLMClient:
             ) from exc
 
         if allowed_source_ids is not None:
-            patched_facts: list[ResearchFact] = []
+            patched_facts: list[LLMResearchFact] = []
             for idx, fact in enumerate(response.facts, start=1):
                 unknown = [sid for sid in fact.source_ids if sid not in allowed_source_ids]
+                allowed_evidence = [e for e in fact.evidence if e.source_id in allowed_source_ids]
                 if unknown:
                     diagnostics.append(
                         Diagnostic(
@@ -61,12 +84,64 @@ class StructuredLLMClient:
                         update={
                             "source_ids": [
                                 sid for sid in fact.source_ids if sid in allowed_source_ids
-                            ]
+                            ],
+                            "evidence": allowed_evidence,
                         }
                     )
+                elif len(allowed_evidence) != len(fact.evidence):
+                    diagnostics.append(
+                        Diagnostic(
+                            code="llm_evidence_unknown_source_id",
+                            message=f"fact#{idx}: evidence references unknown source",
+                            severity="warn",
+                            component="llm",
+                            stage="llm",
+                        )
+                    )
+                    fact = fact.model_copy(update={"evidence": allowed_evidence})
+                if fact.source_ids and not fact.evidence:
+                    diagnostics.append(
+                        Diagnostic(
+                            code="llm_source_without_evidence",
+                            message=f"fact#{idx}: source_ids without evidence",
+                            severity="warn",
+                            component="llm",
+                            stage="llm",
+                        )
+                    )
+                    fact = fact.model_copy(update={"source_ids": []})
                 patched_facts.append(fact)
             response = response.model_copy(update={"facts": patched_facts})
-        return response, diagnostics
+        try:
+            mapped_facts = [
+                ResearchFact(
+                    text=f.text,
+                    applicability=f.applicability,
+                    confidence=f.confidence,
+                    source_ids=f.source_ids,
+                    support_status=f.support_status,  # type: ignore[arg-type]
+                    evidence=[
+                        ResearchEvidence(
+                            source_id=e.source_id,
+                            quote=e.quote,
+                            locator=e.locator,
+                            chunk_id=e.chunk_id,
+                            document_id=e.document_id,
+                            page=e.page,
+                            support_status=e.support_status,  # type: ignore[arg-type]
+                        )
+                        for e in f.evidence
+                    ],
+                )
+                for f in response.facts
+            ]
+        except ValidationError as exc:
+            raise ResearchValidationError(
+                "llm_schema_validation_failure",
+                "schema_validation_failure",
+                details={"errors": exc.errors()},
+            ) from exc
+        return response.model_copy(update={"facts": mapped_facts}), diagnostics  # type: ignore[arg-type]
 
     async def generate(self, prompt: str, *, system_prompt: str) -> dict[str, Any]:
         attempts = max(1, int(self._config.retry_attempts))
@@ -89,6 +164,9 @@ class StructuredLLMClient:
         parsed = self._parse_json(response.text)
         if parsed is not None:
             return parsed
+        stripped = response.text.strip()
+        if "{" in stripped and not stripped.startswith("{") and not stripped.startswith("```"):
+            raise ResearchLLMError("llm_non_json_envelope")
         if not self._looks_like_json_candidate(response.text):
             raise ResearchLLMError("llm_malformed_json")
 
@@ -129,32 +207,21 @@ class StructuredLLMClient:
             "Верни ТОЛЬКО JSON object, без markdown и пояснений."
         )
 
-    @staticmethod
-    def _parse_json(payload: str) -> dict[str, Any] | None:
-        parsed = StructuredLLMClient._try_parse_object(payload)
+    def _parse_json(self, payload: str) -> dict[str, Any] | None:
+        parsed = self._try_parse_object(payload)
         if parsed is not None:
             return parsed
 
         stripped = payload.strip()
-        if stripped.startswith("```"):
+        if self._config.allow_fenced_json_output and stripped.startswith("```"):
             lines = stripped.splitlines()
             if len(lines) >= 3 and lines[0].startswith("```") and lines[-1].strip() == "```":
                 fenced_payload = "\n".join(lines[1:-1])
                 if lines[0].strip().lower() in {"```json", "```json5", "```"}:
-                    parsed = StructuredLLMClient._try_parse_object(fenced_payload.strip())
+                    parsed = self._try_parse_object(fenced_payload.strip())
                     if parsed is not None:
                         return parsed
 
-        decoder = json.JSONDecoder()
-        for idx, char in enumerate(payload):
-            if char != "{":
-                continue
-            try:
-                obj, _end = decoder.raw_decode(payload[idx:])
-            except JSONDecodeError:
-                continue
-            if isinstance(obj, dict):
-                return obj
         return None
 
     @staticmethod

@@ -14,6 +14,10 @@ class ResearcherConfig(BaseSettings):
     web_min_snippet_chars: int = 500
     snippet_max_chars: int = 400
     top_k_sources: int = 5
+    candidate_pool_size: int = 20
+    final_top_k_sources: int = 5
+    allow_external_web_for_private_scopes: bool = False
+    allow_fenced_json_output: bool = False
     max_prompt_chars: int = 12000
     prompt_system_budget_chars: int = 1200
     prompt_query_budget_chars: int = 2000

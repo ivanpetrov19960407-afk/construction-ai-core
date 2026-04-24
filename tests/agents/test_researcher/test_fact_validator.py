@@ -20,7 +20,9 @@ def test_exact_quote_passes() -> None:
 
 def test_missing_quote_fails() -> None:
     facts = [
-        ResearchFact(text="x", source_ids=["s1"], evidence=[ResearchEvidence(source_id="s1", quote="")])
+        ResearchFact(
+            text="x", source_ids=["s1"], evidence=[ResearchEvidence(source_id="s1", quote="")]
+        )
     ]
     sources = [ResearchSource(id="s1", type="rag", title="doc", snippet="text")]
     validated, _ = FactValidator.validate(facts, sources, ResearcherConfig())
@@ -29,7 +31,9 @@ def test_missing_quote_fails() -> None:
 
 def test_fake_source_id_fails() -> None:
     facts = [
-        ResearchFact(text="x", source_ids=["fake"], evidence=[ResearchEvidence(source_id="fake", quote="x")])
+        ResearchFact(
+            text="x", source_ids=["fake"], evidence=[ResearchEvidence(source_id="fake", quote="x")]
+        )
     ]
     sources = [ResearchSource(id="s1", type="rag", title="doc", snippet="x")]
     validated, diags = FactValidator.validate(facts, sources, ResearcherConfig())
@@ -88,14 +92,36 @@ def test_partial_support_status() -> None:
 
 
 def test_quote_outside_snippet_inside_chunk_text_passes() -> None:
-    facts = [ResearchFact(text="x", source_ids=["s1"], evidence=[ResearchEvidence(source_id="s1", quote="inside chunk")])]
-    sources = [ResearchSource(id="s1", type="rag", title="doc", snippet="short", chunk_text="prefix inside chunk suffix")]
+    facts = [
+        ResearchFact(
+            text="x",
+            source_ids=["s1"],
+            evidence=[ResearchEvidence(source_id="s1", quote="inside chunk")],
+        )
+    ]
+    sources = [
+        ResearchSource(
+            id="s1",
+            type="rag",
+            title="doc",
+            snippet="short",
+            chunk_text="prefix inside chunk suffix",
+        )
+    ]
     validated, _ = FactValidator.validate(facts, sources, ResearcherConfig())
     assert len(validated) == 1
 
 
 def test_quote_outside_all_source_text_fails() -> None:
-    facts = [ResearchFact(text="x", source_ids=["s1"], evidence=[ResearchEvidence(source_id="s1", quote="missing")])]
-    sources = [ResearchSource(id="s1", type="rag", title="doc", snippet="short", chunk_text="another")]
+    facts = [
+        ResearchFact(
+            text="x",
+            source_ids=["s1"],
+            evidence=[ResearchEvidence(source_id="s1", quote="missing")],
+        )
+    ]
+    sources = [
+        ResearchSource(id="s1", type="rag", title="doc", snippet="short", chunk_text="another")
+    ]
     validated, _ = FactValidator.validate(facts, sources, ResearcherConfig())
     assert validated == []
