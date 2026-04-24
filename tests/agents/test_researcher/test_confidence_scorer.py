@@ -28,7 +28,15 @@ def test_llm_self_confidence_alone_not_high_without_source_support() -> None:
 def test_citation_coverage_counts_cited_facts_not_source_id_volume() -> None:
     cfg = ResearcherConfig()
     facts = [
-        ResearchFact(text="f1", applicability="", confidence=0.9, source_ids=["rag-0", "rag-1"]),
+        ResearchFact(
+            text="f1",
+            applicability="",
+            confidence=0.9,
+            source_ids=["rag-0", "rag-1"],
+            evidence=[
+                {"source_id": "rag-0", "quote": "f1", "support_status": "supported"},
+            ],
+        ),
         ResearchFact(text="f2", applicability="", confidence=0.9, source_ids=[]),
     ]
     sources = [

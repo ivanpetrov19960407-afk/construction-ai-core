@@ -1,6 +1,9 @@
 import asyncio
 
+import pytest
+
 from agents.researcher.config import ResearcherConfig
+from agents.researcher.errors import ResearchSourceError
 from agents.researcher.source_collector import SourceCollector
 
 
@@ -17,6 +20,12 @@ class _Web:
     async def run(self, query: str, max_results: int):
         _ = (query, max_results)
         return [{"title": "x", "url": "https://example.com", "snippet": "s", "score": 0.5}]
+
+
+class _LegacyRagNoIdentityKwargs:
+    async def search(self, query: str, n_results: int, filter_scope: str | None = None):
+        _ = (query, n_results, filter_scope)
+        return [{"source": "СП", "page": 1, "text": "Бетон B30", "score": 0.9}]
 
 
 def test_source_collector_dedup() -> None:
@@ -60,13 +69,11 @@ def test_source_collector_sanitizes_injection_before_return() -> None:
         collector.collect("бетон", topic_scope=None, access_scope=None, context="")
     )
     # Redacted snippet must be present
-    assert any(
-        (s.snippet or "").startswith("[REDACTED") for s in sources
-    ), "Injection must be redacted inside SourceCollector"
-    # No raw 'ignore previous instructions' string leaves the collector
-    assert not any(
-        "ignore previous instructions" in (s.snippet or "").lower() for s in sources
+    assert any((s.snippet or "").startswith("[REDACTED") for s in sources), (
+        "Injection must be redacted inside SourceCollector"
     )
+    # No raw 'ignore previous instructions' string leaves the collector
+    assert not any("ignore previous instructions" in (s.snippet or "").lower() for s in sources)
     # Diagnostic recorded
     assert any(d.code == "prompt_injection_detected" for d in diagnostics)
 
@@ -104,7 +111,7 @@ class _WebWithResult:
         return [
             {
                 "title": "Минстрой",
-                "url": "https://minstroy.example.org",
+                "url": "https://example.com/minstroy",
                 "snippet": "Класс бетона B30 применяется для фундаментов согласно СП 63.",
                 "score": 0.65,
             }
@@ -128,19 +135,19 @@ def test_injection_chunk_does_not_suppress_web_fallback() -> None:
         collector.collect("бетон B30", topic_scope=None, access_scope=None, context="")
     )
     # Web fallback must have fired despite noisy injected RAG chunks.
-    assert any(
-        d.code == "web_fallback" for d in diagnostics
-    ), "Web fallback must trigger even when RAG has inflated injection chunks"
+    assert any(d.code == "web_fallback" for d in diagnostics), (
+        "Web fallback must trigger even when RAG has inflated injection chunks"
+    )
     # Real web content must be present in the final sources.
-    assert any(
-        s.type == "web" and "B30" in (s.snippet or "") for s in sources
-    ), "Legitimate web source must survive into the final result set"
+    assert any(s.type == "web" and "B30" in (s.snippet or "") for s in sources), (
+        "Legitimate web source must survive into the final result set"
+    )
     # All RAG snippets must be redacted.
     redacted_rag = [s for s in sources if s.type == "rag"]
     assert redacted_rag, "RAG sources (sanitized) should still be present"
-    assert all(
-        (s.snippet or "").startswith("[REDACTED") for s in redacted_rag
-    ), "All injected RAG chunks must be redacted"
+    assert all((s.snippet or "").startswith("[REDACTED") for s in redacted_rag), (
+        "All injected RAG chunks must be redacted"
+    )
 
 
 def test_source_collector_cache_hit_flag() -> None:
@@ -169,4 +176,23 @@ def test_source_collector_public_scope_cache_key_is_shared() -> None:
     collector = SourceCollector(_Rag(), _Web(), None, ResearcherConfig(top_k_sources=5))  # type: ignore[arg-type]
     key1 = collector._cache_key("бетон", None, "public", "", user_id="u1", org_id="o1")
     key2 = collector._cache_key("бетон", None, "public", "", user_id="u2", org_id="o2")
-    assert key1 == key2
+    assert key1 != key2
+
+
+def test_non_public_scope_fails_if_rag_engine_cannot_accept_identity_filters() -> None:
+    collector = SourceCollector(
+        _LegacyRagNoIdentityKwargs(),  # type: ignore[arg-type]
+        _Web(),  # type: ignore[arg-type]
+        None,
+        ResearcherConfig(top_k_sources=5),
+    )
+    with pytest.raises(ResearchSourceError):
+        asyncio.run(
+            collector.collect(
+                "бетон",
+                topic_scope=None,
+                access_scope="tenant",
+                context="",
+                tenant_id="t1",
+            )
+        )

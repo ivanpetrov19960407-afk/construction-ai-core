@@ -61,7 +61,8 @@ def test_state_contains_only_validated_facts_not_raw_llm() -> None:
 def test_happy_path_fact_survives_in_payload_and_artifact() -> None:
     llm = (
         '{"facts":[{"text":"Бетон B30","applicability":"",'
-        '"confidence":0.8,"source_ids":["rag-0"]}],"gaps":[]}'
+        '"confidence":0.8,"source_ids":["rag-0"],'
+        '"evidence":[{"source_id":"rag-0","quote":"Бетон B30 обязателен"}]}],"gaps":[]}'
     )
     agent = ResearcherAgent(
         _Router(llm), rag_engine=_Rag(["Бетон B30 обязателен"]), web_search_tool=_Web()
@@ -91,14 +92,21 @@ def test_llm_timeout_returns_safe_empty_result(monkeypatch) -> None:
     )  # type: ignore[arg-type]
     result = asyncio.run(agent.run({"message": "q", "history": []}))
     assert result["research_payload"]["facts"] == []
-    assert "llm_timeout" in result["research_payload"]["diagnostics"]
+    assert any("llm_timeout" in item for item in result["research_payload"]["diagnostics"])
     assert result["research_facts"] == "[]"
 
 
 def test_source_ids_pruned_per_source_in_validator() -> None:
     facts = [
         ResearchFact(
-            text="Бетон B30", applicability="", confidence=0.8, source_ids=["rag-0", "rag-1"]
+            text="Бетон B30",
+            applicability="",
+            confidence=0.8,
+            source_ids=["rag-0", "rag-1"],
+            evidence=[
+                {"source_id": "rag-0", "quote": "Бетон B30"},
+                {"source_id": "rag-1", "quote": "неверная цитата"},
+            ],
         )
     ]
     sources = [
@@ -111,8 +119,8 @@ def test_source_ids_pruned_per_source_in_validator() -> None:
 
 def test_source_collector_cache_key_isolated_by_identity_for_private_scope() -> None:
     collector = SourceCollector(_Rag(["x"]), _Web(), None, ResearcherConfig())  # type: ignore[arg-type]
-    first = collector._cache_key("q", None, "admin", "", user_id="u1", org_id="o1")
-    second = collector._cache_key("q", None, "admin", "", user_id="u2", org_id="o1")
+    first = collector._cache_key("q", None, "tenant", "", user_id="u1", tenant_id="t1")
+    second = collector._cache_key("q", None, "tenant", "", user_id="u2", tenant_id="t1")
     assert first != second
 
 
@@ -125,6 +133,6 @@ def test_prompt_injection_payload_stays_inside_json_string() -> None:
         score=0.5,
     )
     prompt = PromptBuilder.build("q", "", [source], ResearcherConfig(max_prompt_chars=2000))
-    assert "Источники (untrusted JSON)" in prompt
+    assert "source_policy" in prompt
     assert "<system>" in prompt
     assert "<source" not in prompt

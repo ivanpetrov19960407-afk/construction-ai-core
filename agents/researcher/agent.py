@@ -12,6 +12,12 @@ import structlog
 from agents.base import BaseAgent
 from agents.researcher.confidence import ConfidenceScorer
 from agents.researcher.config import ResearcherConfig
+from agents.researcher.errors import (
+    ResearchAccessError,
+    ResearchLLMError,
+    ResearchScopeError,
+    ResearchSourceError,
+)
 from agents.researcher.fact_validator import FactValidator
 from agents.researcher.llm_client import LLMResearchResponse, StructuredLLMClient
 from agents.researcher.prompt_builder import PromptBuilder
@@ -29,15 +35,21 @@ from core.cache import RedisCache
 from core.llm_router import LLMRouter
 from core.rag_engine import RAGEngine
 from core.tools.web_search import WebSearchTool
-from schemas.research import ResearchFact, ResearchResponse, ResearchSource
+from schemas.research import Diagnostic, ResearchFact, ResearchResponse, ResearchSource
 
 struct_logger = structlog.get_logger("agents.researcher")
 
-_ALLOWED_ACCESS_SCOPES = {"admin", "pto_engineer", "foreman", "tender_specialist", "public"}
+_ALLOWED_ACCESS_SCOPES = {"public", "private", "tenant", "org", "project", "user"}
+_LEGACY_ROLE_SCOPE_MAP = {
+    "admin": "public",
+    "pto_engineer": "public",
+    "foreman": "public",
+    "tender_specialist": "public",
+}
 
 
 class ResearcherAgent(BaseAgent):
-    """🔍 Researcher — thin production orchestrator with legacy compatibility helpers."""
+    """🔍 Researcher — production orchestrator with strict fail-closed access."""
 
     def __init__(
         self,
@@ -92,34 +104,24 @@ class ResearcherAgent(BaseAgent):
             if self._collector is None:
                 self._config.rag_timeout_seconds = float(
                     getattr(
-                        settings,
-                        "research_rag_timeout_seconds",
-                        self._config.rag_timeout_seconds,
+                        settings, "research_rag_timeout_seconds", self._config.rag_timeout_seconds
                     )
                 )
                 self._config.web_timeout_seconds = float(
                     getattr(
-                        settings,
-                        "research_web_timeout_seconds",
-                        self._config.web_timeout_seconds,
+                        settings, "research_web_timeout_seconds", self._config.web_timeout_seconds
                     )
                 )
                 self._config.llm_timeout_seconds = float(
                     getattr(
-                        settings,
-                        "research_llm_timeout_seconds",
-                        self._config.llm_timeout_seconds,
+                        settings, "research_llm_timeout_seconds", self._config.llm_timeout_seconds
                     )
                 )
                 rag_engine = self._rag_engine or RAGEngine()
                 web_tool = self._web_search_tool or WebSearchTool()
                 cache = await self._get_or_create_cache()
                 self._collector = SourceCollector(
-                    rag_engine,
-                    web_tool,
-                    cache,
-                    self._config,
-                    injection_guard=self._security,
+                    rag_engine, web_tool, cache, self._config, injection_guard=self._security
                 )
                 self._llm_client = StructuredLLMClient(self.llm_router, self._config)
 
@@ -155,16 +157,32 @@ class ResearcherAgent(BaseAgent):
                 sources_count=len(result.get("research_payload", {}).get("sources", [])),
             )
             return result
-        except (ValueError, TypeError, KeyError) as exc:
+        except (
+            ResearchScopeError,
+            ResearchAccessError,
+            ResearchSourceError,
+            ResearchLLMError,
+            ValueError,
+            TypeError,
+            KeyError,
+        ) as exc:
             RESEARCHER_REQUESTS_TOTAL.labels(status="error").inc()
-            logger.error("research_failed", error=str(exc))
-            state["research_facts"] = ""
+            logger.error("research_failed", error=str(exc), error_type=type(exc).__name__)
+            state["research_facts"] = "[]"
             state["research_payload"] = {
                 "query": str(state.get("message", "")),
                 "facts": [],
                 "sources": [],
                 "gaps": ["Внутренняя ошибка агента"],
-                "diagnostics": ["internal_error"],
+                "diagnostics": [type(exc).__name__],
+                "diagnostics_struct": [
+                    {
+                        "code": type(exc).__name__,
+                        "message": str(exc),
+                        "severity": "error",
+                        "component": "researcher",
+                    }
+                ],
                 "confidence_overall": 0.0,
             }
             return self._update_state(state, "")
@@ -182,17 +200,18 @@ class ResearcherAgent(BaseAgent):
 
         topic_scope = str(state.get("topic_scope") or "").strip() or None
 
-        # Access scope resolution with deprecation warning for legacy keys.
         explicit_access = str(state.get("access_scope") or "").strip() or None
         legacy_scope = str(state.get("scope") or state.get("role") or "").strip() or None
         if explicit_access is None and legacy_scope is not None:
             warnings.warn(
                 "Keys 'scope' and 'role' are deprecated for ResearcherAgent; "
-                "use 'access_scope' instead. Fallback will be removed in a future release.",
+                "use 'access_scope' instead.",
                 DeprecationWarning,
                 stacklevel=3,
             )
         raw_scope = explicit_access or legacy_scope
+        if explicit_access is None and legacy_scope in _LEGACY_ROLE_SCOPE_MAP:
+            raw_scope = _LEGACY_ROLE_SCOPE_MAP[legacy_scope]
         access_scope = self._validate_access_scope(raw_scope)
         context = str(state.get("context", "")).strip()
         user_id = state.get("user_id")
@@ -200,7 +219,7 @@ class ResearcherAgent(BaseAgent):
         tenant_id = state.get("tenant_id")
         project_id = state.get("project_id")
 
-        sources, collection_diag, cache_hit = await self._collect_sources(
+        sources, raw_collection_diag, cache_hit = await self._collect_sources(
             message,
             topic_scope=topic_scope,
             access_scope=access_scope,
@@ -211,25 +230,53 @@ class ResearcherAgent(BaseAgent):
             project_id=project_id,
         )
 
+        collection_diag: list[Diagnostic] = []
+        for item in raw_collection_diag:
+            collection_diag.append(
+                Diagnostic(
+                    code=item,
+                    message=item,
+                    severity="warn",
+                    component="source_collector",
+                )
+            )
         RESEARCHER_SOURCES_COUNT.observe(len(sources))
-        if "web_fallback" in collection_diag:
+        if any(d.code == "web_fallback" for d in collection_diag):
             RESEARCHER_WEB_FALLBACK_TOTAL.inc()
         if cache_hit:
             RESEARCHER_CACHE_HITS_TOTAL.inc()
 
         prompt = PromptBuilder.build(message, context, sources, self._config)
 
-        llm_diag: list[str] = []
+        llm_diag: list[Diagnostic] = []
         llm_response = LLMResearchResponse(facts=[], gaps=[])
         llm_start = perf_counter()
         try:
             if self._llm_client is None:
-                raise RuntimeError("LLM client not initialized")
-            llm_response = await self._llm_client.query(prompt, PromptBuilder.SYSTEM_PROMPT)
+                raise ResearchLLMError("llm_client_uninitialized")
+            llm_response = await self._llm_client.query(
+                prompt,
+                PromptBuilder.SYSTEM_PROMPT,
+                allowed_source_ids={s.id for s in sources},
+            )
         except TimeoutError:
-            llm_diag.append("llm_timeout")
-        except Exception:
-            llm_diag.append("LLM вернул ответ не в JSON-формате")
+            llm_diag.append(
+                Diagnostic(
+                    code="llm_timeout", message="LLM timeout", severity="error", component="llm"
+                )
+            )
+        except ResearchLLMError as exc:
+            llm_diag.append(
+                Diagnostic(code="llm_error", message=str(exc), severity="error", component="llm")
+            )
+            llm_diag.append(
+                Diagnostic(
+                    code="llm_error_legacy",
+                    message="LLM вернул ответ не в JSON-формате",
+                    severity="error",
+                    component="llm",
+                )
+            )
         finally:
             RESEARCHER_LLM_DURATION_SECONDS.observe(perf_counter() - llm_start)
 
@@ -237,23 +284,30 @@ class ResearcherAgent(BaseAgent):
             llm_response.facts, sources
         )
 
-        # NOTE: prompt-injection detection moved into SourceCollector.
-        # By the time we reach this point, snippets are already sanitized
-        # (redacted or normalized). The injection metric is incremented inside
-        # the collector when a real redaction happens. Do NOT inspect snippets here.
-        injection_flagged = any(code == "prompt_injection_detected" for code in collection_diag)
-
         confidence = self._scorer.compute(validated_facts, sources)
-
         gaps = list(dict.fromkeys(llm_response.gaps))
         if not validated_facts and sources and llm_response.facts:
             gaps.append("Факты не прошли валидацию источников")
 
-        diagnostics_legacy = list(
-            dict.fromkeys(collection_diag + llm_diag + [d.message for d in validation_diag])
-        )
-        if injection_flagged and "prompt_injection_detected" not in diagnostics_legacy:
-            diagnostics_legacy.append("prompt_injection_detected")
+        seen_diag: set[tuple[str, str, str, str | None]] = set()
+        diag_struct: list[Diagnostic] = []
+        for diag_item in [*collection_diag, *llm_diag, *validation_diag]:
+            key = (
+                diag_item.code,
+                diag_item.message,
+                diag_item.component,
+                diag_item.source_id,
+            )
+            if key in seen_diag:
+                continue
+            seen_diag.add(key)
+            diag_struct.append(diag_item)
+        diagnostics_legacy: list[str] = []
+        for d in diag_struct:
+            diagnostics_legacy.append(d.code)
+            diagnostics_legacy.append(d.message)
+            diagnostics_legacy.append(f"{d.code}:{d.message}")
+        diagnostics_legacy = list(dict.fromkeys(diagnostics_legacy))
 
         payload = ResearchResponse(
             query=message,
@@ -261,6 +315,7 @@ class ResearcherAgent(BaseAgent):
             sources=sources,
             gaps=gaps,
             diagnostics=diagnostics_legacy,
+            diagnostics_struct=diag_struct,
             confidence_overall=confidence.overall,
             confidence_breakdown=confidence.model_dump(),
         )
@@ -277,16 +332,16 @@ class ResearcherAgent(BaseAgent):
         message: str,
         *,
         topic_scope: str | None,
-        access_scope: str | None,
+        access_scope: str,
         context: str,
         user_id: str | None = None,
         org_id: str | None = None,
         tenant_id: str | None = None,
         project_id: str | None = None,
-    ) -> tuple[list[ResearchSource], list[str], bool]:
+    ) -> tuple[list, list[str], bool]:
         await self._ensure_initialized()
         if self._collector is None:
-            raise RuntimeError("Collector not initialized")
+            raise ResearchSourceError("collector_not_initialized")
         sources, diagnostics, cache_hit = await self._collector.collect(
             message,
             topic_scope=topic_scope,
@@ -329,10 +384,15 @@ class ResearcherAgent(BaseAgent):
         return ResearchResponse.model_validate(result["research_payload"])
 
     @staticmethod
-    def _validate_access_scope(scope: str | None) -> str | None:
-        if scope and scope in _ALLOWED_ACCESS_SCOPES:
-            return scope
-        return "public"
+    def _validate_access_scope(scope: str | None) -> str:
+        if scope is None:
+            return "public"
+        normalized = scope.strip().lower()
+        if not normalized:
+            raise ResearchScopeError("empty access_scope is forbidden")
+        if normalized not in _ALLOWED_ACCESS_SCOPES:
+            raise ResearchScopeError(f"unknown access_scope={scope}")
+        return normalized
 
     @staticmethod
     def _sanitize_source_snippet(snippet: str) -> str:
@@ -343,47 +403,24 @@ class ResearcherAgent(BaseAgent):
 
     @staticmethod
     def _parse_llm_json(query: str, raw: str, sources: list[ResearchSource]) -> ResearchResponse:
-        text = raw.strip()
-        if text.startswith("```"):
-            text = text.strip("`")
-            text = text.replace("json\n", "", 1)
+        from agents.researcher.llm_client import StructuredLLMClient
 
+        payload = StructuredLLMClient._parse_json(raw)
         diagnostics: list[str] = []
-        payload: dict[str, Any] | None = None
-        starts = [idx for idx, ch in enumerate(text) if ch == "{"]
-        ends = [idx for idx, ch in enumerate(text) if ch == "}"]
-        for s_idx in starts:
-            for e_idx in reversed(ends):
-                if e_idx <= s_idx:
-                    continue
-                candidate = text[s_idx : e_idx + 1]
-                try:
-                    parsed = json.loads(candidate)
-                except Exception:  # noqa: BLE001
-                    continue
-                if isinstance(parsed, dict):
-                    payload = parsed
-                    break
-            if payload is not None:
-                break
-
         if payload is None:
-            diagnostics.append("llm_invalid_json")
             payload = {}
-
+            diagnostics = ["llm_invalid_json"]
         facts: list[ResearchFact] = []
         for fact in payload.get("facts", []):
             try:
                 facts.append(ResearchFact.model_validate(fact))
-            except Exception:  # noqa: BLE001
+            except Exception:
                 continue
-        gaps = [str(x) for x in payload.get("gaps", [])]
-
         return ResearchResponse(
             query=query,
             facts=facts,
             sources=sources,
-            gaps=gaps,
+            gaps=[str(x) for x in payload.get("gaps", [])],
             diagnostics=diagnostics,
             confidence_overall=ResearcherAgent._compute_confidence_overall(facts, sources),
         )

@@ -4,20 +4,32 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, computed_field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 
 class Diagnostic(BaseModel):
     code: str
     message: str
     severity: Literal["info", "warn", "error"]
-    stage: str
+    component: str = "researcher"
+    stage: str | None = None
+    source_id: str | None = None
+    fact_id: str | None = None
 
 
 class ResearchEvidence(BaseModel):
     source_id: str
     quote: str
     locator: str | None = None
+    chunk_id: str | None = None
+    document_id: str | None = None
+    page: int | None = None
+    span_start: int | None = None
+    span_end: int | None = None
+    support_status: (
+        Literal["supported", "partially_supported", "unsupported", "conflicting"] | None
+    ) = None
+    extraction_method: str | None = None
 
 
 class ResearchFact(BaseModel):
@@ -28,6 +40,9 @@ class ResearchFact(BaseModel):
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     source_ids: list[str] = Field(default_factory=list)
     evidence: list[ResearchEvidence] = Field(default_factory=list)
+    support_status: (
+        Literal["supported", "partially_supported", "unsupported", "conflicting"] | None
+    ) = None
 
 
 class ResearchSource(BaseModel):
@@ -45,6 +60,27 @@ class ResearchSource(BaseModel):
     published_at: str | None = None
     access_scope: str | None = None
 
+    # Rich metadata (optional, backward-compatible).
+    source_id: str | None = None
+    source_type: str | None = None
+    document_id: str | None = None
+    chunk_id: str | None = None
+    section: str | None = None
+    jurisdiction: str | None = None
+    authority: str | None = None
+    document_version: str | None = None
+    effective_from: str | None = None
+    effective_to: str | None = None
+    is_active: bool | None = None
+    ingested_at: str | None = None
+    checksum: str | None = None
+    tenant_id: str | None = None
+    project_id: str | None = None
+    org_id: str | None = None
+    user_id: str | None = None
+    quality_score: float | None = Field(default=None, ge=0.0, le=1.0)
+    retrieval_score: float | None = Field(default=None, ge=0.0, le=1.0)
+
 
 class ResearchResponse(BaseModel):
     """Структурированный payload ответа Researcher."""
@@ -57,6 +93,8 @@ class ResearchResponse(BaseModel):
     diagnostics_struct: list[Diagnostic] | None = None
     confidence_overall: float = Field(default=0.0, ge=0.0, le=1.0)
     confidence_breakdown: dict[str, Any] | None = None
+
+    model_config = ConfigDict(extra="forbid")
 
     @computed_field  # type: ignore[prop-decorator]
     @property

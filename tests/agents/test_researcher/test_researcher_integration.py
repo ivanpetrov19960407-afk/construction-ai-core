@@ -13,7 +13,8 @@ class _Router:
         _ = (prompt, system_prompt)
         response = (
             '{"facts":[{"text":"Бетон B30","applicability":"высокая",'
-            '"confidence":0.8,"source_ids":["rag-0"]}],"gaps":[]}'
+            '"confidence":0.8,"source_ids":["rag-0"],'
+            '"evidence":[{"source_id":"rag-0","quote":"Бетон B30"}]}],"gaps":[]}'
         )
         return _Resp(response)
 
