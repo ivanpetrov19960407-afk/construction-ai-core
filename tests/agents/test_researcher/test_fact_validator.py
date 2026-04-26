@@ -1,4 +1,3 @@
-from agents.researcher.config import ResearcherConfig
 from agents.researcher.fact_validator import FactValidator
 from schemas.research import ResearchEvidence, ResearchFact, ResearchSource
 
@@ -11,7 +10,11 @@ def test_exact_quote_passes() -> None:
             evidence=[ResearchEvidence(source_id="s1", quote="Класс бетона B30")],
         )
     ]
-    sources = [ResearchSource(id="s1", type="rag", title="doc", snippet="...Класс бетона B30...")]
+    sources = [
+        ResearchSource(
+            id="s1", type="rag", title="doc", snippet="...Класс бетона B30..."
+        )
+    ]
     validated, _ = FactValidator.validate(facts, sources)
     assert len(validated) == 1
     assert validated[0].support_status == "supported"
@@ -21,7 +24,9 @@ def test_exact_quote_passes() -> None:
 def test_missing_quote_fails() -> None:
     facts = [
         ResearchFact(
-            text="x", source_ids=["s1"], evidence=[ResearchEvidence(source_id="s1", quote="")]
+            text="x",
+            source_ids=["s1"],
+            evidence=[ResearchEvidence(source_id="s1", quote="")],
         )
     ]
     sources = [ResearchSource(id="s1", type="rag", title="doc", snippet="text")]
@@ -32,7 +37,9 @@ def test_missing_quote_fails() -> None:
 def test_fake_source_id_fails() -> None:
     facts = [
         ResearchFact(
-            text="x", source_ids=["fake"], evidence=[ResearchEvidence(source_id="fake", quote="x")]
+            text="x",
+            source_ids=["fake"],
+            evidence=[ResearchEvidence(source_id="fake", quote="x")],
         )
     ]
     sources = [ResearchSource(id="s1", type="rag", title="doc", snippet="x")]
@@ -43,7 +50,9 @@ def test_fake_source_id_fails() -> None:
 
 def test_fuzzy_only_match_fails() -> None:
     facts = [ResearchFact(text="Парафраз", source_ids=["s1"], evidence=[])]
-    sources = [ResearchSource(id="s1", type="rag", title="doc", snippet="Похожий текст")]
+    sources = [
+        ResearchSource(id="s1", type="rag", title="doc", snippet="Похожий текст")
+    ]
     validated, _ = FactValidator.validate(facts, sources)
     assert validated == []
 
@@ -56,7 +65,9 @@ def test_paraphrase_without_quote_fails() -> None:
             evidence=[ResearchEvidence(source_id="s1", quote="иное требование")],
         )
     ]
-    sources = [ResearchSource(id="s1", type="rag", title="doc", snippet="Класс бетона B30")]
+    sources = [
+        ResearchSource(id="s1", type="rag", title="doc", snippet="Класс бетона B30")
+    ]
     validated, _ = FactValidator.validate(facts, sources)
     assert validated == []
 
@@ -69,7 +80,9 @@ def test_conflicting_evidence_is_returned_with_conflicting_status() -> None:
             evidence=[ResearchEvidence(source_id="s1", quote="Бетон B30 обязателен")],
         )
     ]
-    sources = [ResearchSource(id="s1", type="rag", title="doc", snippet="Бетон B30 обязателен")]
+    sources = [
+        ResearchSource(id="s1", type="rag", title="doc", snippet="Бетон B30 обязателен")
+    ]
     validated, _ = FactValidator.validate(facts, sources)
     assert len(validated) == 1
     assert validated[0].support_status == "conflicting"
@@ -121,7 +134,9 @@ def test_quote_outside_all_source_text_fails() -> None:
         )
     ]
     sources = [
-        ResearchSource(id="s1", type="rag", title="doc", snippet="short", chunk_text="another")
+        ResearchSource(
+            id="s1", type="rag", title="doc", snippet="short", chunk_text="another"
+        )
     ]
     validated, _ = FactValidator.validate(facts, sources)
     assert validated == []

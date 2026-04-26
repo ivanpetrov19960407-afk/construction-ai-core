@@ -4,11 +4,11 @@ import hashlib
 import re
 import socket
 from ipaddress import ip_address
-
-_IP_LITERAL_RE = re.compile(r"^[0-9a-fA-F:.]+$")
 from urllib.parse import urlparse
 
 from schemas.research import ResearchSource
+
+_IP_LITERAL_RE = re.compile(r"^[0-9a-fA-F:.]+$")
 
 _WHITESPACE_RE = re.compile(r"\s+")
 _SUSPICIOUS_HOST_RE = re.compile(r"(?i)(localhost|\.local$|internal|\.internal$)")
@@ -38,7 +38,9 @@ class URLValidator:
             return not _is_private_ip(ip_address(host))
 
         try:
-            infos = socket.getaddrinfo(host, parsed.port or 443, proto=socket.IPPROTO_TCP)
+            infos = socket.getaddrinfo(
+                host, parsed.port or 443, proto=socket.IPPROTO_TCP
+            )
         except OSError:
             return False
         return all(not _is_private_ip(ip_address(info[4][0])) for info in infos)
@@ -58,10 +60,20 @@ class SourceDeduplicator:
 
 
 class SourceSanitizer:
-    SENSITIVE_FIELDS = ("title", "document", "section", "locator", "snippet", "chunk_text", "full_text")
+    SENSITIVE_FIELDS = (
+        "title",
+        "document",
+        "section",
+        "locator",
+        "snippet",
+        "chunk_text",
+        "full_text",
+    )
 
     @classmethod
-    def sanitize(cls, source: ResearchSource, sanitize_text) -> tuple[ResearchSource, bool]:
+    def sanitize(
+        cls, source: ResearchSource, sanitize_text
+    ) -> tuple[ResearchSource, bool]:
         updates: dict[str, str | None] = {}
         flagged = False
         for field in cls.SENSITIVE_FIELDS:
@@ -74,7 +86,9 @@ class SourceSanitizer:
 
 class SourceTruncator:
     @staticmethod
-    def truncate(sources: list[ResearchSource], max_prompt_chars: int) -> list[ResearchSource]:
+    def truncate(
+        sources: list[ResearchSource], max_prompt_chars: int
+    ) -> list[ResearchSource]:
         total_chars = sum(len(s.snippet or "") for s in sources)
         if total_chars <= max_prompt_chars:
             return sources
@@ -82,7 +96,11 @@ class SourceTruncator:
         ratio = max_prompt_chars / max(total_chars, 1)
         return [
             source.model_copy(
-                update={"snippet": (source.snippet or "")[: max(50, int(len(source.snippet or "") * ratio))]}
+                update={
+                    "snippet": (source.snippet or "")[
+                        : max(50, int(len(source.snippet or "") * ratio))
+                    ]
+                }
             )
             for source in sources
         ]
@@ -106,7 +124,9 @@ class CacheKeyBuilder:
     ) -> str:
         norm_query = _WHITESPACE_RE.sub(" ", query).strip().lower()
         query_hash = hashlib.sha256(f"{norm_query}|{context}".encode()).hexdigest()[:16]
-        scope_hash = hashlib.sha256(f"{topic_scope or ''}|{access_scope or ''}".encode()).hexdigest()[:12]
+        scope_hash = hashlib.sha256(
+            f"{topic_scope or ''}|{access_scope or ''}".encode()
+        ).hexdigest()[:12]
         identity = "|".join(
             [
                 f"user:{user_id or ''}",
@@ -123,4 +143,10 @@ class CacheKeyBuilder:
 
 
 def _is_private_ip(ip) -> bool:
-    return ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast
+    return (
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_reserved
+        or ip.is_multicast
+    )

@@ -52,7 +52,11 @@ class StructuredLLMClient:
         self._config = config
 
     async def query(
-        self, prompt: str, system_prompt: str, *, allowed_source_ids: set[str] | None = None
+        self,
+        prompt: str,
+        system_prompt: str,
+        *,
+        allowed_source_ids: set[str] | None = None,
     ) -> tuple[LLMResearchResponse, list[Diagnostic]]:
         parsed = await self.generate(prompt, system_prompt=system_prompt)
         diagnostics: list[Diagnostic] = []
@@ -68,8 +72,12 @@ class StructuredLLMClient:
         if allowed_source_ids is not None:
             patched_facts: list[LLMResearchFact] = []
             for idx, fact in enumerate(response.facts, start=1):
-                unknown = [sid for sid in fact.source_ids if sid not in allowed_source_ids]
-                allowed_evidence = [e for e in fact.evidence if e.source_id in allowed_source_ids]
+                unknown = [
+                    sid for sid in fact.source_ids if sid not in allowed_source_ids
+                ]
+                allowed_evidence = [
+                    e for e in fact.evidence if e.source_id in allowed_source_ids
+                ]
                 if unknown:
                     diagnostics.append(
                         Diagnostic(
@@ -83,7 +91,9 @@ class StructuredLLMClient:
                     fact = fact.model_copy(
                         update={
                             "source_ids": [
-                                sid for sid in fact.source_ids if sid in allowed_source_ids
+                                sid
+                                for sid in fact.source_ids
+                                if sid in allowed_source_ids
                             ],
                             "evidence": allowed_evidence,
                         }
@@ -159,13 +169,19 @@ class StructuredLLMClient:
             raise last_error
         raise ResearchLLMError("llm_generate_failed")
 
-    async def _generate_once(self, prompt: str, *, system_prompt: str) -> dict[str, Any]:
+    async def _generate_once(
+        self, prompt: str, *, system_prompt: str
+    ) -> dict[str, Any]:
         response = await self._query_router(prompt=prompt, system_prompt=system_prompt)
         parsed = self._parse_json(response.text)
         if parsed is not None:
             return parsed
         stripped = response.text.strip()
-        if "{" in stripped and not stripped.startswith("{") and not stripped.startswith("```"):
+        if (
+            "{" in stripped
+            and not stripped.startswith("{")
+            and not stripped.startswith("```")
+        ):
             raise ResearchLLMError("llm_non_json_envelope")
         if not self._looks_like_json_candidate(response.text):
             raise ResearchLLMError("llm_malformed_json")
@@ -173,8 +189,14 @@ class StructuredLLMClient:
         reask_limit = max(0, int(self._config.llm_reask_limit))
         invalid_output = response.text
         for _ in range(reask_limit):
-            reask_prompt = self._build_reask_prompt(prompt=prompt, invalid_output=invalid_output, json_schema=self._config.llm_reask_schema)
-            reask = await self._query_router(prompt=reask_prompt, system_prompt=system_prompt)
+            reask_prompt = self._build_reask_prompt(
+                prompt=prompt,
+                invalid_output=invalid_output,
+                json_schema=self._config.llm_reask_schema,
+            )
+            reask = await self._query_router(
+                prompt=reask_prompt, system_prompt=system_prompt
+            )
             reparsed = self._parse_json(reask.text)
             if reparsed is not None:
                 return reparsed
@@ -195,7 +217,9 @@ class StructuredLLMClient:
             raise ResearchLLMError("llm_router_unavailable") from exc
 
     @staticmethod
-    def _build_reask_prompt(*, prompt: str, invalid_output: str, json_schema: str) -> str:
+    def _build_reask_prompt(
+        *, prompt: str, invalid_output: str, json_schema: str
+    ) -> str:
         clipped = invalid_output[:_MAX_REASK_OUTPUT_CHARS]
         return (
             "Требуется JSON-объект по схеме: "
@@ -214,7 +238,11 @@ class StructuredLLMClient:
         stripped = payload.strip()
         if self._config.allow_fenced_json_output and stripped.startswith("```"):
             lines = stripped.splitlines()
-            if len(lines) >= 3 and lines[0].startswith("```") and lines[-1].strip() == "```":
+            if (
+                len(lines) >= 3
+                and lines[0].startswith("```")
+                and lines[-1].strip() == "```"
+            ):
                 fenced_payload = "\n".join(lines[1:-1])
                 if lines[0].strip().lower() in {"```json", "```json5", "```"}:
                     parsed = self._try_parse_object(fenced_payload.strip())

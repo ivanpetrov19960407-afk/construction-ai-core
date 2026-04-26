@@ -96,7 +96,9 @@ class ResearcherAgent(BaseAgent):
     async def _run(self, state: dict[str, Any]) -> dict[str, Any]:
         started = perf_counter()
         trace_id = state.setdefault("trace_id", str(uuid.uuid4()))
-        logger = struct_logger.bind(agent="researcher", trace_id=trace_id, agent_id=self.agent_id)
+        logger = struct_logger.bind(
+            agent="researcher", trace_id=trace_id, agent_id=self.agent_id
+        )
 
         RESEARCHER_REQUESTS_TOTAL.labels(status="started").inc()
         logger.info("research_started", message=str(state.get("message", ""))[:200])
@@ -107,7 +109,9 @@ class ResearcherAgent(BaseAgent):
             logger.info(
                 "research_completed",
                 duration_ms=round((perf_counter() - started) * 1000, 2),
-                sources_count=len(result.get("research_payload", {}).get("sources", [])),
+                sources_count=len(
+                    result.get("research_payload", {}).get("sources", [])
+                ),
             )
             return result
         except (
@@ -118,7 +122,9 @@ class ResearcherAgent(BaseAgent):
             ResearchValidationError,
         ) as exc:
             RESEARCHER_REQUESTS_TOTAL.labels(status="error").inc()
-            logger.error("research_failed", error=str(exc), error_type=type(exc).__name__)
+            logger.error(
+                "research_failed", error=str(exc), error_type=type(exc).__name__
+            )
             code = getattr(exc, "code", type(exc).__name__)
             state["research_facts"] = "[]"
             state["research_payload"] = {
@@ -140,7 +146,9 @@ class ResearcherAgent(BaseAgent):
             }
             return self._update_state(state, "")
 
-    async def _orchestrate(self, state: dict[str, Any], logger: structlog.stdlib.BoundLogger) -> dict[str, Any]:
+    async def _orchestrate(
+        self, state: dict[str, Any], logger: structlog.stdlib.BoundLogger
+    ) -> dict[str, Any]:
         message = str(state.get("message", "")).strip()
         if not message:
             raise ResearchValidationError("empty_query", "Пустой запрос")
@@ -169,14 +177,18 @@ class ResearcherAgent(BaseAgent):
 
         prompt = PromptBuilder.build(message, context, sources, self._config)
         llm_response, llm_diag = await self._query_llm(prompt, sources)
-        validated_facts, validation_diag = self._validator.validate_facts(llm_response.facts, sources)
+        validated_facts, validation_diag = self._validator.validate_facts(
+            llm_response.facts, sources
+        )
 
         confidence = self._scorer.compute(validated_facts, sources)
         gaps = list(dict.fromkeys(llm_response.gaps))
         if not validated_facts and sources and llm_response.facts:
             gaps.append("Факты не прошли валидацию источников")
 
-        diag_struct = self._deduplicate_diagnostics([*collection_diag, *llm_diag, *validation_diag])
+        diag_struct = self._deduplicate_diagnostics(
+            [*collection_diag, *llm_diag, *validation_diag]
+        )
         payload = ResearchResponse(
             query=message,
             facts=validated_facts,
@@ -187,13 +199,21 @@ class ResearcherAgent(BaseAgent):
             confidence_overall=confidence.overall,
             confidence_breakdown=confidence.model_dump(),
         )
-        safe_facts_artifact = json.dumps([fact.model_dump() for fact in validated_facts], ensure_ascii=False)
+        safe_facts_artifact = json.dumps(
+            [fact.model_dump() for fact in validated_facts], ensure_ascii=False
+        )
         state["research_facts"] = safe_facts_artifact
         state["research_payload"] = payload.model_dump()
-        logger.info("research_orchestrated", diagnostics=len(diag_struct), facts=len(validated_facts))
+        logger.info(
+            "research_orchestrated",
+            diagnostics=len(diag_struct),
+            facts=len(validated_facts),
+        )
         return self._update_state(state, safe_facts_artifact)
 
-    async def _query_llm(self, prompt: str, sources: list) -> tuple[LLMResearchResponse, list[Diagnostic]]:
+    async def _query_llm(
+        self, prompt: str, sources: list
+    ) -> tuple[LLMResearchResponse, list[Diagnostic]]:
         llm_diag: list[Diagnostic] = []
         llm_response = LLMResearchResponse(facts=[], gaps=[])
         llm_start = perf_counter()
@@ -204,14 +224,32 @@ class ResearcherAgent(BaseAgent):
                 allowed_source_ids={s.id for s in sources},
             )
         except TimeoutError:
-            llm_diag.append(Diagnostic(code="llm_timeout", message="LLM timeout", severity="error", component="llm", stage="llm"))
+            llm_diag.append(
+                Diagnostic(
+                    code="llm_timeout",
+                    message="LLM timeout",
+                    severity="error",
+                    component="llm",
+                    stage="llm",
+                )
+            )
         except (ResearchLLMError, ResearchValidationError) as exc:
-            llm_diag.append(Diagnostic(code=getattr(exc, "code", "llm_error"), message=str(exc), severity="error", component="llm", stage="llm"))
+            llm_diag.append(
+                Diagnostic(
+                    code=getattr(exc, "code", "llm_error"),
+                    message=str(exc),
+                    severity="error",
+                    component="llm",
+                    stage="llm",
+                )
+            )
         finally:
             RESEARCHER_LLM_DURATION_SECONDS.observe(perf_counter() - llm_start)
         return llm_response, llm_diag
 
-    async def _collect_sources(self, message: str, **kwargs: Any) -> tuple[list, list[Diagnostic], bool]:
+    async def _collect_sources(
+        self, message: str, **kwargs: Any
+    ) -> tuple[list, list[Diagnostic], bool]:
         return await self._collector.collect(message, **kwargs)
 
     @staticmethod
@@ -219,7 +257,13 @@ class ResearcherAgent(BaseAgent):
         seen: set[tuple[str, str, str, str | None, str | None]] = set()
         out: list[Diagnostic] = []
         for item in diags:
-            key = (item.code, item.message, item.component, item.source_id, item.fact_id)
+            key = (
+                item.code,
+                item.message,
+                item.component,
+                item.source_id,
+                item.fact_id,
+            )
             if key in seen:
                 continue
             seen.add(key)
@@ -237,7 +281,10 @@ class ResearcherAgent(BaseAgent):
         for legacy_key in ("scope", "role"):
             if legacy_key in state:
                 warnings.warn(
-                    f"Key '{legacy_key}' is deprecated for ResearcherAgent; use 'access_scope' instead.",
+                    (
+                        f"Key '{legacy_key}' is deprecated for ResearcherAgent; "
+                        "use 'access_scope' instead."
+                    ),
                     DeprecationWarning,
                     stacklevel=3,
                 )
