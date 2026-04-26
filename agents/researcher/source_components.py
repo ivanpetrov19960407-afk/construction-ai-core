@@ -19,7 +19,10 @@ class URLValidator:
     def is_allowed(url: str) -> bool:
         if not url:
             return False
-        parsed = urlparse(url)
+        try:
+            parsed = urlparse(url)
+        except ValueError:
+            return False
         if parsed.scheme not in {"http", "https"}:
             return False
 
@@ -38,9 +41,7 @@ class URLValidator:
             return not _is_private_ip(ip_address(host))
 
         try:
-            infos = socket.getaddrinfo(
-                host, parsed.port or 443, proto=socket.IPPROTO_TCP
-            )
+            infos = socket.getaddrinfo(host, parsed.port or 443, proto=socket.IPPROTO_TCP)
         except OSError:
             return False
         return all(not _is_private_ip(ip_address(info[4][0])) for info in infos)
@@ -71,9 +72,7 @@ class SourceSanitizer:
     )
 
     @classmethod
-    def sanitize(
-        cls, source: ResearchSource, sanitize_text
-    ) -> tuple[ResearchSource, bool]:
+    def sanitize(cls, source: ResearchSource, sanitize_text) -> tuple[ResearchSource, bool]:
         updates: dict[str, str | None] = {}
         flagged = False
         for field in cls.SENSITIVE_FIELDS:
@@ -86,9 +85,7 @@ class SourceSanitizer:
 
 class SourceTruncator:
     @staticmethod
-    def truncate(
-        sources: list[ResearchSource], max_prompt_chars: int
-    ) -> list[ResearchSource]:
+    def truncate(sources: list[ResearchSource], max_prompt_chars: int) -> list[ResearchSource]:
         total_chars = sum(len(s.snippet or "") for s in sources)
         if total_chars <= max_prompt_chars:
             return sources
@@ -143,10 +140,4 @@ class CacheKeyBuilder:
 
 
 def _is_private_ip(ip) -> bool:
-    return (
-        ip.is_private
-        or ip.is_loopback
-        or ip.is_link_local
-        or ip.is_reserved
-        or ip.is_multicast
-    )
+    return ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast

@@ -23,6 +23,7 @@ from agents.researcher.fact_validator import FactValidator
 from agents.researcher.initializer import ResearcherInitializer
 from agents.researcher.llm_client import LLMResearchResponse, StructuredLLMClient
 from agents.researcher.prompt_builder import PromptBuilder
+from agents.researcher.security import InjectionGuard
 from agents.researcher.source_collector import SourceCollector
 from api.metrics import (
     RESEARCHER_CACHE_HITS_TOTAL,
@@ -68,6 +69,7 @@ class ResearcherAgent(BaseAgent):
         self._llm_client: StructuredLLMClient = components.llm_client
         self._validator = FactValidator(self._config.fact_citation_min_similarity)
         self._scorer = ConfidenceScorer(self._config)
+        self._security = InjectionGuard(self._config)
 
     def invalidate_collector(self) -> None:
         components = ResearcherInitializer.initialize(
@@ -96,12 +98,13 @@ class ResearcherAgent(BaseAgent):
     async def _run(self, state: dict[str, Any]) -> dict[str, Any]:
         started = perf_counter()
         trace_id = state.setdefault("trace_id", str(uuid.uuid4()))
-        logger = struct_logger.bind(
-            agent="researcher", trace_id=trace_id, agent_id=self.agent_id
-        )
+        logger = struct_logger.bind(agent="researcher", trace_id=trace_id, agent_id=self.agent_id)
 
         RESEARCHER_REQUESTS_TOTAL.labels(status="started").inc()
-        logger.info("research_started", message=str(state.get("message", ""))[:200])
+        logger.info(
+            "research_started",
+            message=self._security.mask_pii(str(state.get("message", ""))),
+        )
 
         try:
             result = await self._orchestrate(state, logger)
@@ -109,9 +112,7 @@ class ResearcherAgent(BaseAgent):
             logger.info(
                 "research_completed",
                 duration_ms=round((perf_counter() - started) * 1000, 2),
-                sources_count=len(
-                    result.get("research_payload", {}).get("sources", [])
-                ),
+                sources_count=len(result.get("research_payload", {}).get("sources", [])),
             )
             return result
         except (
@@ -122,9 +123,7 @@ class ResearcherAgent(BaseAgent):
             ResearchValidationError,
         ) as exc:
             RESEARCHER_REQUESTS_TOTAL.labels(status="error").inc()
-            logger.error(
-                "research_failed", error=str(exc), error_type=type(exc).__name__
-            )
+            logger.error("research_failed", error=str(exc), error_type=type(exc).__name__)
             code = getattr(exc, "code", type(exc).__name__)
             state["research_facts"] = "[]"
             state["research_payload"] = {
@@ -186,9 +185,7 @@ class ResearcherAgent(BaseAgent):
         if not validated_facts and sources and llm_response.facts:
             gaps.append("Факты не прошли валидацию источников")
 
-        diag_struct = self._deduplicate_diagnostics(
-            [*collection_diag, *llm_diag, *validation_diag]
-        )
+        diag_struct = self._deduplicate_diagnostics([*collection_diag, *llm_diag, *validation_diag])
         payload = ResearchResponse(
             query=message,
             facts=validated_facts,
@@ -275,7 +272,7 @@ class ResearcherAgent(BaseAgent):
         if "access_scope" in state:
             value = state.get("access_scope")
             if value is None:
-                return None
+                return "public"
             return str(value).strip().lower()
 
         for legacy_key in ("scope", "role"):
@@ -289,4 +286,4 @@ class ResearcherAgent(BaseAgent):
                     stacklevel=3,
                 )
                 return str(state.get(legacy_key)).strip().lower()
-        return None
+        return "public"
