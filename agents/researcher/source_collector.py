@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 import math
-import re
-import socket
-from ipaddress import ip_address
-from urllib.parse import urlparse
+from collections.abc import Callable
+from inspect import signature
+
+from pydantic import ValidationError
 
 try:
     from aiolimiter import AsyncLimiter
@@ -29,6 +28,13 @@ from agents.researcher.config import ResearcherConfig
 from agents.researcher.domain import choose_primary_sources
 from agents.researcher.errors import ResearchAccessError, ResearchScopeError, ResearchSourceError
 from agents.researcher.security import InjectionGuard
+from agents.researcher.source_components import (
+    CacheKeyBuilder,
+    SourceDeduplicator,
+    SourceSanitizer,
+    SourceTruncator,
+    URLValidator,
+)
 from core.cache import RedisCache
 from core.rag_engine import RAGEngine
 from core.tools.web_search import WebSearchTool
@@ -38,9 +44,6 @@ try:
     from api.metrics import RESEARCHER_INJECTION_DETECTED_TOTAL
 except Exception:  # pragma: no cover - metrics optional in tests
     RESEARCHER_INJECTION_DETECTED_TOTAL = None  # type: ignore[assignment]
-
-_WHITESPACE_RE = re.compile(r"\s+")
-_SUSPICIOUS_HOST_RE = re.compile(r"(?i)(localhost|\.local$|internal|\.internal$)")
 
 _REQUIRED_SCOPE_CONTEXT: dict[str, tuple[str, ...]] = {
     "private": ("user_id",),
@@ -52,7 +55,7 @@ _REQUIRED_SCOPE_CONTEXT: dict[str, tuple[str, ...]] = {
 
 
 class SourceCollector:
-    """Collect RAG and web sources with dedup, sanitization and cache."""
+    """Collect RAG and web sources with composition-based source processing."""
 
     def __init__(
         self,
@@ -61,506 +64,242 @@ class SourceCollector:
         cache: RedisCache | None,
         config: ResearcherConfig,
         injection_guard: InjectionGuard | None = None,
+        url_validator: URLValidator | None = None,
+        deduplicator: SourceDeduplicator | None = None,
+        sanitizer: SourceSanitizer | None = None,
+        truncator: SourceTruncator | None = None,
+        cache_key_builder: CacheKeyBuilder | None = None,
     ) -> None:
         self._rag_engine = rag_engine
         self._web_search_tool = web_search_tool
         self._cache = cache
         self._config = config
         self._injection_guard = injection_guard or InjectionGuard(config)
+        self._url_validator = url_validator or URLValidator()
+        self._deduplicator = deduplicator or SourceDeduplicator()
+        self._sanitizer = sanitizer or SourceSanitizer()
+        self._truncator = truncator or SourceTruncator()
+        self._cache_key_builder = cache_key_builder or CacheKeyBuilder()
         self._web_limiter = AsyncLimiter(max_rate=config.web_rate_limit_per_second, time_period=1)
         self._web_limiter_loop_id: int | None = None
 
-    async def collect(
-        self,
-        query: str,
-        *,
-        topic_scope: str | None,
-        access_scope: str | None,
-        context: str,
-        user_id: str | None = None,
-        org_id: str | None = None,
-        tenant_id: str | None = None,
-        project_id: str | None = None,
-    ) -> tuple[list[ResearchSource], list[Diagnostic], bool]:
+    async def collect(self, query: str, *, topic_scope: str | None, access_scope: str | None, context: str, user_id: str | None = None, org_id: str | None = None, tenant_id: str | None = None, project_id: str | None = None) -> tuple[list[ResearchSource], list[Diagnostic], bool]:
         diagnostics: list[Diagnostic] = []
-        self._require_scope_context(
-            access_scope,
-            user_id=user_id,
-            org_id=org_id,
-            tenant_id=tenant_id,
-            project_id=project_id,
+        self._require_scope_context(access_scope, user_id=user_id, org_id=org_id, tenant_id=tenant_id, project_id=project_id)
+        cache_key = self._build_cache_key(query, topic_scope, access_scope, context, user_id=user_id, org_id=org_id, tenant_id=tenant_id, project_id=project_id)
+
+        cached_sources = await self._load_from_cache(cache_key, diagnostics)
+        if cached_sources is not None:
+            return cached_sources, diagnostics, True
+
+        rag_sources = await self._safe_collect_rag(query, topic_scope, access_scope, context, diagnostics, user_id=user_id, org_id=org_id, tenant_id=tenant_id, project_id=project_id)
+
+        web_sources = await self._safe_collect_web_if_needed(query, topic_scope, access_scope, rag_sources, diagnostics)
+
+        candidate_pool = sorted([*rag_sources, *web_sources], key=lambda s: s.score, reverse=True)[: self._config.candidate_pool_size]
+        compact_sources = self._truncator.truncate(
+            choose_primary_sources(query, candidate_pool)[: self._config.final_top_k_sources],
+            self._config.max_prompt_chars,
         )
-        cache_key = self._cache_key(
-            query,
-            topic_scope,
-            access_scope,
-            context,
-            user_id=user_id,
-            org_id=org_id,
-            tenant_id=tenant_id,
-            project_id=project_id,
-        )
-        if self._cache is not None:
-            try:
-                cached = await self._cache.get(cache_key)
-            except Exception:  # noqa: BLE001
-                cached = None
-                diagnostics.append(
-                    Diagnostic(
-                        code="cache_unavailable",
-                        message="cache_unavailable",
-                        severity="warn",
-                        component="source_collector",
-                        stage="collect",
-                    )
-                )
-            if cached:
-                try:
-                    items = json.loads(cached)
-                    sanitized_sources, cached_sec_diag = self._sanitize_sources(
-                        [ResearchSource.model_validate(i) for i in items]
-                    )
-                    diagnostics.extend(cached_sec_diag)
-                    return sanitized_sources, diagnostics, True
-                except (TypeError, ValueError, json.JSONDecodeError):
-                    diagnostics.append(
-                        Diagnostic(
-                            code="cache_parse_failed",
-                            message="cache parse failed",
-                            severity="warn",
-                            component="source_collector",
-                            stage="collect",
-                        )
-                    )
-
-        rag_task = asyncio.create_task(
-            self._collect_rag(
-                query,
-                topic_scope,
-                access_scope,
-                context,
-                user_id=user_id,
-                org_id=org_id,
-                tenant_id=tenant_id,
-                project_id=project_id,
-            )
-        )
-
-        try:
-            rag_result: list[ResearchSource] | Exception = await rag_task
-        except Exception as exc:  # noqa: BLE001
-            rag_result = exc
-
-        rag_sanitization_diag: list[Diagnostic] = []
-        if isinstance(rag_result, Exception):
-            if isinstance(rag_result, ResearchSourceError):
-                raise rag_result
-            diagnostics.append(
-                Diagnostic(
-                    code="rag_failed",
-                    message=type(rag_result).__name__,
-                    severity="error",
-                    component="source_collector",
-                    stage="collect",
-                )
-            )
-            rag_sources: list[ResearchSource] = []
-        else:
-            sanitized_rag, rag_sanitization_diag = self._sanitize_sources(rag_result)
-            rag_sources = self._deduplicate_rag_sources(sanitized_rag)
-
-        need_web = self._need_web_fallback(rag_sources)
-        web_result: list[ResearchSource] | Exception = []
-        web_used = False
-        effective_scope = (access_scope or "public").strip()
-        non_public_scope = effective_scope != "public"
-        web_allowed = not non_public_scope or bool(
-            self._config.allow_external_web_for_private_scopes
-        )
-        if need_web and web_allowed:
-            try:
-                web_result = await self._collect_web(query, topic_scope)
-                web_used = True
-            except Exception as exc:  # noqa: BLE001
-                web_result = exc
-        elif need_web and non_public_scope:
-            diagnostics.append(
-                Diagnostic(
-                    code="web_fallback_blocked_private_scope",
-                    message="web fallback blocked for non-public scope",
-                    severity="warn",
-                    component="source_collector",
-                    stage="collect",
-                )
-            )
-
-        web_sources: list[ResearchSource] = []
-        web_sanitization_diag: list[Diagnostic] = []
-        if isinstance(web_result, Exception):
-            diagnostics.append(
-                Diagnostic(
-                    code="web_failed",
-                    message=type(web_result).__name__,
-                    severity="warn",
-                    component="source_collector",
-                    stage="collect",
-                )
-            )
-        elif web_used:
-            sanitized_web, web_sanitization_diag = self._sanitize_sources(web_result)
-            web_sources = sanitized_web
-            diagnostics.append(
-                Diagnostic(
-                    code="web_fallback",
-                    message="web fallback used",
-                    severity="info",
-                    component="source_collector",
-                    stage="collect",
-                )
-            )
-
-        diagnostics.extend(rag_sanitization_diag)
-        diagnostics.extend(web_sanitization_diag)
-
-        candidate_pool = sorted([*rag_sources, *web_sources], key=lambda s: s.score, reverse=True)[
-            : self._config.candidate_pool_size
-        ]
-        ranked = choose_primary_sources(query, candidate_pool)
-        top_sources = ranked[: self._config.final_top_k_sources]
-        compact_sources = self._truncate_sources(top_sources)
-
-        if compact_sources and self._cache is not None:
-            try:
-                await self._cache.set(
-                    cache_key,
-                    json.dumps(
-                        [source.model_dump() for source in compact_sources], ensure_ascii=False
-                    ),
-                    ttl=self._config.cache_ttl_seconds,
-                )
-            except Exception:  # noqa: BLE001
-                diagnostics.append(
-                    Diagnostic(
-                        code="cache_unavailable",
-                        message="cache_unavailable",
-                        severity="warn",
-                        component="source_collector",
-                        stage="collect",
-                    )
-                )
-
+        await self._save_to_cache(cache_key, compact_sources, diagnostics)
         return compact_sources, diagnostics, False
 
-    @staticmethod
-    def _require_scope_context(
-        access_scope: str | None,
-        *,
-        user_id: str | None,
-        org_id: str | None,
-        tenant_id: str | None,
-        project_id: str | None,
-    ) -> None:
-        if access_scope is None:
-            access_scope = "public"
-        if not access_scope.strip():
-            raise ResearchScopeError("empty access_scope is forbidden")
-        if access_scope == "public":
+    async def _safe_collect_rag(self, query: str, topic_scope: str | None, access_scope: str | None, context: str, diagnostics: list[Diagnostic], *, user_id: str | None, org_id: str | None, tenant_id: str | None, project_id: str | None) -> list[ResearchSource]:
+        try:
+            rag = await self._collect_rag(query, topic_scope, access_scope, context, user_id=user_id, org_id=org_id, tenant_id=tenant_id, project_id=project_id)
+        except ResearchSourceError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            diagnostics.append(Diagnostic(code="rag_failed", message=type(exc).__name__, severity="error", component="source_collector", stage="collect"))
+            return []
+
+        sanitized_rag, sanitize_diag = self._sanitize_sources(rag)
+        diagnostics.extend(sanitize_diag)
+        return self._deduplicator.deduplicate_rag(sanitized_rag)
+
+    async def _safe_collect_web_if_needed(self, query: str, topic_scope: str | None, access_scope: str | None, rag_sources: list[ResearchSource], diagnostics: list[Diagnostic]) -> list[ResearchSource]:
+        need_web = self._need_web_fallback(rag_sources)
+        effective_scope = (access_scope or "public").strip()
+        non_public_scope = effective_scope != "public"
+        web_allowed = not non_public_scope or bool(self._config.allow_external_web_for_private_scopes)
+        if not need_web:
+            return []
+        if non_public_scope and not web_allowed:
+            diagnostics.append(Diagnostic(code="web_fallback_blocked_private_scope", message="web fallback blocked for non-public scope", severity="warn", component="source_collector", stage="collect"))
+            return []
+
+        try:
+            web = await self._collect_web(query, topic_scope)
+        except Exception as exc:  # noqa: BLE001
+            diagnostics.append(Diagnostic(code="web_failed", message=type(exc).__name__, severity="warn", component="source_collector", stage="collect"))
+            return []
+
+        sanitized_web, sanitize_diag = self._sanitize_sources(web)
+        diagnostics.extend(sanitize_diag)
+        diagnostics.append(Diagnostic(code="web_fallback", message="web fallback used", severity="info", component="source_collector", stage="collect"))
+        return sanitized_web
+
+    async def _load_from_cache(self, cache_key: str, diagnostics: list[Diagnostic]) -> list[ResearchSource] | None:
+        if self._cache is None:
+            return None
+        try:
+            cached = await self._cache.get(cache_key)
+        except Exception:  # noqa: BLE001
+            diagnostics.append(Diagnostic(code="cache_unavailable", message="cache_unavailable", severity="warn", component="source_collector", stage="collect"))
+            return None
+        if not cached:
+            return None
+        try:
+            items = json.loads(cached)
+            parsed = [ResearchSource.model_validate(item) for item in items]
+        except (json.JSONDecodeError, ValidationError):
+            diagnostics.append(Diagnostic(code="cache_parse_failed", message="cache parse failed", severity="warn", component="source_collector", stage="collect"))
+            return None
+
+        sanitized, sanitize_diag = self._sanitize_sources(parsed)
+        diagnostics.extend(sanitize_diag)
+        return sanitized
+
+    async def _save_to_cache(self, cache_key: str, sources: list[ResearchSource], diagnostics: list[Diagnostic]) -> None:
+        if self._cache is None or not sources:
             return
-        required = _REQUIRED_SCOPE_CONTEXT.get(access_scope)
+        try:
+            await self._cache.set(cache_key, json.dumps([source.model_dump() for source in sources], ensure_ascii=False), ttl=self._config.cache_ttl_seconds)
+        except Exception:  # noqa: BLE001
+            diagnostics.append(Diagnostic(code="cache_unavailable", message="cache_unavailable", severity="warn", component="source_collector", stage="collect"))
+
+    def _build_cache_key(self, query: str, topic_scope: str | None, access_scope: str | None, context: str, *, user_id: str | None, org_id: str | None, tenant_id: str | None, project_id: str | None) -> str:
+        return self._cache_key_builder.build(
+            query=query,
+            topic_scope=topic_scope,
+            access_scope=access_scope,
+            context=context,
+            cache_schema_version=self._config.cache_schema_version,
+            cache_embedding_version=self._config.cache_embedding_version,
+            security_policy_version=self._config.security_policy_version,
+            user_id=user_id,
+            org_id=org_id,
+            tenant_id=tenant_id,
+            project_id=project_id,
+        )
+
+    @staticmethod
+    def _require_scope_context(access_scope: str | None, *, user_id: str | None, org_id: str | None, tenant_id: str | None, project_id: str | None) -> None:
+        if access_scope is None:
+            scope = "public"
+        else:
+            scope = access_scope.strip().lower()
+        if not scope:
+            raise ResearchScopeError("empty access_scope is forbidden")
+        if scope == "public":
+            return
+        required = _REQUIRED_SCOPE_CONTEXT.get(scope)
         if required is None:
             raise ResearchScopeError(f"unknown access_scope={access_scope}")
-        present = {
-            "user_id": bool(user_id),
-            "org_id": bool(org_id),
-            "tenant_id": bool(tenant_id),
-            "project_id": bool(project_id),
-        }
+        present = {"user_id": bool(user_id), "org_id": bool(org_id), "tenant_id": bool(tenant_id), "project_id": bool(project_id)}
         missing = [field for field in required if not present[field]]
         if missing:
-            raise ResearchAccessError(
-                f"access_scope={access_scope} requires context fields: {', '.join(missing)}"
-            )
+            raise ResearchAccessError(f"access_scope={scope} requires context fields: {', '.join(missing)}")
 
-    async def _collect_rag(
-        self,
-        query: str,
-        topic_scope: str | None,
-        access_scope: str | None,
-        context: str,
-        *,
-        user_id: str | None,
-        org_id: str | None,
-        tenant_id: str | None,
-        project_id: str | None,
-    ) -> list[ResearchSource]:
+    async def _collect_rag(self, query: str, topic_scope: str | None, access_scope: str | None, context: str, *, user_id: str | None, org_id: str | None, tenant_id: str | None, project_id: str | None) -> list[ResearchSource]:
         retrieval_query = "\n".join(part for part in [query, topic_scope, context] if part).strip()
-        kwargs = {
-            "n_results": self._config.candidate_pool_size,
-            "filter_scope": access_scope,
-            "tenant_id": tenant_id,
-            "org_id": org_id,
-            "project_id": project_id,
-            "user_id": user_id,
-        }
+        kwargs = {"n_results": self._config.candidate_pool_size, "filter_scope": access_scope, "tenant_id": tenant_id, "org_id": org_id, "project_id": project_id, "user_id": user_id}
+
         if access_scope and access_scope != "public":
             if not bool(getattr(self._rag_engine, "supports_identity_filters", True)):
                 raise ResearchSourceError("rag_identity_filters_unsupported")
             validator = getattr(self._rag_engine, "validate_identity_filter_support", None)
             if callable(validator):
-                try:
-                    validator()
-                except Exception as exc:  # noqa: BLE001
-                    raise ResearchSourceError("rag_identity_filters_unsupported") from exc
-        try:
-            coro = self._rag_engine.search(retrieval_query, **kwargs)
-        except TypeError:
-            if access_scope and access_scope != "public":
-                raise ResearchSourceError("rag_identity_filters_unsupported")
-            fallback = {k: v for k, v in kwargs.items() if k in {"n_results", "filter_scope"}}
-            coro = self._rag_engine.search(retrieval_query, **fallback)
-        chunks = await asyncio.wait_for(coro, timeout=self._config.rag_timeout_seconds)
-        if access_scope and access_scope != "public":
-            for chunk in chunks or []:
-                if tenant_id and chunk.get("tenant_id") != tenant_id:
-                    raise ResearchSourceError("rag_identity_filter_violation")
-                if org_id and chunk.get("org_id") != org_id:
-                    raise ResearchSourceError("rag_identity_filter_violation")
-                if project_id and chunk.get("project_id") != project_id:
-                    raise ResearchSourceError("rag_identity_filter_violation")
-                if user_id and chunk.get("user_id") != user_id:
-                    raise ResearchSourceError("rag_identity_filter_violation")
+                validator()
 
+        sig = signature(self._rag_engine.search)
+        supports_kwargs = any(p.kind.name == "VAR_KEYWORD" for p in sig.parameters.values())
+        supported = set(sig.parameters)
+        call_kwargs = kwargs if supports_kwargs else {k: v for k, v in kwargs.items() if k in supported}
+        if access_scope and access_scope != "public" and not supports_kwargs:
+            missing = {"tenant_id", "org_id", "project_id", "user_id"} - set(call_kwargs)
+            if missing:
+                raise ResearchSourceError("rag_identity_filters_unsupported")
+
+        chunks = await asyncio.wait_for(self._rag_engine.search(retrieval_query, **call_kwargs), timeout=self._config.rag_timeout_seconds)
+        self._validate_identity_boundaries(chunks or [], tenant_id=tenant_id, org_id=org_id, project_id=project_id, user_id=user_id)
+        return self._map_rag_chunks(chunks or [], access_scope, tenant_id=tenant_id, org_id=org_id, project_id=project_id, user_id=user_id)
+
+    @staticmethod
+    def _validate_identity_boundaries(chunks: list[dict], *, tenant_id: str | None, org_id: str | None, project_id: str | None, user_id: str | None) -> None:
+        if not any((tenant_id, org_id, project_id, user_id)):
+            return
+        for chunk in chunks:
+            if tenant_id and chunk.get("tenant_id") != tenant_id:
+                raise ResearchSourceError("rag_identity_filter_violation")
+            if org_id and chunk.get("org_id") != org_id:
+                raise ResearchSourceError("rag_identity_filter_violation")
+            if project_id and chunk.get("project_id") != project_id:
+                raise ResearchSourceError("rag_identity_filter_violation")
+            if user_id and chunk.get("user_id") != user_id:
+                raise ResearchSourceError("rag_identity_filter_violation")
+
+    def _map_rag_chunks(self, chunks: list[dict], access_scope: str | None, *, tenant_id: str | None, org_id: str | None, project_id: str | None, user_id: str | None) -> list[ResearchSource]:
         sources: list[ResearchSource] = []
-        for idx, chunk in enumerate(chunks or []):
+        for idx, chunk in enumerate(chunks):
             page = int(chunk.get("page", 0) or 0)
             snippet = str(chunk.get("text", ""))[: self._config.snippet_max_chars]
             source_name = str(chunk.get("source", "unknown"))
-            normalized_score = self._normalize_score(float(chunk.get("score", 0.0) or 0.0))
-            sources.append(
-                ResearchSource(
-                    id=f"rag-{idx}",
-                    type="rag",
-                    title=source_name,
-                    document=source_name,
-                    page=page if page > 0 else None,
-                    locator=f"стр. {page}" if page > 0 else None,
-                    snippet=snippet,
-                    chunk_text=str(chunk.get("chunk_text", chunk.get("text", "")) or ""),
-                    score=normalized_score,
-                    retrieval_score=normalized_score,
-                    access_scope=access_scope,
-                    tenant_id=chunk.get("tenant_id", tenant_id),
-                    org_id=chunk.get("org_id", org_id),
-                    project_id=chunk.get("project_id", project_id),
-                    user_id=chunk.get("user_id", user_id),
-                    source_type=chunk.get("source_type"),
-                    document_id=chunk.get("document_id"),
-                    chunk_id=chunk.get("chunk_id"),
-                    section=chunk.get("section"),
-                    jurisdiction=chunk.get("jurisdiction"),
-                    authority=chunk.get("authority"),
-                    document_version=chunk.get("document_version"),
-                    effective_from=chunk.get("effective_from"),
-                    effective_to=chunk.get("effective_to"),
-                    is_active=chunk.get("is_active"),
-                    ingested_at=chunk.get("ingested_at"),
-                    checksum=chunk.get("checksum"),
-                    text_hash=chunk.get("text_hash"),
-                    quality_score=chunk.get("quality_score"),
-                )
-            )
+            score = self._normalize_score(float(chunk.get("score", 0.0) or 0.0))
+            sources.append(ResearchSource(id=f"rag-{idx}", type="rag", title=source_name, document=source_name, page=page if page > 0 else None, locator=f"стр. {page}" if page > 0 else None, snippet=snippet, chunk_text=str(chunk.get("chunk_text", chunk.get("text", "")) or ""), score=score, retrieval_score=score, access_scope=access_scope, tenant_id=chunk.get("tenant_id", tenant_id), org_id=chunk.get("org_id", org_id), project_id=chunk.get("project_id", project_id), user_id=chunk.get("user_id", user_id), source_type=chunk.get("source_type"), document_id=chunk.get("document_id"), chunk_id=chunk.get("chunk_id"), section=chunk.get("section"), jurisdiction=chunk.get("jurisdiction"), authority=chunk.get("authority"), document_version=chunk.get("document_version"), effective_from=chunk.get("effective_from"), effective_to=chunk.get("effective_to"), is_active=chunk.get("is_active"), ingested_at=chunk.get("ingested_at"), checksum=chunk.get("checksum"), text_hash=chunk.get("text_hash"), quality_score=chunk.get("quality_score")))
         return sources
 
     async def _collect_web(self, query: str, topic_scope: str | None) -> list[ResearchSource]:
         web_query = "\n".join(part for part in [query, topic_scope] if part)
+        self._refresh_web_limiter_if_needed()
+        async with self._web_limiter:
+            items = await asyncio.wait_for(self._web_search_tool.run(web_query, max_results=self._config.candidate_pool_size), timeout=self._config.web_timeout_seconds)
+
+        return [
+            ResearchSource(id=f"web-{idx}", type="web", title=str(item.get("title", "Web source")), url=url, snippet=str(item.get("snippet", ""))[: self._config.snippet_max_chars], score=self._normalize_score(float(item.get("score", 0.0) or 0.0)), retrieval_score=self._normalize_score(float(item.get("score", 0.0) or 0.0)), published_at=str(item.get("published_at", "") or "") or None)
+            for idx, item in enumerate(items or [])
+            if (url := str(item.get("url", "") or "")) and self._url_validator.is_allowed(url)
+        ]
+
+    def _refresh_web_limiter_if_needed(self) -> None:
         loop_id = id(asyncio.get_running_loop())
         if self._web_limiter_loop_id is None:
             self._web_limiter_loop_id = loop_id
         elif self._web_limiter_loop_id != loop_id:
-            self._web_limiter = AsyncLimiter(
-                max_rate=self._config.web_rate_limit_per_second, time_period=1
-            )
+            self._web_limiter = AsyncLimiter(max_rate=self._config.web_rate_limit_per_second, time_period=1)
             self._web_limiter_loop_id = loop_id
-        async with self._web_limiter:
-            items = await asyncio.wait_for(
-                self._web_search_tool.run(web_query, max_results=self._config.candidate_pool_size),
-                timeout=self._config.web_timeout_seconds,
-            )
-        sources: list[ResearchSource] = []
-        for idx, item in enumerate(items or []):
-            url = str(item.get("url", "") or "")
-            if not self._is_allowed_url(url):
+
+    def _sanitize_sources(self, sources: list[ResearchSource]) -> tuple[list[ResearchSource], list[Diagnostic]]:
+        sanitized: list[ResearchSource] = []
+        diagnostics: list[Diagnostic] = []
+        redacted_count = 0
+        sanitize_fn: Callable[[str], tuple[str, bool]] = InjectionGuard.sanitize_snippet
+        for source in sources:
+            clean_source, flagged = self._sanitizer.sanitize(source, sanitize_fn)
+            sanitized.append(clean_source)
+            if not flagged:
                 continue
-            snippet = str(item.get("snippet", ""))[: self._config.snippet_max_chars]
-            score = self._normalize_score(float(item.get("score", 0.0) or 0.0))
-            sources.append(
-                ResearchSource(
-                    id=f"web-{idx}",
-                    type="web",
-                    title=str(item.get("title", "Web source")),
-                    url=url,
-                    snippet=snippet,
-                    score=score,
-                    retrieval_score=score,
-                    published_at=str(item.get("published_at", "") or "") or None,
-                )
-            )
-        return sources
+            redacted_count += 1
+            diagnostics.append(Diagnostic(code="prompt_injection_detected", message=f"Textual fields from {source.id} redacted", severity="warn", component="security", stage="sanitize", source_id=source.id))
+        if redacted_count and RESEARCHER_INJECTION_DETECTED_TOTAL is not None:
+            RESEARCHER_INJECTION_DETECTED_TOTAL.inc(redacted_count)
+        return sanitized, diagnostics
 
     def _need_web_fallback(self, rag_sources: list[ResearchSource]) -> bool:
         if len(rag_sources) < self._config.web_min_rag_sources:
             return True
         avg_score = sum(s.score for s in rag_sources) / max(len(rag_sources), 1)
-        info_density = sum(len((s.snippet or "").split()) for s in rag_sources) / max(
-            len(rag_sources), 1
-        )
+        info_density = sum(len((s.snippet or "").split()) for s in rag_sources) / max(len(rag_sources), 1)
         composite = avg_score * math.log(len(rag_sources) + 1) * (info_density / 100.0)
         return composite < self._config.web_min_avg_score
+
+    def _cache_key(self, query: str, topic_scope: str | None, access_scope: str | None, context: str, *, user_id: str | None = None, org_id: str | None = None, tenant_id: str | None = None, project_id: str | None = None) -> str:
+        return self._build_cache_key(query, topic_scope, access_scope, context, user_id=user_id, org_id=org_id, tenant_id=tenant_id, project_id=project_id)
+
+    @staticmethod
+    def _is_allowed_url(url: str) -> bool:
+        return URLValidator.is_allowed(url)
 
     @staticmethod
     def _normalize_score(score: float) -> float:
         return min(1.0, max(0.0, score if score <= 1 else score / 100.0))
-
-    def _deduplicate_rag_sources(self, sources: list[ResearchSource]) -> list[ResearchSource]:
-        dedup: dict[tuple[str, int, str], ResearchSource] = {}
-        for source in sources:
-            text_hash = hashlib.sha256((source.snippet or "").encode()).hexdigest()[:12]
-            key = ((source.document or "").lower(), source.page or -1, text_hash)
-            existing = dedup.get(key)
-            if existing is None or source.score > existing.score:
-                dedup[key] = source
-        return list(dedup.values())
-
-    def _cache_key(
-        self,
-        query: str,
-        topic_scope: str | None,
-        access_scope: str | None,
-        context: str,
-        *,
-        user_id: str | None = None,
-        org_id: str | None = None,
-        tenant_id: str | None = None,
-        project_id: str | None = None,
-    ) -> str:
-        norm_query = _WHITESPACE_RE.sub(" ", query).strip().lower()
-        query_hash = hashlib.sha256(f"{norm_query}|{context}".encode()).hexdigest()[:16]
-        scope_hash = hashlib.sha256(
-            f"{topic_scope or ''}|{access_scope or ''}".encode()
-        ).hexdigest()[:12]
-        identity = "|".join(
-            [
-                f"user:{user_id or ''}",
-                f"org:{org_id or ''}",
-                f"tenant:{tenant_id or ''}",
-                f"project:{project_id or ''}",
-            ]
-        )
-        identity_hash = hashlib.sha256(identity.encode()).hexdigest()[:12]
-        return (
-            f"research:{self._config.cache_schema_version}:{self._config.cache_embedding_version}:"
-            f"{self._config.security_policy_version}:{query_hash}:{scope_hash}:{identity_hash}"
-        )
-
-    @staticmethod
-    def _is_allowed_url(url: str) -> bool:
-        if not url:
-            return False
-        try:
-            parsed = urlparse(url)
-        except ValueError:
-            return False
-        if parsed.scheme not in {"http", "https"}:
-            return False
-        host = (parsed.hostname or "").strip().rstrip(".")
-        if not host or _SUSPICIOUS_HOST_RE.search(host):
-            return False
-        try:
-            host = host.encode("idna").decode("ascii")
-        except UnicodeError:
-            return False
-
-        if host == "localhost":
-            return False
-
-        try:
-            ip = ip_address(host)
-            return not (
-                ip.is_private
-                or ip.is_loopback
-                or ip.is_link_local
-                or ip.is_reserved
-                or ip.is_multicast
-            )
-        except ValueError:
-            pass
-
-        try:
-            infos = socket.getaddrinfo(host, parsed.port or 443, proto=socket.IPPROTO_TCP)
-        except (socket.gaierror, OSError):
-            return False
-        for info in infos:
-            resolved_ip = ip_address(info[4][0])
-            if (
-                resolved_ip.is_private
-                or resolved_ip.is_loopback
-                or resolved_ip.is_link_local
-                or resolved_ip.is_reserved
-                or resolved_ip.is_multicast
-            ):
-                return False
-        return True
-
-    def _sanitize_sources(
-        self, sources: list[ResearchSource]
-    ) -> tuple[list[ResearchSource], list[Diagnostic]]:
-        sanitized: list[ResearchSource] = []
-        diagnostics: list[Diagnostic] = []
-        redacted_count = 0
-        for source in sources:
-            updates: dict[str, str | None] = {}
-            flagged = False
-            for field in (
-                "title",
-                "document",
-                "section",
-                "locator",
-                "snippet",
-                "chunk_text",
-                "full_text",
-            ):
-                raw = getattr(source, field) or ""
-                clean, redacted = InjectionGuard.sanitize_snippet(raw)
-                updates[field] = clean
-                flagged = flagged or redacted
-            if flagged:
-                redacted_count += 1
-                diagnostics.append(
-                    Diagnostic(
-                        code="prompt_injection_detected",
-                        message=f"Textual fields from {source.id} redacted",
-                        severity="warn",
-                        component="security",
-                        stage="sanitize",
-                        source_id=source.id,
-                    )
-                )
-            sanitized.append(source.model_copy(update=updates))
-        if redacted_count and RESEARCHER_INJECTION_DETECTED_TOTAL is not None:
-            try:
-                RESEARCHER_INJECTION_DETECTED_TOTAL.inc(redacted_count)
-            except Exception:
-                pass
-        return sanitized, diagnostics
-
-    def _truncate_sources(self, sources: list[ResearchSource]) -> list[ResearchSource]:
-        total_chars = sum(len(s.snippet or "") for s in sources)
-        if total_chars <= self._config.max_prompt_chars:
-            return sources
-        ratio = self._config.max_prompt_chars / max(total_chars, 1)
-        truncated: list[ResearchSource] = []
-        for source in sources:
-            snippet = source.snippet or ""
-            new_len = max(50, int(len(snippet) * ratio))
-            truncated.append(source.model_copy(update={"snippet": snippet[:new_len]}))
-        return truncated

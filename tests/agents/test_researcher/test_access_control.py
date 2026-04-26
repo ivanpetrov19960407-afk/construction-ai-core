@@ -42,13 +42,15 @@ class _Web:
 
 
 def test_unknown_scope_fails() -> None:
+    collector = SourceCollector(_Rag(), _Web(), None, ResearcherConfig())  # type: ignore[arg-type]
     with pytest.raises(ResearchScopeError):
-        ResearcherAgent._validate_access_scope("admin")
+        asyncio.run(collector.collect("q", topic_scope=None, access_scope="admin", context=""))
 
 
-def test_empty_scope_fails() -> None:
+def test_empty_scope_is_rejected_by_collector() -> None:
+    collector = SourceCollector(_Rag(), _Web(), None, ResearcherConfig())  # type: ignore[arg-type]
     with pytest.raises(ResearchScopeError):
-        ResearcherAgent._resolve_access_scope({"access_scope": ""})
+        asyncio.run(collector.collect("q", topic_scope=None, access_scope="", context=""))
 
 
 def test_private_scope_without_user_id_fails() -> None:
@@ -99,6 +101,5 @@ def test_rag_engine_receives_identity_filters() -> None:
     assert rag.last_kwargs["user_id"] == "u1"
 
 
-def test_legacy_role_does_not_fallback_to_public() -> None:
-    with pytest.raises(ResearchScopeError):
-        ResearcherAgent._resolve_access_scope({"role": "admin"})
+def test_legacy_role_keeps_explicit_value() -> None:
+    assert ResearcherAgent._resolve_access_scope({"role": "admin"}) == "admin"

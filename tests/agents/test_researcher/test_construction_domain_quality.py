@@ -51,7 +51,7 @@ def test_outdated_source_flagged_by_recency() -> None:
     cfg = ResearcherConfig()
     facts = [_fact(["s1"])]
     src = [ResearchSource(id="s1", type="rag", title="old", score=0.9, is_active=False)]
-    assert ConfidenceScorer.score(facts, src, cfg).recency_score < 1.0
+    assert ConfidenceScorer.score(facts, src, cfg).source_currency_score < 1.0
 
 
 def test_conflicting_versions_detected() -> None:

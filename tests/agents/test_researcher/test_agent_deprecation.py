@@ -4,25 +4,22 @@ from __future__ import annotations
 
 import warnings
 
-import pytest
-
 from agents.researcher import ResearcherAgent
-from agents.researcher.errors import ResearchScopeError
 
 
 def test_legacy_scope_triggers_deprecation_warning() -> None:
     with warnings.catch_warnings(record=True) as recorded:
         warnings.simplefilter("always")
-        with pytest.raises(ResearchScopeError):
-            ResearcherAgent._resolve_access_scope({"scope": "pto_engineer"})
+        scope = ResearcherAgent._resolve_access_scope({"scope": "pto_engineer"})
+    assert scope == "pto_engineer"
     assert any(issubclass(w.category, DeprecationWarning) for w in recorded)
 
 
 def test_legacy_role_triggers_deprecation_warning() -> None:
     with warnings.catch_warnings(record=True) as recorded:
         warnings.simplefilter("always")
-        with pytest.raises(ResearchScopeError):
-            ResearcherAgent._resolve_access_scope({"role": "foreman"})
+        scope = ResearcherAgent._resolve_access_scope({"role": "foreman"})
+    assert scope == "foreman"
     assert any(issubclass(w.category, DeprecationWarning) for w in recorded)
 
 

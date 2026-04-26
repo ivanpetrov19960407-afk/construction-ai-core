@@ -148,7 +148,7 @@ def test_fact_quote_found_but_not_entailing() -> None:
         )
     ]
     sources = [ResearchSource(id="s1", type="rag", title="СП", snippet="Класс бетона B30")]
-    validated, _ = FactValidator.validate(facts, sources, ResearcherConfig())
+    validated, _ = FactValidator.validate(facts, sources)
     assert validated[0].support_status in {"quote_found_but_not_entailing", "partially_supported"}
 
 

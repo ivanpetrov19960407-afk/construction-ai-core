@@ -43,6 +43,11 @@ class ResearcherConfig(BaseSettings):
     retry_attempts: int = 3
     retry_initial_delay: float = 0.5
     llm_reask_limit: int = 1
+    llm_reask_schema: str = (
+        '{"facts":[{"text":"...","applicability":"","confidence":0.0,'
+        '"source_ids":["..."],"evidence":[{"source_id":"...","quote":"...","locator":null}]}],'
+        '"gaps":["..."]}'
+    )
     fact_citation_min_similarity: float = 0.6
     web_rate_limit_per_second: float = 1.0
 
