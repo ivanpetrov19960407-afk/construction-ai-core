@@ -52,7 +52,11 @@ class StructuredLLMClient:
         self._config = config
 
     async def query(
-        self, prompt: str, system_prompt: str, *, allowed_source_ids: set[str] | None = None
+        self,
+        prompt: str,
+        system_prompt: str,
+        *,
+        allowed_source_ids: set[str] | None = None,
     ) -> tuple[LLMResearchResponse, list[Diagnostic]]:
         parsed = await self.generate(prompt, system_prompt=system_prompt)
         diagnostics: list[Diagnostic] = []
@@ -173,7 +177,11 @@ class StructuredLLMClient:
         reask_limit = max(0, int(self._config.llm_reask_limit))
         invalid_output = response.text
         for _ in range(reask_limit):
-            reask_prompt = self._build_reask_prompt(prompt=prompt, invalid_output=invalid_output)
+            reask_prompt = self._build_reask_prompt(
+                prompt=prompt,
+                invalid_output=invalid_output,
+                json_schema=self._config.llm_reask_schema,
+            )
             reask = await self._query_router(prompt=reask_prompt, system_prompt=system_prompt)
             reparsed = self._parse_json(reask.text)
             if reparsed is not None:
@@ -195,12 +203,11 @@ class StructuredLLMClient:
             raise ResearchLLMError("llm_router_unavailable") from exc
 
     @staticmethod
-    def _build_reask_prompt(*, prompt: str, invalid_output: str) -> str:
+    def _build_reask_prompt(*, prompt: str, invalid_output: str, json_schema: str) -> str:
         clipped = invalid_output[:_MAX_REASK_OUTPUT_CHARS]
         return (
             "Требуется JSON-объект по схеме: "
-            '{"facts":[{"text":"...","applicability":"","confidence":0.0,"source_ids":["..."],'
-            '"evidence":[{"source_id":"...","quote":"...","locator":null}]}],"gaps":["..."]}.\n'
+            f"{json_schema}.\n"
             "Используй исходный контекст ниже и исправь ответ.\n\n"
             f"Original prompt:\n{prompt[:4000]}\n\n"
             f"Invalid output:\n{clipped}\n\n"

@@ -4,8 +4,8 @@ import json
 import pytest
 
 from agents.researcher.agent import ResearcherAgent
-from agents.researcher.config import ResearcherConfig
 from agents.researcher.confidence import ConfidenceScorer
+from agents.researcher.config import ResearcherConfig
 from agents.researcher.fact_validator import FactValidator
 from agents.researcher.llm_client import StructuredLLMClient
 from agents.researcher.source_collector import SourceCollector
@@ -105,7 +105,10 @@ def test_public_weak_rag_calls_web_and_public_strong_does_not() -> None:
 
     web2 = _Web()
     strong = SourceCollector(
-        _RagStrong(), web2, None, ResearcherConfig(web_min_rag_sources=1, web_min_avg_score=0.001)
+        _RagStrong(),
+        web2,
+        None,
+        ResearcherConfig(web_min_rag_sources=1, web_min_avg_score=0.001),
     )  # type: ignore[arg-type]
     asyncio.run(strong.collect("q", topic_scope=None, access_scope="public", context=""))
     assert web2.calls == 0
@@ -148,8 +151,11 @@ def test_fact_quote_found_but_not_entailing() -> None:
         )
     ]
     sources = [ResearchSource(id="s1", type="rag", title="СП", snippet="Класс бетона B30")]
-    validated, _ = FactValidator.validate(facts, sources, ResearcherConfig())
-    assert validated[0].support_status in {"quote_found_but_not_entailing", "partially_supported"}
+    validated, _ = FactValidator.validate(facts, sources)
+    assert validated[0].support_status in {
+        "quote_found_but_not_entailing",
+        "partially_supported",
+    }
 
 
 def test_two_chunks_same_document_not_independent() -> None:
@@ -166,10 +172,20 @@ def test_two_chunks_same_document_not_independent() -> None:
     ]
     sources = [
         ResearchSource(
-            id="s1", type="rag", title="doc", document_id="doc1", authority="A", score=0.8
+            id="s1",
+            type="rag",
+            title="doc",
+            document_id="doc1",
+            authority="A",
+            score=0.8,
         ),
         ResearchSource(
-            id="s2", type="rag", title="doc", document_id="doc1", authority="A", score=0.8
+            id="s2",
+            type="rag",
+            title="doc",
+            document_id="doc1",
+            authority="A",
+            score=0.8,
         ),
     ]
     score = ConfidenceScorer.score(facts, sources, ResearcherConfig())

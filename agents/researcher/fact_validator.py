@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import re
 
-from agents.researcher.config import ResearcherConfig
 from schemas.research import Diagnostic, ResearchEvidence, ResearchFact, ResearchSource
 
 
@@ -23,9 +22,7 @@ class FactValidator:
     def validate(
         facts: list[ResearchFact],
         sources: list[ResearchSource],
-        config: ResearcherConfig,
     ) -> tuple[list[ResearchFact], list[Diagnostic]]:
-        _ = config.fact_citation_min_similarity
         return FactValidator._validate_impl(facts, sources)
 
     @staticmethod

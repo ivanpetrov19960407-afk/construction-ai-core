@@ -51,7 +51,7 @@ def test_stale_source_lowers_score() -> None:
     ]
     sources = [ResearchSource(id="s1", type="rag", title="a", score=0.9, is_active=False)]
     res = ConfidenceScorer.score(facts, sources, cfg)
-    assert res.recency_score < 1.0
+    assert res.source_currency_score < 1.0
 
 
 def test_llm_self_confidence_does_not_inflate_score() -> None:

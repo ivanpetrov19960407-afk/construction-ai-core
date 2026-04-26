@@ -53,7 +53,10 @@ def test_extra_fields_rejected() -> None:
 
 
 def test_hallucinated_source_id_generates_diagnostic() -> None:
-    payload = '{"facts": [{"text":"x","applicability":"","confidence":0.1,"source_ids":["fake"]}], "gaps": []}'
+    payload = (
+        '{"facts": [{"text":"x","applicability":"","confidence":0.1,"source_ids":["fake"]}], '
+        '"gaps": []}'
+    )
     client = StructuredLLMClient(_Router([payload]), ResearcherConfig())  # type: ignore[arg-type]
     response, diags = asyncio.run(client.query("p", "s", allowed_source_ids={"s1"}))
     assert response.facts[0].source_ids == []

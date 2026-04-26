@@ -22,15 +22,6 @@ class ConfidenceBreakdown(BaseModel):
     weights: dict[str, float]
     explanation: str
 
-    @property
-    def citation_coverage(self) -> float:
-        """Backward-compatible alias."""
-        return self.evidence_coverage
-
-    @property
-    def recency_score(self) -> float:
-        return self.source_currency_score
-
 
 class ConfidenceScorer:
     def __init__(self, config: ResearcherConfig) -> None:

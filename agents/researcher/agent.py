@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import json
 import uuid
 import warnings
@@ -21,6 +20,7 @@ from agents.researcher.errors import (
     ResearchValidationError,
 )
 from agents.researcher.fact_validator import FactValidator
+from agents.researcher.initializer import ResearcherInitializer
 from agents.researcher.llm_client import LLMResearchResponse, StructuredLLMClient
 from agents.researcher.prompt_builder import PromptBuilder
 from agents.researcher.security import InjectionGuard
@@ -32,7 +32,6 @@ from api.metrics import (
     RESEARCHER_SOURCES_COUNT,
     RESEARCHER_WEB_FALLBACK_TOTAL,
 )
-from config.settings import settings
 from core.cache import RedisCache
 from core.llm_router import LLMRouter
 from core.rag_engine import RAGEngine
@@ -40,8 +39,7 @@ from core.tools.web_search import WebSearchTool
 from schemas.research import Diagnostic, ResearchResponse
 
 struct_logger = structlog.get_logger("agents.researcher")
-
-_ALLOWED_ACCESS_SCOPES = {"public", "private", "tenant", "org", "project", "user"}
+_INTERNAL_ERROR_GAP = "Внутренняя ошибка агента"
 
 
 class ResearcherAgent(BaseAgent):
@@ -59,79 +57,43 @@ class ResearcherAgent(BaseAgent):
         self._config = config or ResearcherConfig()
         self._rag_engine = rag_engine
         self._web_search_tool = web_search_tool
-        self._cache = cache
-        self._collector: SourceCollector | None = None
-        self._llm_client: StructuredLLMClient | None = None
+        components = ResearcherInitializer.initialize(
+            llm_router=llm_router,
+            config=self._config,
+            rag_engine=rag_engine,
+            web_search_tool=web_search_tool,
+            cache=cache,
+        )
+        self._cache = components.cache
+        self._collector: SourceCollector = components.collector
+        self._llm_client: StructuredLLMClient = components.llm_client
         self._validator = FactValidator(self._config.fact_citation_min_similarity)
         self._scorer = ConfidenceScorer(self._config)
         self._security = InjectionGuard(self._config)
-        self._cache_lock = asyncio.Lock()
-        self._init_lock = asyncio.Lock()
 
-    @property
-    def rag_engine(self) -> RAGEngine | None:
-        return self._rag_engine
+    def invalidate_collector(self) -> None:
+        components = ResearcherInitializer.initialize(
+            llm_router=self.llm_router,
+            config=self._config,
+            rag_engine=self._rag_engine,
+            web_search_tool=self._web_search_tool,
+            cache=self._cache,
+        )
+        self._cache = components.cache
+        self._collector = components.collector
+        self._llm_client = components.llm_client
 
-    @rag_engine.setter
-    def rag_engine(self, value: RAGEngine | None) -> None:
-        self._rag_engine = value
-        self._collector = None
+    def set_rag_engine(self, rag_engine: RAGEngine | None) -> None:
+        self._rag_engine = rag_engine
+        self.invalidate_collector()
 
-    @property
-    def web_search_tool(self) -> WebSearchTool | None:
-        return self._web_search_tool
+    def set_web_search_tool(self, web_search_tool: WebSearchTool | None) -> None:
+        self._web_search_tool = web_search_tool
+        self.invalidate_collector()
 
-    @web_search_tool.setter
-    def web_search_tool(self, value: WebSearchTool | None) -> None:
-        self._web_search_tool = value
-        self._collector = None
-
-    @property
-    def cache(self) -> RedisCache | None:
-        return self._cache
-
-    @cache.setter
-    def cache(self, value: RedisCache | None) -> None:
-        self._cache = value
-        self._collector = None
-
-    async def _ensure_initialized(self) -> None:
-        async with self._init_lock:
-            if self._collector is None:
-                self._config.rag_timeout_seconds = float(
-                    getattr(
-                        settings, "research_rag_timeout_seconds", self._config.rag_timeout_seconds
-                    )
-                )
-                self._config.web_timeout_seconds = float(
-                    getattr(
-                        settings, "research_web_timeout_seconds", self._config.web_timeout_seconds
-                    )
-                )
-                self._config.llm_timeout_seconds = float(
-                    getattr(
-                        settings, "research_llm_timeout_seconds", self._config.llm_timeout_seconds
-                    )
-                )
-                rag_engine = self._rag_engine or RAGEngine()
-                web_tool = self._web_search_tool or WebSearchTool()
-                cache = await self._get_or_create_cache()
-                self._collector = SourceCollector(
-                    rag_engine, web_tool, cache, self._config, injection_guard=self._security
-                )
-                self._llm_client = StructuredLLMClient(self.llm_router, self._config)
-
-    async def _get_or_create_cache(self) -> RedisCache | None:
-        if self._cache is not None:
-            return self._cache
-        async with self._cache_lock:
-            if self._cache is None:
-                try:
-                    self._cache = RedisCache(settings.redis_url)
-                except Exception as exc:  # noqa: BLE001
-                    struct_logger.warning("cache_init_failed", error=str(exc))
-                    self._cache = None
-        return self._cache
+    def set_cache(self, cache: RedisCache | None) -> None:
+        self._cache = cache
+        self.invalidate_collector()
 
     async def _run(self, state: dict[str, Any]) -> dict[str, Any]:
         started = perf_counter()
@@ -140,11 +102,11 @@ class ResearcherAgent(BaseAgent):
 
         RESEARCHER_REQUESTS_TOTAL.labels(status="started").inc()
         logger.info(
-            "research_started", message=self._security.mask_pii(str(state.get("message", "")))
+            "research_started",
+            message=self._security.mask_pii(str(state.get("message", ""))),
         )
 
         try:
-            await self._ensure_initialized()
             result = await self._orchestrate(state, logger)
             RESEARCHER_REQUESTS_TOTAL.labels(status="success").inc()
             logger.info(
@@ -159,9 +121,6 @@ class ResearcherAgent(BaseAgent):
             ResearchSourceError,
             ResearchLLMError,
             ResearchValidationError,
-            ValueError,
-            TypeError,
-            KeyError,
         ) as exc:
             RESEARCHER_REQUESTS_TOTAL.labels(status="error").inc()
             logger.error("research_failed", error=str(exc), error_type=type(exc).__name__)
@@ -171,7 +130,7 @@ class ResearcherAgent(BaseAgent):
                 "query": str(state.get("message", "")),
                 "facts": [],
                 "sources": [],
-                "gaps": ["Внутренняя ошибка агента"],
+                "gaps": [_INTERNAL_ERROR_GAP],
                 "diagnostics": [code],
                 "diagnostics_struct": [
                     {
@@ -191,26 +150,21 @@ class ResearcherAgent(BaseAgent):
     ) -> dict[str, Any]:
         message = str(state.get("message", "")).strip()
         if not message:
-            raise ValueError("Пустой запрос")
+            raise ResearchValidationError("empty_query", "Пустой запрос")
 
         topic_scope = str(state.get("topic_scope") or "").strip() or None
         access_scope = self._resolve_access_scope(state)
-
         context = str(state.get("context", "")).strip()
-        user_id = state.get("user_id")
-        org_id = state.get("org_id")
-        tenant_id = state.get("tenant_id")
-        project_id = state.get("project_id")
 
         sources, collection_diag, cache_hit = await self._collect_sources(
             message,
             topic_scope=topic_scope,
             access_scope=access_scope,
             context=context,
-            user_id=user_id,
-            org_id=org_id,
-            tenant_id=tenant_id,
-            project_id=project_id,
+            user_id=state.get("user_id"),
+            org_id=state.get("org_id"),
+            tenant_id=state.get("tenant_id"),
+            project_id=state.get("project_id"),
         )
         collection_diag.extend(diagnostics_for_sources(sources))
 
@@ -221,13 +175,46 @@ class ResearcherAgent(BaseAgent):
             RESEARCHER_CACHE_HITS_TOTAL.inc()
 
         prompt = PromptBuilder.build(message, context, sources, self._config)
+        llm_response, llm_diag = await self._query_llm(prompt, sources)
+        validated_facts, validation_diag = self._validator.validate_facts(
+            llm_response.facts, sources
+        )
 
+        confidence = self._scorer.compute(validated_facts, sources)
+        gaps = list(dict.fromkeys(llm_response.gaps))
+        if not validated_facts and sources and llm_response.facts:
+            gaps.append("Факты не прошли валидацию источников")
+
+        diag_struct = self._deduplicate_diagnostics([*collection_diag, *llm_diag, *validation_diag])
+        payload = ResearchResponse(
+            query=message,
+            facts=validated_facts,
+            sources=[s.to_public_source() for s in sources],
+            gaps=gaps,
+            diagnostics=list(dict.fromkeys([d.code for d in diag_struct])),
+            diagnostics_struct=diag_struct,
+            confidence_overall=confidence.overall,
+            confidence_breakdown=confidence.model_dump(),
+        )
+        safe_facts_artifact = json.dumps(
+            [fact.model_dump() for fact in validated_facts], ensure_ascii=False
+        )
+        state["research_facts"] = safe_facts_artifact
+        state["research_payload"] = payload.model_dump()
+        logger.info(
+            "research_orchestrated",
+            diagnostics=len(diag_struct),
+            facts=len(validated_facts),
+        )
+        return self._update_state(state, safe_facts_artifact)
+
+    async def _query_llm(
+        self, prompt: str, sources: list
+    ) -> tuple[LLMResearchResponse, list[Diagnostic]]:
         llm_diag: list[Diagnostic] = []
         llm_response = LLMResearchResponse(facts=[], gaps=[])
         llm_start = perf_counter()
         try:
-            if self._llm_client is None:
-                raise ResearchLLMError("llm_client_uninitialized")
             llm_response, llm_diag = await self._llm_client.query(
                 prompt,
                 PromptBuilder.system_prompt(self._config),
@@ -255,46 +242,11 @@ class ResearcherAgent(BaseAgent):
             )
         finally:
             RESEARCHER_LLM_DURATION_SECONDS.observe(perf_counter() - llm_start)
-
-        validated_facts, validation_diag = self._validator.validate_facts(
-            llm_response.facts, sources
-        )
-
-        confidence = self._scorer.compute(validated_facts, sources)
-        gaps = list(dict.fromkeys(llm_response.gaps))
-        if not validated_facts and sources and llm_response.facts:
-            gaps.append("Факты не прошли валидацию источников")
-
-        diag_struct = self._deduplicate_diagnostics([*collection_diag, *llm_diag, *validation_diag])
-        diagnostics_legacy: list[str] = list(dict.fromkeys([d.code for d in diag_struct]))
-
-        payload = ResearchResponse(
-            query=message,
-            facts=validated_facts,
-            sources=[s.to_public_source() for s in sources],
-            gaps=gaps,
-            diagnostics=diagnostics_legacy,
-            diagnostics_struct=diag_struct,
-            confidence_overall=confidence.overall,
-            confidence_breakdown=confidence.model_dump(),
-        )
-
-        safe_facts_artifact = json.dumps(
-            [fact.model_dump() for fact in validated_facts], ensure_ascii=False
-        )
-        state["research_facts"] = safe_facts_artifact
-        state["research_payload"] = payload.model_dump()
-        logger.info(
-            "research_orchestrated", diagnostics=len(diag_struct), facts=len(validated_facts)
-        )
-        return self._update_state(state, safe_facts_artifact)
+        return llm_response, llm_diag
 
     async def _collect_sources(
         self, message: str, **kwargs: Any
     ) -> tuple[list, list[Diagnostic], bool]:
-        await self._ensure_initialized()
-        if self._collector is None:
-            raise ResearchSourceError("collector_not_initialized")
         return await self._collector.collect(message, **kwargs)
 
     @staticmethod
@@ -302,7 +254,13 @@ class ResearcherAgent(BaseAgent):
         seen: set[tuple[str, str, str, str | None, str | None]] = set()
         out: list[Diagnostic] = []
         for item in diags:
-            key = (item.code, item.message, item.component, item.source_id, item.fact_id)
+            key = (
+                item.code,
+                item.message,
+                item.component,
+                item.source_id,
+                item.fact_id,
+            )
             if key in seen:
                 continue
             seen.add(key)
@@ -310,15 +268,12 @@ class ResearcherAgent(BaseAgent):
         return out
 
     @staticmethod
-    def _resolve_access_scope(state: dict[str, Any]) -> str:
-        explicit_provided = "access_scope" in state
-        explicit_value = state.get("access_scope")
-        if explicit_provided and explicit_value is None:
-            return "public"
-        if explicit_provided and isinstance(explicit_value, str) and not explicit_value.strip():
-            raise ResearchScopeError("empty access_scope is forbidden")
-        if explicit_provided:
-            return ResearcherAgent._validate_access_scope(str(explicit_value))
+    def _resolve_access_scope(state: dict[str, Any]) -> str | None:
+        if "access_scope" in state:
+            value = state.get("access_scope")
+            if value is None:
+                return "public"
+            return str(value).strip().lower()
 
         for legacy_key in ("scope", "role"):
             if legacy_key in state:
@@ -330,16 +285,5 @@ class ResearcherAgent(BaseAgent):
                     DeprecationWarning,
                     stacklevel=3,
                 )
-                return ResearcherAgent._validate_access_scope(str(state.get(legacy_key)))
+                return str(state.get(legacy_key)).strip().lower()
         return "public"
-
-    @staticmethod
-    def _validate_access_scope(scope: str | None) -> str:
-        if scope is None:
-            return "public"
-        normalized = scope.strip().lower()
-        if not normalized:
-            raise ResearchScopeError("empty access_scope is forbidden")
-        if normalized not in _ALLOWED_ACCESS_SCOPES:
-            raise ResearchScopeError(f"unknown access_scope={scope}")
-        return normalized

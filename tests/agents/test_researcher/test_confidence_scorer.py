@@ -53,7 +53,7 @@ def test_missing_jurisdiction_penalty_only_for_normative() -> None:
         [ResearchSource(id="s1", type="web", title="blog", score=0.8, jurisdiction=None)],
         cfg,
     )
-    assert norm.recency_score < web.recency_score
+    assert norm.source_currency_score < web.source_currency_score
 
 
 def test_multiple_independent_sources_increase_score() -> None:
