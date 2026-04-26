@@ -13,9 +13,7 @@ class _Resp:
 
 
 class _Router:
-    def __init__(
-        self, responses: list[str], *, delay: float = 0.0, fail: bool = False
-    ) -> None:
+    def __init__(self, responses: list[str], *, delay: float = 0.0, fail: bool = False) -> None:
         self._responses = responses
         self.delay = delay
         self.fail = fail

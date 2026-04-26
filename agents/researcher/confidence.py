@@ -23,7 +23,6 @@ class ConfidenceBreakdown(BaseModel):
     explanation: str
 
 
-
 class ConfidenceScorer:
     def __init__(self, config: ResearcherConfig) -> None:
         self._config = config

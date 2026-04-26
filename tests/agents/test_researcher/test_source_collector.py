@@ -8,9 +8,7 @@ from agents.researcher.source_collector import SourceCollector
 
 
 class _Rag:
-    async def search(
-        self, query: str, n_results: int, filter_scope: str | None = None, **kwargs
-    ):
+    async def search(self, query: str, n_results: int, filter_scope: str | None = None, **kwargs):
         return [
             {"source": "СП", "page": 1, "text": "Бетон B30", "score": 0.9},
             {"source": "СП", "page": 1, "text": "Бетон B30", "score": 0.8},
@@ -19,9 +17,7 @@ class _Rag:
 
 class _Web:
     async def run(self, query: str, max_results: int):
-        return [
-            {"title": "x", "url": "https://example.com", "snippet": "s", "score": 0.5}
-        ]
+        return [{"title": "x", "url": "https://example.com", "snippet": "s", "score": 0.5}]
 
 
 class _LegacyRagNoIdentityKwargs:
@@ -110,9 +106,7 @@ def test_injection_in_title_and_document_is_sanitized() -> None:
     assert any(d.code == "prompt_injection_detected" for d in diagnostics)
 
 
-def test_blocked_private_web_fallback_does_not_emit_web_fallback_metric_signal() -> (
-    None
-):
+def test_blocked_private_web_fallback_does_not_emit_web_fallback_metric_signal() -> None:
     class _RagWeakWithIdentity:
         supports_identity_filters = True
 
@@ -127,9 +121,7 @@ def test_blocked_private_web_fallback_does_not_emit_web_fallback_metric_signal()
 
     collector = SourceCollector(_RagWeakWithIdentity(), _Web(), None, ResearcherConfig())  # type: ignore[arg-type]
     _, diagnostics, _ = asyncio.run(
-        collector.collect(
-            "q", topic_scope=None, access_scope="tenant", context="", tenant_id="t1"
-        )
+        collector.collect("q", topic_scope=None, access_scope="tenant", context="", tenant_id="t1")
     )
     codes = {d.code for d in diagnostics}
     assert "web_fallback_blocked_private_scope" in codes

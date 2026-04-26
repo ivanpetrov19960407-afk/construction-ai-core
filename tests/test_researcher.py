@@ -26,9 +26,7 @@ def _mk_agent(llm_reply: str = '{"facts": [], "gaps": []}') -> ResearcherAgent:
             return [{"source": "СП", "page": 1, "text": "Факт", "score": 0.7}]
 
     agent.set_rag_engine(cast(Any, _Rag()))
-    agent.set_web_search_tool(
-        cast(Any, SimpleNamespace(run=AsyncMock(return_value=[])))
-    )
+    agent.set_web_search_tool(cast(Any, SimpleNamespace(run=AsyncMock(return_value=[]))))
     return agent
 
 

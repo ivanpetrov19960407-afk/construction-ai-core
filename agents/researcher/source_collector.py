@@ -84,9 +84,7 @@ class SourceCollector:
         self._sanitizer = sanitizer or SourceSanitizer()
         self._truncator = truncator or SourceTruncator()
         self._cache_key_builder = cache_key_builder or CacheKeyBuilder()
-        self._web_limiter = AsyncLimiter(
-            max_rate=config.web_rate_limit_per_second, time_period=1
-        )
+        self._web_limiter = AsyncLimiter(max_rate=config.web_rate_limit_per_second, time_period=1)
         self._web_limiter_loop_id: int | None = None
 
     async def collect(
@@ -140,13 +138,11 @@ class SourceCollector:
             query, topic_scope, access_scope, rag_sources, diagnostics
         )
 
-        candidate_pool = sorted(
-            [*rag_sources, *web_sources], key=lambda s: s.score, reverse=True
-        )[: self._config.candidate_pool_size]
+        candidate_pool = sorted([*rag_sources, *web_sources], key=lambda s: s.score, reverse=True)[
+            : self._config.candidate_pool_size
+        ]
         compact_sources = self._truncator.truncate(
-            choose_primary_sources(query, candidate_pool)[
-                : self._config.final_top_k_sources
-            ],
+            choose_primary_sources(query, candidate_pool)[: self._config.final_top_k_sources],
             self._config.max_prompt_chars,
         )
         await self._save_to_cache(cache_key, compact_sources, diagnostics)
@@ -299,9 +295,7 @@ class SourceCollector:
         try:
             await self._cache.set(
                 cache_key,
-                json.dumps(
-                    [source.model_dump() for source in sources], ensure_ascii=False
-                ),
+                json.dumps([source.model_dump() for source in sources], ensure_ascii=False),
                 ttl=self._config.cache_ttl_seconds,
             )
         except Exception:  # noqa: BLE001
@@ -385,9 +379,7 @@ class SourceCollector:
         tenant_id: str | None,
         project_id: str | None,
     ) -> list[ResearchSource]:
-        retrieval_query = "\n".join(
-            part for part in [query, topic_scope, context] if part
-        ).strip()
+        retrieval_query = "\n".join(part for part in [query, topic_scope, context] if part).strip()
         kwargs = {
             "n_results": self._config.candidate_pool_size,
             "filter_scope": access_scope,
@@ -400,26 +392,18 @@ class SourceCollector:
         if access_scope and access_scope != "public":
             if not bool(getattr(self._rag_engine, "supports_identity_filters", True)):
                 raise ResearchSourceError("rag_identity_filters_unsupported")
-            validator = getattr(
-                self._rag_engine, "validate_identity_filter_support", None
-            )
+            validator = getattr(self._rag_engine, "validate_identity_filter_support", None)
             if callable(validator):
                 validator()
 
         sig = signature(self._rag_engine.search)
-        supports_kwargs = any(
-            p.kind.name == "VAR_KEYWORD" for p in sig.parameters.values()
-        )
+        supports_kwargs = any(p.kind.name == "VAR_KEYWORD" for p in sig.parameters.values())
         supported = set(sig.parameters)
         call_kwargs = (
-            kwargs
-            if supports_kwargs
-            else {k: v for k, v in kwargs.items() if k in supported}
+            kwargs if supports_kwargs else {k: v for k, v in kwargs.items() if k in supported}
         )
         if access_scope and access_scope != "public" and not supports_kwargs:
-            missing = {"tenant_id", "org_id", "project_id", "user_id"} - set(
-                call_kwargs
-            )
+            missing = {"tenant_id", "org_id", "project_id", "user_id"} - set(call_kwargs)
             if missing:
                 raise ResearchSourceError("rag_identity_filters_unsupported")
 
@@ -489,9 +473,7 @@ class SourceCollector:
                     page=page if page > 0 else None,
                     locator=f"стр. {page}" if page > 0 else None,
                     snippet=snippet,
-                    chunk_text=str(
-                        chunk.get("chunk_text", chunk.get("text", "")) or ""
-                    ),
+                    chunk_text=str(chunk.get("chunk_text", chunk.get("text", "")) or ""),
                     score=score,
                     retrieval_score=score,
                     access_scope=access_scope,
@@ -517,16 +499,12 @@ class SourceCollector:
             )
         return sources
 
-    async def _collect_web(
-        self, query: str, topic_scope: str | None
-    ) -> list[ResearchSource]:
+    async def _collect_web(self, query: str, topic_scope: str | None) -> list[ResearchSource]:
         web_query = "\n".join(part for part in [query, topic_scope] if part)
         self._refresh_web_limiter_if_needed()
         async with self._web_limiter:
             items = await asyncio.wait_for(
-                self._web_search_tool.run(
-                    web_query, max_results=self._config.candidate_pool_size
-                ),
+                self._web_search_tool.run(web_query, max_results=self._config.candidate_pool_size),
                 timeout=self._config.web_timeout_seconds,
             )
 
@@ -538,14 +516,11 @@ class SourceCollector:
                 url=url,
                 snippet=str(item.get("snippet", ""))[: self._config.snippet_max_chars],
                 score=self._normalize_score(float(item.get("score", 0.0) or 0.0)),
-                retrieval_score=self._normalize_score(
-                    float(item.get("score", 0.0) or 0.0)
-                ),
+                retrieval_score=self._normalize_score(float(item.get("score", 0.0) or 0.0)),
                 published_at=str(item.get("published_at", "") or "") or None,
             )
             for idx, item in enumerate(items or [])
-            if (url := str(item.get("url", "") or ""))
-            and self._url_validator.is_allowed(url)
+            if (url := str(item.get("url", "") or "")) and self._url_validator.is_allowed(url)
         ]
 
     def _refresh_web_limiter_if_needed(self) -> None:
